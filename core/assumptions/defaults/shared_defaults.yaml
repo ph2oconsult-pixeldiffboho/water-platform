@@ -1,0 +1,99 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SHARED PLATFORM DEFAULTS
+# These values apply across all domains unless overridden by a domain-specific
+# defaults file or a user scenario override.
+# All monetary values in AUD, base year 2024.
+# ─────────────────────────────────────────────────────────────────────────────
+
+cost_assumptions:
+  currency: "AUD"
+  price_base_year: 2024
+  analysis_period_years: 30
+  discount_rate: 0.07
+  cost_confidence: "±30%"
+
+  # Energy
+  electricity_per_kwh: 0.14            # $/kWh — commercial/industrial tariff
+  demand_charge_per_kw_month: 12.00    # $/kW/month peak demand charge
+
+  # Labour
+  operator_labour_per_hour: 85.00      # $/hr
+  maintenance_labour_per_hour: 95.00   # $/hr
+
+  # Civil / Structural
+  concrete_tank_per_m3: 850.0          # $/m³ installed
+  earth_excavation_per_m3: 45.0        # $/m³
+  building_per_m2: 2200.0              # $/m² enclosed building
+  site_works_per_m2: 180.0             # $/m² general site works
+
+  # Mechanical / Electrical
+  pump_per_kw: 1800.0                  # $/kW installed centrifugal pump
+  blower_per_kw: 2200.0                # $/kW installed rotary lobe/turbo blower
+  vsd_per_kw: 450.0                    # $/kW VSD (addition to base pump/blower)
+  instrumentation_pct_of_mechanical: 0.12   # 12% of mechanical for I&C
+
+  # Contingency and oncosts
+  design_contingency_pct: 0.20         # 20% design contingency
+  contractor_margin_pct: 0.12          # 12% contractor overhead and profit
+  client_oncosts_pct: 0.15             # 15% design, PM, commissioning
+
+  # Chemicals (common across domains — domain files add specifics)
+  sodium_hypochlorite_per_kg: 1.20     # $/kg as 12.5% solution
+  caustic_soda_per_kg: 0.95            # $/kg 50% NaOH
+  sulphuric_acid_per_kg: 0.55          # $/kg 98% H2SO4
+  hydrochloric_acid_per_kg: 0.75       # $/kg 33% HCl
+  citric_acid_per_kg: 2.80             # $/kg
+
+  # Disposal
+  biosolids_disposal_per_tonne_ds: 280.0   # $/t DS to landfill
+  liquid_waste_transport_per_kl: 45.0      # $/kL tanker transport
+
+carbon_assumptions:
+  grid_emission_factor_kg_co2e_per_kwh: 0.79   # kg CO2e/kWh — Australian NEM average 2024
+  carbon_price_per_tonne: 35.0                  # $/t CO2e — assumed carbon price
+  # Regional grid factors (override grid_emission_factor with region-specific values)
+  grid_factors_by_region:
+    NSW: 0.73
+    VIC: 0.98
+    QLD: 0.80
+    SA: 0.32
+    WA: 0.69
+    TAS: 0.17
+
+  # Chemical embodied emissions (kg CO2e per kg chemical)
+  chemical_emissions:
+    sodium_hypochlorite: 2.10
+    caustic_soda: 1.85
+    sulphuric_acid: 0.16
+    alum: 1.52
+    ferric_chloride: 2.60
+    polymer: 3.80
+    methanol: 1.54
+    citric_acid: 2.10
+    sodium_bisulphite: 0.68
+
+  # Transport emissions
+  diesel_kg_co2e_per_litre: 2.68
+  truck_fuel_litres_per_100km: 35.0
+
+risk_assumptions:
+  scoring_scale: 5                 # 1–5 scale for likelihood and consequence
+  weight_technical: 0.30
+  weight_implementation: 0.25
+  weight_operational: 0.25
+  weight_regulatory: 0.20
+
+  thresholds:
+    low: 30
+    medium: 55
+    high: 75
+    very_high: 100
+
+engineering_assumptions:
+  # Pump efficiency (general)
+  pump_efficiency: 0.72
+  motor_efficiency: 0.95
+  vsd_efficiency: 0.97
+
+  # General pipe friction factor
+  pipe_hazen_williams_c: 120

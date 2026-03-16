@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DRINKING WATER DOMAIN DEFAULTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+cost_assumptions:
+  capex_unit_costs:
+    daf_per_m3_hr: 4500.0              # $/m³/hr installed DAF unit
+    rsf_filter_per_m2: 6500.0          # $/m² rapid sand filter
+    gac_vessel_per_m3_media: 3800.0    # $/m³ GAC media installed
+    uf_membrane_per_m2: 45.0           # $/m² UF membrane
+    ro_membrane_per_m2: 85.0           # $/m² RO membrane
+    uv_reactor_per_m3_hr: 2800.0       # $/m³/hr UV reactor
+    ozone_generator_per_kg_o3_hr: 28000.0  # $/kg O3/hr capacity
+
+  opex_unit_rates:
+    gac_media_replacement_per_m3_yr: 650.0
+    uf_membrane_replacement_per_m2_yr: 4.50
+    ro_membrane_replacement_per_m2_yr: 8.00
+
+  chemical_prices:
+    alum_per_kg: 0.55
+    ferric_sulphate_per_kg: 0.68
+    polyelectrolyte_per_kg: 5.20
+    chlorine_gas_per_kg: 1.80
+    sodium_hypochlorite_per_kg: 1.20
+    fluoride_per_kg: 2.40
+    ph_correction_lime_per_kg: 0.28
+    antiscalant_per_kg: 8.50
+    sodium_bisulphite_per_kg: 0.95
+
+carbon_assumptions:
+  # Ozone generation: ~10–12 kWh/kg O3 (from O2)
+  ozone_energy_kwh_per_kg_o3: 10.0
+
+engineering_assumptions:
+  # Influent raw water quality (defaults — highly site-specific)
+  raw_water_turbidity_ntu: 10.0
+  raw_water_doc_mg_l: 5.0
+  raw_water_toc_mg_l: 6.0
+  raw_water_colour_hau: 20.0
+  raw_water_ph: 7.2
+  raw_water_alkalinity_mg_l_caco3: 80.0
+  raw_water_temp_celsius: 18.0
+
+  # Target treated water quality
+  treated_turbidity_ntu: 0.1
+  treated_doc_mg_l: 1.0
+  treated_ph: 7.5
+
+  # DAF
+  daf_recycle_ratio: 0.10
+  daf_saturator_pressure_kpa: 400.0
+  daf_hydraulic_loading_m_hr: 12.0
+
+  # Rapid sand filtration
+  rsf_filtration_rate_m_hr: 8.0
+  rsf_backwash_frequency_per_day: 0.5
+  rsf_backwash_volume_pct_of_throughput: 0.04
+
+  # GAC / BAC
+  gac_ebct_min: 10.0                  # Empty bed contact time (minutes)
+  gac_bed_depth_m: 1.5
+  gac_regeneration_cycle_days: 180
+
+  # UF
+  uf_flux_lmh: 60.0
+  uf_recovery_pct: 0.92
+  uf_backwash_frequency_per_hr: 0.5
+  uf_tmp_kpa: 80.0
+
+  # NF/RO
+  ro_recovery_pct: 0.75
+  ro_feed_pressure_kpa: 800.0
+  ro_flux_lmh: 20.0
+  ro_salt_rejection_pct: 0.98
+
+  # Disinfection
+  chlorine_ct_mg_l_min_giardia: 165     # CT for 3-log Giardia at 15°C
+  uv_dose_mj_cm2_for_4log_cryptosporidium: 10.0

@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PURIFIED RECYCLED WATER (PRW) DOMAIN DEFAULTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+cost_assumptions:
+  capex_unit_costs:
+    mf_uf_membrane_per_m2: 45.0
+    ro_membrane_per_m2: 85.0
+    uv_aop_reactor_per_m3_hr: 3500.0
+    ozone_bac_per_m3_hr: 5200.0
+    mar_infiltration_basin_per_m2: 380.0
+
+  chemical_prices:
+    hydrogen_peroxide_per_kg: 1.80
+    sulphuric_acid_per_kg: 0.55
+    antiscalant_per_kg: 8.50
+    sodium_bisulphite_per_kg: 0.95
+    chloramine_per_kg: 2.20
+
+carbon_assumptions:
+  uv_energy_kwh_per_m3: 0.05             # Typical UV/AOP energy
+  ro_energy_kwh_per_m3: 0.50             # RO SEC
+
+engineering_assumptions:
+  # Source water quality (secondary treated effluent entering AWT)
+  source_turbidity_ntu: 2.0
+  source_toc_mg_l: 10.0
+  source_tn_mg_l: 8.0
+  source_tp_mg_l: 0.5
+  source_ecoli_log10_per_100ml: 4.0      # ~10,000 E.coli per 100mL
+
+  # Log reduction value (LRV) targets — jurisdiction-specific
+  # These are indicative — always confirm with regulator
+  lrv_target_virus: 12.0
+  lrv_target_cryptosporidium: 10.0
+  lrv_target_giardia: 10.0
+
+  # Typical LRV credits by barrier
+  lrv_credits:
+    mf_uf:
+      cryptosporidium: 4.0
+      giardia: 4.0
+      virus: 2.0
+    ro:
+      cryptosporidium: 4.0
+      giardia: 4.0
+      virus: 4.0
+      chemical_contaminants: 2.0
+    uv_aop:
+      cryptosporidium: 4.0
+      giardia: 4.0
+      virus: 4.0
+    ozone_bac:
+      cryptosporidium: 0.5
+      giardia: 1.0
+      virus: 1.0
+    cl2_disinfection:
+      virus: 4.0
+      giardia: 1.0
+
+  # UF
+  uf_flux_lmh: 50.0
+  uf_recovery_pct: 0.93
+
+  # RO
+  ro_recovery_pct: 0.85
+  ro_feed_pressure_kpa: 700.0
+  ro_flux_lmh: 18.0
+
+  # UV/AOP
+  uv_dose_mj_cm2: 80.0                  # Advanced: 80 mJ/cm² for 4-log virus
+  h2o2_dose_mg_l: 6.0
+
+  # QMRA
+  daly_target_per_person_per_year: 1e-6
+  volume_consumed_l_per_person_per_day: 2.0

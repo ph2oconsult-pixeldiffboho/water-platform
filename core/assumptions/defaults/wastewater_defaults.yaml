@@ -1,0 +1,96 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# WASTEWATER DOMAIN DEFAULTS
+# Wastewater-specific assumptions merged with shared_defaults.yaml.
+# Domain values take precedence over shared values where keys overlap.
+# ─────────────────────────────────────────────────────────────────────────────
+
+cost_assumptions:
+  # Wastewater-specific capex unit costs
+  capex_unit_costs:
+    # Activated sludge / BNR
+    aeration_tank_per_m3: 950.0          # $/m³ concrete aeration tank
+    secondary_clarifier_per_m2: 3800.0   # $/m² surface area installed
+    return_sludge_pump_per_ls: 2200.0    # $/L/s RAS pump set
+
+    # MBR
+    mbr_membrane_per_m2: 95.0            # $/m² membrane installed (hollow fibre)
+    mbr_membrane_flat_sheet_per_m2: 110.0
+
+    # Fine screening (MBR pre-treatment)
+    fine_screen_per_unit: 85000.0        # $/unit (1–5 MLD)
+
+    # Sludge handling
+    gravity_thickener_per_m2: 2800.0     # $/m² surface area
+    belt_thickener_per_m2_belt: 180000.0 # $/unit (1 m belt width)
+    centrifuge_per_unit: 420000.0        # $/unit (medium, 20–40 kg DS/hr)
+
+    # Sidestream
+    struvite_reactor_per_kgp_day: 8500.0 # $/kg P/day capacity
+
+  opex_unit_rates:
+    # Membrane replacement (annualised)
+    mbr_membrane_replacement_per_m2_yr: 8.50   # $/m²/yr (10yr life)
+    mbr_membrane_flat_sheet_replacement_per_m2_yr: 10.00
+
+    electricity_per_kwh: 0.14                  # $/kWh (inherited from shared, restated)
+
+  # Wastewater-specific chemicals
+  chemical_prices:
+    methanol_per_kg: 0.65                # $/kg (carbon source for denitrification)
+    alum_per_kg: 0.55                    # $/kg (phosphorus precipitation)
+    ferric_chloride_per_kg: 0.72         # $/kg
+    polymer_per_kg: 4.20                 # $/kg (sludge dewatering)
+    sodium_hypochlorite_per_kg: 1.20     # $/kg (effluent disinfection)
+
+carbon_assumptions:
+  # Wastewater-specific process emissions
+  n2o_emission_factor_g_n2o_per_g_n_removed: 0.016   # IPCC default for BNR
+  n2o_gwp: 298                                         # Global warming potential
+  ch4_emission_factor_g_ch4_per_g_bod_influent: 0.0025 # Fugitive CH4 from biological treatment
+  ch4_gwp: 28
+
+engineering_assumptions:
+  # Activated sludge / BNR kinetics
+  influent_bod_mg_l: 250
+  influent_tss_mg_l: 280
+  influent_tn_mg_l: 45
+  influent_tp_mg_l: 7.0
+  effluent_bod_mg_l: 10.0
+  effluent_tss_mg_l: 10.0
+  effluent_tn_mg_l: 10.0
+  effluent_tp_mg_l: 0.5
+
+  # Sludge yield
+  activated_sludge_observed_yield: 0.38    # kgVSS/kgBOD (aerobic, ~10d SRT)
+  mbr_observed_yield: 0.25                 # kgVSS/kgBOD (MBR, ~15d SRT)
+  vss_to_tss_ratio: 0.80
+
+  # Aeration
+  alpha_factor: 0.55                       # Process water / clean water O2 transfer
+  beta_factor: 0.95
+  theta_factor: 1.024                      # Temperature correction base
+  standard_aeration_efficiency_kg_o2_kwh: 1.8  # kg O2/kWh (fine bubble)
+  oxygen_demand_factor_kg_o2_per_kg_bod: 1.5   # Simplified BOD oxidation demand
+
+  # BNR
+  denitrification_rate_kg_no3_kg_bod: 0.12     # kg NO3-N removed / kg BOD applied
+  methanol_dose_kg_per_kg_tn_removed: 4.0      # Supplemental carbon for denitrifcation
+
+  # MBR
+  mbr_net_to_gross_factor: 0.90
+  mbr_sad: 0.30                            # Specific aeration demand m³/m²/h
+  mbr_tmp_kpa: -25.0                       # Transmembrane pressure (suction)
+  mbr_blower_sae: 1.80                     # Standard aeration efficiency kg O2/kWh
+  mbr_cip_interval_days: 30
+  mbr_packing_density: 150                 # m² membrane per m³ tank volume
+
+  # Granular sludge (DEMON / Nereda)
+  granular_sludge_sv30_ml_l: 50            # Typical settled volume 30min
+  granular_sludge_srt_days: 20
+
+  # IFAS media fill ratio: 0 to 1
+  ifas_media_fill_ratio: 0.35
+  ifas_media_surface_area_m2_per_m3: 500
+
+  # Sidestream: sludge recycle TN loading
+  sidestream_tn_fraction_of_influent: 0.25   # Fraction of plant TN load in reject water

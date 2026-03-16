@@ -1,0 +1,28 @@
+platform:
+  name: "Water Utility Planning Platform"
+  version: "1.0.0"
+  description: "Integrated concept-stage planning for water utilities and consultants"
+
+domains:
+  - wastewater
+  - drinking_water
+  - prw
+  - biosolids
+
+defaults:
+  analysis_period_years: 30
+  discount_rate: 0.07
+  currency: "AUD"
+  price_base_year: 2024
+  cost_confidence: "±30%"
+
+storage:
+  backend: "local"          # local | s3 | azure
+  local_path: "storage/projects"
+  export_path: "storage/exports"
+
+reporting:
+  default_format: "streamlit"   # streamlit | pdf | word | excel
+  logo_path: null
+  primary_colour: "#1f6aa5"
+  secondary_colour: "#2ca02c"

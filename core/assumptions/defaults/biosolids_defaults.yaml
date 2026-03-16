@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BIOSOLIDS DOMAIN DEFAULTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+cost_assumptions:
+  capex_unit_costs:
+    anaerobic_digester_per_m3: 1800.0    # $/m³ digester volume
+    aerobic_digester_per_m3: 950.0
+    belt_filter_press_per_unit: 380000.0  # $/unit (2 m belt)
+    centrifuge_per_unit: 480000.0
+    thermal_dryer_per_kg_ds_hr: 12000.0  # $/kg DS/hr evaporation capacity
+    pyrolysis_unit_per_tonne_ds_day: 850000.0
+    gasification_unit_per_tonne_ds_day: 950000.0
+    lime_silo_per_tonne: 1800.0
+    biogas_chp_per_kw: 3200.0            # $/kW installed CHP
+
+  opex_unit_rates:
+    landfill_disposal_per_tonne_ds: 280.0
+    land_application_per_tonne_ds: 45.0  # $/t DS (excluding transport)
+    biosolids_transport_per_tonne_km: 0.28  # $/t·km
+
+  chemical_prices:
+    polymer_per_kg: 4.20
+    lime_per_kg: 0.28
+    ferric_chloride_per_kg: 0.72
+
+carbon_assumptions:
+  # Anaerobic digestion
+  biogas_ch4_fraction: 0.65              # Volume fraction CH4 in biogas
+  ch4_energy_density_mj_m3: 35.8        # MJ/m³ CH4
+  chp_electrical_efficiency: 0.38
+  chp_thermal_efficiency: 0.45
+  # Biogas to electricity emission factor (avoided grid)
+  biogas_co2e_avoided_per_kwh: 0.79     # kg CO2e/kWh (= grid factor)
+
+  # Land application
+  n2o_land_application_kg_n2o_per_kg_n_applied: 0.01  # IPCC Tier 1
+
+  # Thermal treatment
+  incineration_co2e_per_tonne_ds: 250    # kg CO2e/t DS (wet oxidation)
+
+engineering_assumptions:
+  # Sludge production (primary + secondary)
+  primary_sludge_yield_kg_ds_per_kg_bod_removed: 0.50
+  secondary_sludge_yield_kg_ds_per_kg_bod_removed: 0.38
+
+  # Sludge properties
+  primary_sludge_vs_fraction: 0.75       # VS/TS
+  secondary_sludge_vs_fraction: 0.80
+  primary_sludge_feed_ts_pct: 3.5        # % TS (settled primary sludge)
+  secondary_sludge_feed_ts_pct: 0.8      # % TS (WAS before thickening)
+  thickened_was_ts_pct: 5.0
+
+  # Anaerobic digestion
+  ad_temperature_celsius: 37.0
+  ad_srt_days: 20.0
+  ad_vs_destruction_pct: 0.58            # VS destruction at 20d SRT mesophilic
+  ad_biogas_yield_m3_per_kg_vs_destroyed: 0.90   # m³ biogas per kg VS destroyed
+  ad_hrt_days: 20.0
+
+  # Dewatering
+  belt_press_cake_ts_pct: 18.0           # % TS output from BFP
+  centrifuge_cake_ts_pct: 22.0           # % TS output from centrifuge
+  centrifuge_polymer_dose_kg_per_t_ds: 8.0
+
+  # Thermal drying
+  dryer_target_ts_pct: 90.0
+  dryer_specific_energy_kwh_per_kg_water_evaporated: 0.85
+
+  # Pyrolysis
+  pyrolysis_temperature_celsius: 500.0
+  pyrolysis_biochar_yield_kg_per_kg_ds: 0.35
+  pyrolysis_syngas_energy_mj_per_kg_ds: 8.0
+
+  # Land application
+  land_app_n_agronomic_rate_kg_ha_yr: 150.0
+  land_app_p_soil_limit_mg_kg: 120.0
