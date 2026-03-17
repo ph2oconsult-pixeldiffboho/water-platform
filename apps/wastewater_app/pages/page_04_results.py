@@ -118,6 +118,22 @@ def render() -> None:
 
     st.subheader(f"Results: {scenario.scenario_name}")
 
+    # ── Engineering QA ──────────────────────────────────────────────────────
+    if scenario.cost_result:
+        try:
+            from core.qa.qa_engine import validate_scenario
+            from apps.wastewater_app.components.qa_panel import render_qa_panel
+            _tc = None
+            if scenario.treatment_pathway and scenario.treatment_pathway.technology_sequence:
+                _tc = scenario.treatment_pathway.technology_sequence[0]
+            _qa_result = validate_scenario(scenario, _tc)
+            render_qa_panel(_qa_result, title="Engineering QA Status",
+                            expanded=_qa_result.fail_count > 0)
+            st.session_state[f"qa_{scenario.scenario_id}"] = _qa_result
+        except Exception:
+            pass  # QA must never break the results page
+    render_confidence_band()
+
     # ── Tab layout ─────────────────────────────────────────────────────────
     tab_eng, tab_cost, tab_carbon, tab_risk = st.tabs(
         ["⚙️ Engineering", "💰 Cost", "🌿 Carbon & Energy", "⚠️ Risk"]

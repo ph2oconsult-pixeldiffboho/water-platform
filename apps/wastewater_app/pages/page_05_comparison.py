@@ -14,6 +14,8 @@ from apps.ui.session_state import require_project, get_current_project
 from domains.wastewater.technology_fit import assess_all_technologies, FitLevel
 from domains.wastewater.input_model import WastewaterInputs
 from apps.ui.ui_components import render_page_header, render_comparison_table
+from core.qa.qa_engine import QAEngine
+from apps.wastewater_app.pages.qa_panel import render_qa_banner, render_qa_status_badge
 from core.project.project_manager import ProjectManager, ScenarioManager
 
 
@@ -48,6 +50,27 @@ def render() -> None:
     sm = ScenarioManager()
     pm = ProjectManager()
 
+    # ── Comparison-level QA ────────────────────────────────────────────────
+    try:
+        from core.qa.qa_engine import validate_project
+        from apps.wastewater_app.components.qa_panel import render_qa_panel, render_qa_summary_badge
+        from domains.wastewater.decision_engine import evaluate_scenario
+
+        # Build decision for QA cross-scenario checks
+        _dec = None
+        try:
+            _dec = evaluate_scenario(calc)
+        except Exception:
+            pass
+
+        _qa_comp_result = validate_project(calc, _dec)
+        render_qa_panel(_qa_comp_result,
+                        title="Comparison QA Status",
+                        expanded=_qa_comp_result.fail_count > 0)
+        st.session_state["qa_comparison"] = _qa_comp_result
+    except Exception:
+        pass  # QA must never break the comparison page
+
     # ── Summary table ──────────────────────────────────────────────────────
     st.subheader("Multi-Criteria Comparison")
     rows = []
@@ -64,6 +87,7 @@ def render() -> None:
         _footprint = sum(v.get("footprint_m2", 0) or 0 for v in tech_perf_data.values())
         row = {
             "Scenario": s.scenario_name,
+            "QA": st.session_state.get(f"qa_{s.scenario_id}", None) and                   st.session_state[f"qa_{s.scenario_id}"].status_icon or "—",
             "Technologies": (
                 " + ".join(s.treatment_pathway.technology_sequence).upper()
                 if s.treatment_pathway else "—"

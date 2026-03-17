@@ -54,6 +54,8 @@ def main():
          "Decision engine — hierarchy, fields, two-pathway, consistency (81 tests)", False),
         (ROOT / "tests/integration/test_wastewater_full_run.py",
          "Full pipeline integration (8 tests)", False),
+        (ROOT / "tests/core/test_qa_engine.py",
+         "QA engine — model, input, cost, sludge, energy, report (30 tests)", False),
         (ROOT / "tests/domains/wastewater/test_benchmark_scenarios.py",
          "Legacy benchmark scenarios (57 checks)", True),
         (ROOT / "tests/benchmark/run_benchmarks.py",

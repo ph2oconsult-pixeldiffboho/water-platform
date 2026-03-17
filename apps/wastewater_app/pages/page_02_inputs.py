@@ -165,6 +165,16 @@ def render() -> None:
         # Show any critical errors before saving
         render_validation_banner(val_result)
 
+        # Engineering QA input checks (plausibility, COD:TKN, temperature, etc.)
+        try:
+            from core.qa.qa_engine import validate_inputs
+            from apps.wastewater_app.components.qa_panel import render_input_validation
+            _qa_inp = validate_inputs(inputs_dict, scenario.scenario_name)
+            if _qa_inp.findings:
+                render_input_validation(_qa_inp)
+        except Exception:
+            pass  # QA must never block saving
+
         if val_result.is_valid:
             scenario.domain_inputs = inputs_dict
             scenario.design_flow_mld = design_flow

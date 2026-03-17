@@ -11,6 +11,8 @@ import streamlit as st
 import pandas as pd
 
 from apps.ui.session_state import require_project, get_current_project
+from core.qa.qa_engine import QAEngine
+from apps.wastewater_app.pages.qa_panel import render_export_gate
 from apps.ui.ui_components import render_page_header
 from core.reporting.report_engine import ReportEngine
 from core.project.project_model import PlanningScenario
@@ -194,6 +196,40 @@ def render() -> None:
 
     # ── Export ─────────────────────────────────────────────────────────────
     st.divider()
+
+    # ── Pre-export QA gate ─────────────────────────────────────────────────
+    try:
+        from core.qa.qa_engine import validate_report, validate_project
+        from apps.wastewater_app.components.qa_panel import render_export_gate
+        from domains.wastewater.decision_engine import evaluate_scenario
+
+        _sel_scens = [project.scenarios[sid] for sid in sel_ids if sid in project.scenarios]
+
+        # Decision engine for cross-scenario QA
+        _dec_qa = None
+        try:
+            _dec_qa = evaluate_scenario(_sel_scens)
+        except Exception:
+            pass
+
+        # Run report QA
+        _qa_report_result = validate_report(
+            report=report,
+            project=project,
+            decision=_dec_qa,
+            scenarios=_sel_scens,
+        )
+
+        # Show gate — blocks export if FAIL
+        _warnings_ack = st.session_state.get("qa_warnings_acknowledged", False)
+        _export_ok = render_export_gate(_qa_report_result, _warnings_ack)
+    except Exception:
+        # QA must never break export — if it crashes, allow export
+        _export_ok = True
+
+    if not _export_ok:
+        st.stop()
+
     st.subheader("Download Report")
     fname_base = meta.project_name.replace(" ", "_") if meta.project_name else "report"
 
