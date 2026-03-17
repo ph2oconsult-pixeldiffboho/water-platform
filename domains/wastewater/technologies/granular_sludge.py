@@ -314,9 +314,10 @@ class GranularSludgeTechnology(BaseTechnology):
         # SND in granule provides partial denitrification oxygen credit (50–70%)
         snd_dn_frac = 0.60 if inputs.simultaneous_n_removal else 0.30
         nh4_frac = self._get_eng("influent_nh4_mg_l", 35.0) / max(inf["tn_mg_l"], 1.0)
-        o2_c     = bod_removed * 1.42 * (1.0 - 1.42 * y_obs)   # carbonaceous
+        # O2 carbonaceous: M&E Eq 8-20 (BOD_rem - 1.42*Px_VSS)
+        o2_c     = max(0.0, bod_removed - 1.42 * vss_prod)       # carbonaceous (M&E Eq 8-20)
         o2_n     = 4.57 * tn_load * nh4_frac * 0.90 * T_factor  # nitrification (T-corrected)
-        o2_dn    = 2.86 * tn_removed * snd_dn_frac               # SND credit
+        o2_dn    = 2.86 * tn_removed * snd_dn_frac               # SND credit (60% for AGS)
         o2_kg    = max(0.0, o2_c + o2_n - o2_dn)
 
         # Cold temperature energy: lower nitrification O2 reduces aeration slightly,

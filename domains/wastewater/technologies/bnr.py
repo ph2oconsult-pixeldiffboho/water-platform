@@ -311,11 +311,14 @@ class BNRTechnology(BaseTechnology):
         })
 
         # ── 5. Oxygen demand ───────────────────────────────────────────────
-        o2_c  = bod_removed * 1.42 * (1.0 - 1.42 * y_obs)   # carbonaceous
+        # O2 carbonaceous: M&E Eq 8-20 — BOD_removed minus O2 equiv of cell synthesis
+        # o2_c = BOD_rem - 1.42 * Px_VSS  (Tchobanoglous 2014 Eq 7-60)
+        # Ref: Metcalf 5th Ed p.634; WEF MOP 8 Section 10.4
+        o2_c  = max(0.0, bod_removed - 1.42 * vss_prod)        # carbonaceous (M&E Eq 8-20)
         nh4_frac = self._get_eng("influent_nh4_mg_l", 35.0) / max(inf["tn_mg_l"], 1.0)
-        o2_n  = 4.57 * tn_load * nh4_frac * 0.90             # nitrification (90%)
-        no3_dn = tn_removed * 0.70                            # 70% via denitrification
-        o2_dn = 2.86 * no3_dn                                 # credit
+        o2_n  = 4.57 * tn_load * nh4_frac * 0.90               # nitrification: 4.57 kg O2/kg NH4-N
+        no3_dn = tn_removed * 0.70                              # 70% TN via denitrification (A2O/UCT)
+        o2_dn = 2.86 * no3_dn                                   # DN O2 credit: 2.86 kg O2/kg NO3-N
         o2_kg_day = max(0.0, o2_c + o2_n - o2_dn)
 
         r.performance.additional["o2_demand_kg_day"] = round(o2_kg_day, 0)

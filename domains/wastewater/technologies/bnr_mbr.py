@@ -250,7 +250,7 @@ class BNRMBRTechnology(BaseTechnology):
         sae     = sae_std * alpha
 
         nh4_frac    = self._get_eng("influent_nh4_mg_l", 35.0) / max(inf["tn_mg_l"], 1.0)
-        o2_c        = bod_removed * 1.42 * (1.0 - 1.42 * y_obs)
+        o2_c        = max(0.0, bod_removed - 1.42 * vss_prod)    # carbonaceous (M&E Eq 8-20)
         o2_n        = 4.57 * tn_load * nh4_frac * 0.90
         no3_dn      = tn_removed * inputs.anoxic_fraction / 0.35
         o2_dn       = 2.86 * no3_dn

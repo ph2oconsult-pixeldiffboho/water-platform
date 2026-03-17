@@ -277,7 +277,7 @@ class IFASMBBRTechnology(BaseTechnology):
         sae_std = self._get_eng("standard_aeration_efficiency_kg_o2_kwh", 1.8)
         sae     = sae_std * alpha
 
-        o2_c  = bod_removed * 1.42 * (1.0 - 1.42 * y_obs_sus)  # carbonaceous
+        o2_c  = max(0.0, bod_removed - 1.42 * sludge_vss)         # carbonaceous (M&E Eq 8-20)
         nh4_f = self._get_eng("influent_nh4_mg_l", 35.0) / max(inf["tn_mg_l"], 1.0)
         o2_n  = 4.57 * tn_load * nh4_f * 0.90                   # nitrification (90%)
         no3_dn = tn_removed * 0.50                               # 50% via denitrification (limited without anoxic zone)
