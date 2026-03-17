@@ -11,7 +11,6 @@ import streamlit as st
 import pandas as pd
 
 from apps.ui.session_state import require_project, get_current_project
-from apps.wastewater_app.pages.qa_panel import render_export_gate
 from apps.ui.ui_components import render_page_header
 from core.reporting.report_engine import ReportEngine
 from core.project.project_model import PlanningScenario
