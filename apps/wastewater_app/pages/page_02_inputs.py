@@ -50,17 +50,33 @@ def render() -> None:
                 value=float(ex.get("design_flow_mld", 10.0)), step=0.5,
                 help="Average dry weather flow at design year")
         with c2:
+            # Default wet weather flow = 3 × DWF (standard AU/NZ planning rule)
+            _wwf_default = round(design_flow * 3.0, 2)
+            _wwf_stored  = float(ex.get("peak_flow_mld") or 0.0)
+            _wwf_value   = _wwf_stored if _wwf_stored > 0 else _wwf_default
             peak_flow = st.number_input("Peak Wet Weather Flow (ML/day)",
                 min_value=0.0, max_value=50000.0,
-                value=float(ex.get("peak_flow_mld") or 0.0), step=0.5,
-                help="If blank, peak flow = average × peak factor")
+                value=_wwf_value, step=0.5,
+                help=f"Wet weather peak flow. Default = 3 × DWF ({_wwf_default:.1f} ML/d). "
+                     "Edit to override.")
         with c3:
             peak_factor = st.number_input("Peak Flow Factor",
                 min_value=1.2, max_value=6.0,
-                value=float(ex.get("peak_flow_factor", 2.5)), step=0.1,
+                value=float(ex.get("peak_flow_factor", 1.5)), step=0.1,
                 help="Used only if peak wet weather flow is not set above")
-        pop_ep = st.number_input("Design Population (EP)", min_value=0,
-            value=int(ex.get("design_population_ep") or 0), step=500)
+        # Back-calculate EP from flow: 150 L/person/day (Australian per-capita standard)
+        _ep_from_flow = int(design_flow * 1_000_000 / 150)  # flow ML/d → L/d ÷ 150 L/p/d
+        _ep_stored    = int(ex.get("design_population_ep") or 0)
+        _ep_default   = _ep_stored if _ep_stored > 0 else _ep_from_flow
+        c_pop1, c_pop2 = st.columns([2, 1])
+        with c_pop1:
+            pop_ep = st.number_input("Design Population (EP)", min_value=0,
+                value=_ep_default, step=500,
+                help=f"Auto-calculated from {design_flow:.1f} ML/d ÷ 150 L/p/d = "
+                     f"{_ep_from_flow:,} EP. Edit to override.")
+        with c_pop2:
+            st.metric("Per-capita flow", f"{design_flow*1e6/max(pop_ep,1):.0f} L/p/d",
+                      help="Implied per-capita flow based on entered population")
 
         st.divider()
 

@@ -23,7 +23,7 @@ class WastewaterInputs:
     # ── 1. Flow conditions ────────────────────────────────────────────────
     design_flow_mld: Optional[float] = None        # Average dry weather flow (ML/day)
     peak_flow_mld: Optional[float] = None          # Peak wet weather flow (ML/day)
-    peak_flow_factor: float = 2.5                  # Peak / average (used if peak not set)
+    peak_flow_factor: float = 1.5                  # Peak / average (3×DWF typical; 1.5 for clarifier sizing) (used if peak not set)
     design_population_ep: Optional[float] = None   # Equivalent persons
 
     # ── 2. Influent water quality ─────────────────────────────────────────

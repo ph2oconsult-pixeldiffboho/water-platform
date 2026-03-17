@@ -268,6 +268,8 @@ class WastewaterDomainInterface:
                 "influent_temperature_celsius": inputs.influent_temperature_celsius,
                 # Peak flow factor — used by clarifier sizing in all CAS-family modules
                 "peak_flow_factor":             inputs.peak_flow_factor,
+                # DO setpoint — used by aeration energy calculation (SOTR driving force)
+                "do_setpoint_mg_l":             inputs.do_setpoint_mg_l,
             }
             for k, v in influent_overrides.items():
                 if v is not None:
