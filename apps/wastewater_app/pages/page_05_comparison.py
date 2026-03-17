@@ -14,8 +14,6 @@ from apps.ui.session_state import require_project, get_current_project
 from domains.wastewater.technology_fit import assess_all_technologies, FitLevel
 from domains.wastewater.input_model import WastewaterInputs
 from apps.ui.ui_components import render_page_header, render_comparison_table
-from core.qa.qa_engine import QAEngine
-from apps.wastewater_app.pages.qa_panel import render_qa_banner, render_qa_status_badge
 from core.project.project_manager import ProjectManager, ScenarioManager
 
 
