@@ -206,7 +206,8 @@ class CostingEngine:
         client_pct      = self._get("cost", "client_oncosts_pct",     0.15)
 
         # Civil tank basis: total m³ of tankage across all civil items
-        CIVIL_KEYS  = {"aeration_tank_per_m3", "secondary_clarifier_per_m2"}
+        CIVIL_KEYS  = {"aeration_tank_per_m3", "secondary_clarifier_per_m2",
+                        "equalisation_tank_per_m3"}  # plain concrete tanks all scale together
         SCALE_EXP   = 0.60   # Six-Tenths Rule for civil works
         BASE_VOL    = 2750.0 # m³ (calibration point — 10 MLD BNR)
 

@@ -209,7 +209,7 @@ BENCHMARK_SCENARIOS: List[BenchmarkScenario] = [
             },
             "granular_sludge": {
                 "footprint_m2": ExpectedRange(1200, 3500, "SBR: smaller than BNR+clarifiers"),
-                "capex_m":    ExpectedRange(8.0, 18.0,  "AGS: no secondary clarifiers"),
+                "capex_m":    ExpectedRange(6.0, 12.0,  "AGS: no secondary clarifiers"),
             },
             "bnr_mbr": {
                 "footprint_m2": ExpectedRange(1000, 3000, "MBR: highest density, no clarifiers"),

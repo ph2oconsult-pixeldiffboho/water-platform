@@ -408,6 +408,46 @@ class GranularSludgeTechnology(BaseTechnology):
             "cycle_time_hours":          inputs.cycle_time_hours,
         })
 
+        # ── 7b. Peak flow check (SBR-specific) ────────────────────────────
+        # At peak flow, each reactor receives more feed per fill event.
+        # Guideline: fill volume ≤ 50% reactor volume per cycle (van Dijk 2020).
+        # Staggered cycle: all n_reactors cycle simultaneously but offset by
+        # cycle_time/n_reactors. Feed per fill event = peak_flow / (n_reactors × cycles/day).
+        # Ref: van Dijk 2020; Pronk 2015; Royal HaskoningDHV Nereda design guidelines
+        peak_factor_ags  = self._get_eng("peak_flow_factor", 1.5)
+        peak_flow_m3d    = flow * peak_factor_ags
+        cycles_per_day   = 24.0 / max(inputs.cycle_time_hours, 1.0)
+        feed_per_fill    = peak_flow_m3d / max(n_reactors * cycles_per_day, 1.0)
+        max_fill_vol     = vol_per_reactor * 0.50   # 50% max fill guideline
+        fill_ratio       = feed_per_fill / max(max_fill_vol, 1.0)  # >1 = exceeds guideline
+
+        r.performance.additional["peak_flow_factor_ags"] = peak_factor_ags
+        r.performance.additional["peak_fill_ratio"]      = round(fill_ratio, 2)
+        r.performance.additional["peak_flow_m3d"]        = round(peak_flow_m3d, 0)
+        r.performance.additional["feed_per_fill_m3"]     = round(feed_per_fill, 0)
+
+        if fill_ratio > 1.0:
+            r.notes.warn(
+                f"⚠️ Peak flow {peak_factor_ags:.1f}× ({peak_flow_m3d:.0f} m³/d): "
+                f"feed per fill event = {feed_per_fill:.0f} m³ vs max allowable "
+                f"{max_fill_vol:.0f} m³ (50% × {vol_per_reactor:.0f} m³ reactor). "
+                f"Fill ratio = {fill_ratio:.1f}× guideline — increase FBT volume "
+                "or add a 4th SBR reactor for hydraulic resilience at peak flow. "
+                "Ref: Royal HaskoningDHV Nereda design guidelines."
+            )
+        elif fill_ratio > 0.75:
+            r.notes.add_assumption(
+                f"Peak flow {peak_factor_ags:.1f}× fill ratio {fill_ratio:.2f}× guideline "
+                f"({feed_per_fill:.0f} m³ feed vs {max_fill_vol:.0f} m³ max): "
+                "marginal — confirm FBT sizing with detailed hydraulic modelling."
+            )
+        else:
+            r.notes.add_assumption(
+                f"Peak flow {peak_factor_ags:.1f}× fill check ✅: "
+                f"{feed_per_fill:.0f} m³/fill event ≤ {max_fill_vol:.0f} m³ max "
+                f"(fill ratio {fill_ratio:.2f}× guideline — adequate)."
+            )
+
         # ── 8. Scope 1 emissions ───────────────────────────────────────────
         n2o_ef  = self._get_eng("n2o_emission_factor_g_n2o_per_g_n_removed", 0.016)
         n2o_gwp = self._get_eng("n2o_gwp", 273)
@@ -452,7 +492,7 @@ class GranularSludgeTechnology(BaseTechnology):
         if inputs.include_flow_balance_tank:
             r.capex_items.append(CostItem(
                 "Flow balance tank",
-                "aeration_tank_per_m3",
+                "equalisation_tank_per_m3",  # plain concrete EQ tank, no internals
                 fbt_vol_m3,
                 "m³",
                 notes=(
@@ -483,7 +523,8 @@ class GranularSludgeTechnology(BaseTechnology):
                 n_reactors,
                 "units",
                 unit_cost_override=150000.0,
-                notes=f"{n_reactors} tipping-weir decanters @ $150k each",
+                contingency_factor=0.65,  # supply-and-install package; contractor margin in price
+                notes=f"{n_reactors} tipping-weir decanters @ $150k each (S&I inc. margin)",
             ),
             CostItem(
                 "SBR automation + controls",
@@ -491,7 +532,8 @@ class GranularSludgeTechnology(BaseTechnology):
                 n_reactors,
                 "units",
                 unit_cost_override=200000.0,
-                notes="SBR cycle timers, DO/TSS sensors, SCADA per reactor @ $200k each",
+                contingency_factor=0.65,  # S&I package
+                notes="SBR cycle timers, DO/TSS sensors, SCADA per reactor @ $200k each (S&I)",
             ),
             CostItem(
                 "Granule wash + selection system",
@@ -499,7 +541,8 @@ class GranularSludgeTechnology(BaseTechnology):
                 1,
                 "system",
                 unit_cost_override=300000.0,
-                notes="Granule classifiers, wash troughs, drain return — plant-wide",
+                contingency_factor=0.65,  # proprietary supply; margin in vendor price
+                notes="Granule classifiers, wash troughs, drain return — plant-wide (S&I)",
             ),
             CostItem(
                 "Discharge pumps",

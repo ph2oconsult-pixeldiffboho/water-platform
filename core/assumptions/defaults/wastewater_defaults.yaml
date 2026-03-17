@@ -8,7 +8,8 @@ cost_assumptions:
   # Wastewater-specific capex unit costs
   capex_unit_costs:
     # Activated sludge / BNR
-    aeration_tank_per_m3: 950.0          # $/m³ concrete aeration tank
+    aeration_tank_per_m3: 950.0          # $/m³ concrete aeration tank (baffled, with diffusers/mixers)
+    equalisation_tank_per_m3: 480.0      # $/m³ plain concrete balance/EQ tank (no internals)
     secondary_clarifier_per_m2: 3800.0   # $/m² surface area installed
     return_sludge_pump_per_ls: 2200.0    # $/L/s RAS pump set
 

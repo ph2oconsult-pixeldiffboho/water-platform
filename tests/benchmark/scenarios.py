@@ -173,8 +173,8 @@ SCENARIOS: List[Scenario] = [
                 "risk_score": _rng(18.0, 22.0, "tight", "BNR: lowest risk, mature tech"),
             },
             "granular_sludge": {
-                "capex_m":    _t(6.84,  Tol.TIGHT,    "AGS: no secondary clarifiers"),
-                "cost_kl":    _t(0.336, Tol.TIGHT,    "AGS cheapest $/kL at S1"),
+                "capex_m":    _t(5.3,  Tol.TIGHT,    "AGS: no secondary clarifiers"),
+                "cost_kl":    _t(0.288, Tol.TIGHT,    "AGS cheapest $/kL at S1"),
                 "kwh_ml":     _t(270, Tol.MODERATE, "de Kreuk 2007 AGS aeration"),
                 "sludge":     _t(1220,  Tol.MODERATE, "17% less than BNR (longer SRT)"),
                 "scope2_co2": _t(780, Tol.TIGHT, "347 kWh/ML × 0.79 grid"),
@@ -223,7 +223,7 @@ SCENARIOS: List[Scenario] = [
         expected={
             "bnr": {
                 "capex_m":    _t(7.31,  Tol.TIGHT,    "8 MLD cold BNR"),
-                "cost_kl":    _t(0.398, Tol.TIGHT,    ""),
+                "cost_kl":    _t(0.390, Tol.TIGHT,    ""),
                 "kwh_ml":     _t(339,   Tol.MODERATE, "cold BNR: less N removed → less O2"),
                 # Cold NH4 penalty: ×4 multiplier at ≤12°C (bnr.py)
                 # BNR FAILS the NH4<3 target at 12°C — this is a feature not a bug
@@ -235,8 +235,8 @@ SCENARIOS: List[Scenario] = [
                 "risk_score": _rng(19.5, 23.0, "tight", "BNR cold: +1 risk point from T<15°C"),
             },
             "granular_sludge": {
-                "capex_m":    _t(6.40,  Tol.TIGHT,    "8 MLD AGS cold"),
-                "cost_kl":    _t(0.370, Tol.TIGHT,    ""),
+                "capex_m":    _t(4.988, Tol.TIGHT,    "8 MLD AGS cold"),
+                "cost_kl":    _t(0.311, Tol.TIGHT,    ""),
                 # Cold energy penalty applied explicitly in granular_sludge.py
                 "kwh_ml":     _t(267, Tol.MODERATE, "cold penalty: +20% vs warm AGS"),
                 "eff_nh4":    _rng(3.0, 7.0, "tight", "granule instability NH4 penalty"),
@@ -338,8 +338,8 @@ SCENARIOS: List[Scenario] = [
                 "footprint_m2": _rng(1900, 2950, "moderate", "20MLD BNR reactor+2 clarifiers"),
             },
             "granular_sludge": {
-                "capex_m":    _t(9.34,  Tol.TIGHT,    "AGS no clarifiers saves CAPEX"),
-                "cost_kl":    _t(0.271, Tol.TIGHT,    "AGS cheapest $/kL — dominant option"),
+                "capex_m":    _t(7.38,  Tol.TIGHT,    "AGS no clarifiers saves CAPEX"),
+                "cost_kl":    _t(0.239, Tol.TIGHT,    "AGS cheapest $/kL — dominant option"),
                 "kwh_ml":     _t(250, Tol.MODERATE, ""),
                 "scope2_co2": _t(1441, Tol.TIGHT, "deterministic"),
                 # AGS footprint physics: SBR reactor only, no clarifiers
@@ -441,8 +441,8 @@ SCENARIOS: List[Scenario] = [
                 "scope2_co2": _t(932, Tol.TIGHT, ""),
             },
             "granular_sludge": {
-                "capex_m":    _t(7.36,  Tol.TIGHT,    "cheapest CAPEX"),
-                "cost_kl":    _t(0.344, Tol.TIGHT,    "AGS wins LCC at high electricity"),
+                "capex_m":    _t(5.8,  Tol.TIGHT,    "cheapest CAPEX"),
+                "cost_kl":    _t(0.278, Tol.TIGHT,    "AGS wins LCC at high electricity"),
                 "kwh_ml":     _t(275,   Tol.MODERATE, "8% below BNR"),
                 "opex_k":     _t(911,   Tol.MODERATE, "cheapest OPEX"),
                 "scope2_co2": _t(951, Tol.TIGHT, ""),
@@ -485,8 +485,8 @@ SCENARIOS: List[Scenario] = [
                 "scope2_co2": _t(2460, Tol.TIGHT, "deterministic"),
             },
             "granular_sludge": {
-                "capex_m":    _t(10.84, Tol.TIGHT,    "AGS saves $3M vs BNR at 25 MLD"),
-                "cost_kl":    _t(0.298, Tol.TIGHT,    "AGS wins $/kL by $0.05"),
+                "capex_m":    _t(8.81, Tol.TIGHT,    "AGS saves $3M vs BNR at 25 MLD"),
+                "cost_kl":    _t(0.246, Tol.TIGHT,    "AGS wins $/kL by $0.05"),
                 "sludge":     _t(3356,  Tol.MODERATE, "18% less than BNR at same flow"),
                 "opex_k":     _t(1843,  Tol.MODERATE, "lower sludge disposal saves $210k"),
                 "lcc_k":      _t(2716,  Tol.MODERATE, "AGS wins LCC by $449k/yr"),
@@ -540,8 +540,8 @@ SCENARIOS: List[Scenario] = [
                 "eff_nh4":    _rng(0.8,  1.3, "tight", "target 1 mg/L"),
             },
             "granular_sludge": {
-                "capex_m":    _t(6.86,  Tol.TIGHT,    "cheapest option"),
-                "cost_kl":    _t(0.390, Tol.TIGHT,    "AGS cheapest $/kL for reuse"),
+                "capex_m":    _t(5.33,  Tol.TIGHT,    "cheapest option"),
+                "cost_kl":    _t(0.343, Tol.TIGHT,    "AGS cheapest $/kL for reuse"),
                 "kwh_ml":     _t(291, Tol.MODERATE, ""),
                 "scope2_co2": _t(766, Tol.TIGHT, "deterministic"),
                 # AGS + ferric P removal: TP target is tight

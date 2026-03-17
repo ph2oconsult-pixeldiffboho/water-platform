@@ -701,9 +701,13 @@ class ReportEngine:
              lambda s: _eng(s, "mlss_granular_mg_l", "{:.0f}")
              if _eng(s, "mlss_granular_mg_l", "") not in ("", "—")
              else _eng(s, "mlss_mg_l", "{:.0f}")),
+            ("Observed Yield (kgVSS/kgBOD)",
+             lambda s: _eng(s, "y_obs_kgvss_kgbod", "{:.3f}")),
             ("Sludge Yield (kgDS/kgBOD)",
-             lambda s: f"{(s.domain_specific_outputs.get('engineering_summary',{}).get('total_sludge_kgds_day',0)) / max((s.domain_inputs or {}).get('influent_bod_mg_l',1) - 10) / max((s.domain_inputs or {}).get('design_flow_mld',1), 0.1):.2f}"
-             if s.domain_specific_outputs and s.domain_inputs else "—"),
+             lambda s: (
+                 f"{(s.domain_specific_outputs.get('engineering_summary',{}).get('total_sludge_kgds_day',0)) / max(((s.domain_inputs or {}).get('influent_bod_mg_l',250) - (s.domain_inputs or {}).get('effluent_bod_mg_l',10)) * (s.domain_inputs or {}).get('design_flow_mld',1) * 1000, 1):.2f}"
+                 if s.domain_specific_outputs and s.domain_inputs else "—"
+             )),
 
             # ── Effluent quality ──────────────────────────────────────────
             ("Effluent TN (mg/L)",
