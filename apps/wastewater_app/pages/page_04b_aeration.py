@@ -518,16 +518,22 @@ def _render_config_tab(
         st.markdown("#### Oxygen transfer parameters")
         c1, c2, c3 = st.columns(3)
         with c1:
-            alpha = st.number_input("Alpha factor (α)", 0.30, 0.90,
-                overrides.get("alpha_factor", inp.alpha_factor), 0.01,
+            _alpha_val = float(overrides.get("alpha_factor", inp.alpha_factor))
+            _alpha_val = max(0.30, min(1.00, _alpha_val))  # clamp to valid range
+            alpha = st.number_input("Alpha factor (α)", 0.30, 1.00,
+                _alpha_val, 0.01,
                 help="Process water vs clean water O₂ transfer ratio. "
-                     "Typical fine bubble municipal: 0.45–0.65")
+                     "Fine bubble municipal: 0.45–0.65; MABR (bubble-free): 1.0")
+            _beta_val = float(overrides.get("beta_factor", inp.beta_factor))
+            _beta_val = max(0.85, min(1.00, _beta_val))
             beta  = st.number_input("Beta factor (β)", 0.85, 1.00,
-                overrides.get("beta_factor", inp.beta_factor), 0.01,
+                _beta_val, 0.01,
                 help="Process water vs clean water O₂ saturation ratio. Typical: 0.95–0.99")
         with c2:
+            _fouling_val = float(overrides.get("fouling_factor", inp.fouling_factor))
+            _fouling_val = max(0.50, min(1.00, _fouling_val))
             fouling = st.number_input("Fouling factor (F)", 0.50, 1.00,
-                overrides.get("fouling_factor", inp.fouling_factor), 0.05,
+                _fouling_val, 0.05,
                 help="Diffuser fouling correction. New: 0.90–1.00; aged: 0.65–0.80")
             _sote_raw = overrides.get("sote_per_metre_submergence", inp.sote_per_metre_submergence)
             _sote_pct = float(_sote_raw) * 100 if float(_sote_raw) <= 1.0 else float(_sote_raw)
@@ -558,10 +564,12 @@ def _render_config_tab(
         st.markdown("#### Blower parameters")
         c1, c2, c3 = st.columns(3)
         with c1:
+            _blower_eff_val = max(0.55, min(0.85, float(overrides.get("blower_efficiency", inp.blower_efficiency))))
             blower_eff = st.number_input("Blower efficiency", 0.55, 0.85,
-                overrides.get("blower_efficiency", inp.blower_efficiency), 0.01)
+                _blower_eff_val, 0.01)
+            _motor_eff_val = max(0.85, min(0.98, float(overrides.get("motor_efficiency", inp.motor_efficiency))))
             motor_eff  = st.number_input("Motor efficiency", 0.85, 0.98,
-                overrides.get("motor_efficiency", inp.motor_efficiency), 0.01)
+                _motor_eff_val, 0.01)
         with c2:
             sys_press  = st.number_input("System pressure loss (kPa)", 5.0, 50.0,
                 overrides.get("system_pressure_loss_kpa", inp.system_pressure_loss_kpa), 1.0)
