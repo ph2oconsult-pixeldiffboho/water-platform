@@ -382,10 +382,10 @@ def _render_assumptions_panel(scenario) -> None:
 
 
 def _render_engineering_tab(scenario, ps_highlight) -> None:
-    _render_calculation_basis(scenario)
+    _render_calculation_basis(scenario, ps_highlight)
 
 
-def _render_calculation_basis(scenario) -> None:
+def _render_calculation_basis(scenario, ps_highlight=None) -> None:
     """Phase 2: Transparent calculation basis — how results were derived."""
     do = scenario.domain_specific_outputs or {}
     eng = do.get("engineering_summary", {})
