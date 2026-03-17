@@ -1052,19 +1052,59 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
                 return f"{float(v):,.0f}{unit}"
 
             rows = [["Parameter", "Value"]]
-            if perf.get("reactor_volume_m3"): rows.append(["Bioreactor volume", _fmt(perf["reactor_volume_m3"], " m³")])
-            if perf.get("footprint_m2"): rows.append(["Process footprint", _fmt(perf["footprint_m2"], " m²")])
-            if perf.get("hydraulic_retention_time_hr"): rows.append(["HRT", f"{perf['hydraulic_retention_time_hr']:.1f} hr"])
+
+            # Reactor configuration — technology-specific
+            if perf.get("reactor_volume_m3"):
+                rows.append(["Bioreactor volume", _fmt(perf["reactor_volume_m3"], " m³")])
+            if perf.get("footprint_m2"):
+                rows.append(["Process footprint", _fmt(perf["footprint_m2"], " m²")])
+            if perf.get("hydraulic_retention_time_hr"):
+                rows.append(["HRT", f"{perf['hydraulic_retention_time_hr']:.1f} hr"])
+
+            # MLSS — BNR uses mlss_mg_l, AGS uses mlss_granular_mg_l
             mlss = perf.get("mlss_mg_l") or perf.get("mlss_granular_mg_l")
-            if mlss: rows.append(["MLSS", _fmt(mlss, " mg/L")])
-            if perf.get("o2_demand_kg_day"): rows.append(["O₂ demand", _fmt(perf["o2_demand_kg_day"], " kg/day")])
-            if perf.get("sludge_production_kgds_day"): rows.append(["Sludge production", _fmt(perf["sludge_production_kgds_day"], " kgDS/day")])
+            if mlss:
+                rows.append(["MLSS", _fmt(mlss, " mg/L")])
+
+            # AGS-specific parameters
+            if perf.get("n_reactors"):
+                rows.append(["SBR reactors", f"{perf['n_reactors']:.0f} × {perf.get('vol_per_reactor_m3',0):.0f} m³ each"])
+            if perf.get("cycle_time_hours"):
+                rows.append(["SBR cycle time", f"{perf['cycle_time_hours']:.1f} hr (fill → react → settle → decant)"])
+            if perf.get("snd_dn_fraction"):
+                rows.append(["SND DN fraction",
+                             f"{perf['snd_dn_fraction']*100:.0f}% denitrification via simultaneous nitrification-denitrification"])
+            if perf.get("granule_diameter_mm"):
+                rows.append(["Granule diameter", f"{perf['granule_diameter_mm']:.1f} mm (design)"])
+            if perf.get("fbt_volume_m3"):
+                rows.append(["Flow balance tank", _fmt(perf["fbt_volume_m3"], " m³")])
+
+            # BNR-specific parameters
+            if perf.get("v_anaerobic_m3") and perf.get("v_anoxic_m3"):
+                rows.append(["Zone volumes",
+                             f"Anaerobic {perf['v_anaerobic_m3']:.0f} m³ | "                             f"Anoxic {perf['v_anoxic_m3']:.0f} m³ | "                             f"Aerobic {perf.get('v_aerobic_m3',0):.0f} m³"])
+            if perf.get("clarifier_area_m2"):
+                rows.append(["Secondary clarifiers",
+                             f"{perf.get('n_clarifiers',2)} × {perf['clarifier_area_m2']/max(perf.get('n_clarifiers',2),1):.0f} m² "                             f"(total {perf['clarifier_area_m2']:.0f} m²)"])
+            if perf.get("v_anaerobic_m3"):  # BNR has RAS/MLR; AGS does not
+                rows.append(["Recycles", "RAS (return activated sludge) + MLR (4×Q nitrate recycle)"])
+
+            # Common outputs
+            if perf.get("o2_demand_kg_day"):
+                rows.append(["O₂ demand", _fmt(perf["o2_demand_kg_day"], " kg/day")])
+            if perf.get("sludge_production_kgds_day"):
+                rows.append(["Sludge production", _fmt(perf["sludge_production_kgds_day"], " kgDS/day")])
+
             eff = []
-            for k, l in [("effluent_bod_mg_l","BOD"),("effluent_tss_mg_l","TSS"),("effluent_tn_mg_l","TN"),("effluent_nh4_mg_l","NH₄")]:
-                if perf.get(k) is not None: eff.append(f"{l} {perf[k]:.0f}")
+            for k, l in [("effluent_bod_mg_l","BOD"),("effluent_tss_mg_l","TSS"),
+                         ("effluent_tn_mg_l","TN"),("effluent_nh4_mg_l","NH₄"),
+                         ("effluent_tp_mg_l","TP")]:
+                if perf.get(k) is not None: eff.append(f"{l} {perf[k]:.1f}")
             if eff: rows.append(["Effluent quality", "  ".join(eff) + " mg/L"])
+
             kwh = sd.get("specific_energy_kwh_kl", 0)
             if kwh: rows.append(["Specific energy", f"{kwh*1000:.0f} kWh/ML"])
+
             _docx_table(doc, rows, [7.0, 9.0])
             _docx_body(doc, f"Note: Process flow diagram for {scen_name} — see below.", 7)
 
