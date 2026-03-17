@@ -132,7 +132,11 @@ def render() -> None:
             st.session_state[f"qa_{scenario.scenario_id}"] = _qa_result
         except Exception:
             pass  # QA must never break the results page
-    render_confidence_band()
+    try:
+        from apps.wastewater_app.pages.qa_panel import render_confidence_band
+        render_confidence_band()
+    except Exception:
+        pass  # confidence band must never crash the results page
 
     # ── Tab layout ─────────────────────────────────────────────────────────
     tab_eng, tab_cost, tab_carbon, tab_risk = st.tabs(
