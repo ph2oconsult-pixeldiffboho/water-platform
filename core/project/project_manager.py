@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import shutil
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 import uuid
@@ -83,7 +83,7 @@ class ProjectManager:
         Serialise and save a project to JSON.
         Returns the path of the saved file.
         """
-        project.metadata.last_modified = datetime.utcnow().isoformat()
+        project.metadata.last_modified = datetime.now(timezone.utc).isoformat()
         file_path = self._project_path(project.metadata.project_id)
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(project.to_dict(), f, indent=2, default=str)
@@ -161,8 +161,8 @@ class ProjectManager:
         cloned.metadata.project_id = str(uuid.uuid4())
         cloned.metadata.project_name = new_name
         cloned.metadata.author = author or cloned.metadata.author
-        cloned.metadata.created_at = datetime.utcnow().isoformat()
-        cloned.metadata.last_modified = datetime.utcnow().isoformat()
+        cloned.metadata.created_at = datetime.now(timezone.utc).isoformat()
+        cloned.metadata.last_modified = datetime.now(timezone.utc).isoformat()
         cloned.metadata.version = "1.0.0"
         cloned.version_history = []
 
@@ -172,7 +172,7 @@ class ProjectManager:
         for old_id, scenario in cloned.scenarios.items():
             new_id = str(uuid.uuid4())
             scenario.scenario_id = new_id
-            scenario.created_at = datetime.utcnow().isoformat()
+            scenario.created_at = datetime.now(timezone.utc).isoformat()
             scenario.is_stale = True
             new_scenarios[new_id] = scenario
             if old_id == source_project.active_scenario_id:
@@ -222,8 +222,8 @@ class ScenarioManager:
         new_scenario.scenario_name = scenario_name
         new_scenario.scenario_type = scenario_type
         new_scenario.description = description
-        new_scenario.created_at = datetime.utcnow().isoformat()
-        new_scenario.last_modified = datetime.utcnow().isoformat()
+        new_scenario.created_at = datetime.now(timezone.utc).isoformat()
+        new_scenario.last_modified = datetime.now(timezone.utc).isoformat()
 
         project.add_scenario(new_scenario)
         project.log_change(f"Scenario '{scenario_name}' added")

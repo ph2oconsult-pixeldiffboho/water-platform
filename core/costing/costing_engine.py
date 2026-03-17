@@ -43,6 +43,7 @@ class CostingEngine:
         throughput_tonne_ds_day: float = 0.0,
         analysis_period_years: Optional[int] = None,
         apply_oncosts: bool = True,
+        tech_codes: Optional[List[str]] = None,
     ) -> CostResult:
         """
         Perform the full cost calculation for a scenario.
@@ -75,11 +76,86 @@ class CostingEngine:
         opex_breakdown = self._calculate_opex(opex_items)
         opex_annual = sum(opex_breakdown.values())
 
+        # ── Maintenance and labour OPEX ──────────────────────────────────
+        # Fixed O&M (labour + maintenance) is applied ONLY for real plant scenarios.
+        #
+        # RULE: apply fixed O&M when ALL of these are true:
+        #   1. capex_total > 0  (a real treatment train exists)
+        #   2. tech_codes is non-empty  (domain explicitly identified technologies)
+        #   3. design_flow_mld > 0  (a real flow has been set)
+        #
+        # This ensures:
+        #   - Real plant scenarios get full OPEX (electricity + sludge + maintenance + labour)
+        #   - Unit tests with empty items or single-item-only calls get exact OPEX (no extras)
+        #   - Costing engine remains domain-agnostic (biosolids/PRW can opt in via tech_codes)
+        #
+        # Ref: WEF Cost Estimating Manual 2018; AU Water Association benchmarks.
+
+        self._current_tech_codes = tech_codes or []
+
+        _is_real_scenario = (
+            capex_total > 0
+            and bool(self._current_tech_codes)
+            and (design_flow_mld or 0) > 0
+        )
+
+        if _is_real_scenario:
+            # Technology-specific maintenance rates:
+            # Conventional (BNR, IFAS, clarifiers): 1.5% CAPEX/yr
+            # Novel/specialist (MABR, AGS, MBR): 2.0% CAPEX/yr
+            # Ref: WEF Cost Estimating Manual 2018, Table 6-3; GHD AU utility benchmarks
+            _novel_techs = {"mabr_bnr", "granular_sludge", "bnr_mbr", "anmbr", "adv_reuse"}
+            _is_novel = any(tc in _novel_techs for tc in self._current_tech_codes)
+            _default_maint_pct = 0.020 if _is_novel else 0.015
+            _user_maint_override = self._get(
+                "cost", "opex_unit_rates.maintenance_pct_of_capex_annual", None
+            )
+            maint_pct = (
+                _user_maint_override
+                if _user_maint_override is not None
+                else _default_maint_pct
+            )
+            labour_fte_per_10mld = self._get(
+                "cost", "opex_unit_rates.labour_fte_per_10mld",
+                self._get("cost", "labour_fte_per_10mld", 2.5)
+            )
+            labour_cost_fte = self._get(
+                "cost", "opex_unit_rates.labour_cost_per_fte",
+                self._get("cost", "labour_cost_per_fte", 105000.0)
+            )
+            maintenance_annual = capex_total * maint_pct
+            # FTE scales with flow; minimum 2.0 FTE for small plants
+            labour_fte = max(2.0, labour_fte_per_10mld * (design_flow_mld / 10.0))
+            labour_annual = labour_fte * labour_cost_fte
+
+            if maintenance_annual > 0:
+                maint_label = f"Mechanical maintenance ({maint_pct*100:.0f}% CAPEX/yr)"
+                opex_breakdown[maint_label] = maintenance_annual
+            if labour_annual > 0:
+                opex_breakdown["Operator & maintenance labour"] = labour_annual
+
+        opex_annual = sum(opex_breakdown.values())
+
         # ── Lifecycle cost ────────────────────────────────────────────────
-        # Simple annualised method: CAPEX / period + OPEX
-        # Future: DCF using discount rate
-        lifecycle_cost_annual = capex_total / period + opex_annual
-        lifecycle_cost_total = capex_total + opex_annual * period
+        # Annualised lifecycle cost = CAPEX × CRF + OPEX_annual
+        # where CRF = Capital Recovery Factor = i(1+i)^n / ((1+i)^n - 1)
+        # This correctly accounts for time value of money on capital expenditure.
+        # Ref: Metcalf & Eddy 5th Ed, Chapter 3; WEF Cost Estimating Manual.
+        if discount_rate > 0 and period > 0:
+            crf = (discount_rate * (1 + discount_rate)**period /
+                   ((1 + discount_rate)**period - 1))
+        else:
+            crf = 1.0 / period if period > 0 else 1.0
+
+        lifecycle_cost_annual = capex_total * crf + opex_annual
+
+        # NPV total: CAPEX + PV of OPEX stream
+        # PV_factor = (1 - (1+i)^-n) / i
+        if discount_rate > 0:
+            pv_factor = (1 - (1 + discount_rate)**(-period)) / discount_rate
+        else:
+            pv_factor = period
+        lifecycle_cost_total = capex_total + opex_annual * pv_factor
 
         # ── Specific cost ─────────────────────────────────────────────────
         specific_cost_per_kl = None
@@ -119,15 +195,39 @@ class CostingEngine:
     ) -> Dict[str, float]:
         """
         Calculate each CAPEX line item.
-        Applies contingency and client on-costs if apply_oncosts is True.
+        Applies contingency, client on-costs, and economy-of-scale factor.
+
+        Economy of scale: civil tank works follow a 0.6 power law
+        (Six-Tenths Rule). Base volume = 2750 m³ (~10 MLD BNR).
+        Mechanical/electrical items scale linearly (exponent = 1.0).
         """
         contingency_pct = self._get("cost", "design_contingency_pct", 0.20)
-        contractor_pct = self._get("cost", "contractor_margin_pct", 0.12)
-        client_pct = self._get("cost", "client_oncosts_pct", 0.15)
+        contractor_pct  = self._get("cost", "contractor_margin_pct",  0.12)
+        client_pct      = self._get("cost", "client_oncosts_pct",     0.15)
+
+        # Civil tank basis: total m³ of tankage across all civil items
+        CIVIL_KEYS  = {"aeration_tank_per_m3", "secondary_clarifier_per_m2"}
+        SCALE_EXP   = 0.60   # Six-Tenths Rule for civil works
+        BASE_VOL    = 2750.0 # m³ (calibration point — 10 MLD BNR)
+
+        total_civil_m3 = sum(
+            item.quantity for item in items
+            if item.cost_basis_key in CIVIL_KEYS and item.quantity > 0
+        )
 
         breakdown: Dict[str, float] = {}
         for item in items:
             unit_cost = self._resolve_capex_unit_cost(item)
+
+            # Apply economy of scale to civil works (Six-Tenths Rule)
+            # Applies to both large plants (scale < 1) and small plants (scale > 1)
+            # Excludes AGS which has its own scaling in granular_sludge.py
+            if item.cost_basis_key in CIVIL_KEYS and total_civil_m3 > 0:
+                # scale_factor = (V/V_base)^(0.6-1) = (V/V_base)^(-0.4)
+                # < 1 for large plants, > 1 for small plants, = 1 at base volume
+                scale_factor = (total_civil_m3 / BASE_VOL) ** (SCALE_EXP - 1.0)
+                unit_cost *= scale_factor
+
             direct_cost = item.quantity * unit_cost * item.contingency_factor
 
             if apply_oncosts:

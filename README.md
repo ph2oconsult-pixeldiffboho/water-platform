@@ -1,133 +1,169 @@
 # Water Utility Planning Platform
 
-Integrated concept-stage planning platform for water utilities and consultants.
+Capital planning decision support platform for water utilities and consultants.
+Produces concept-level options studies aligned with how utilities make investment decisions.
 
-## Applications
+## What it does
 
-| App | Domain | Entry Point |
-|-----|--------|-------------|
-| Wastewater Treatment Planner | Activated sludge, BNR, MBR | `streamlit run apps/wastewater_app/app.py` |
-| Drinking Water Treatment Planner | Coagulation, DAF, GAC, RO, UV | `streamlit run apps/drinking_water_app/app.py` |
-| Purified Recycled Water Planner | AWT, LRV, QMRA, HACCP | `streamlit run apps/prw_app/app.py` |
-| Biosolids & Sludge Management | Digestion, dewatering, disposal | `streamlit run apps/biosolids_app/app.py` |
+Given wastewater treatment options and site conditions, the platform:
+
+1. **Calculates** engineering performance — energy, sludge, effluent quality, carbon
+2. **Costs** each option — CAPEX, OPEX, lifecycle cost, $/kL treated
+3. **Ranks** options using a strict compliance → cost → risk hierarchy
+4. **Identifies** non-viable options with engineering reasons
+5. **Generates** alternative pathways (e.g. BNR + thermal management instead of MABR)
+6. **Frames** the decision for executives: two options, what you get, what you accept
+7. **Produces** a full options study report in Word format
+
+Current scope: wastewater treatment (activated sludge domain).
+Stubs ready for drinking water, PRW, and biosolids.
+
+---
 
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
 pip install -r requirements.txt
-
-# 2. Run the wastewater application (Stage 1 reference implementation)
 streamlit run apps/wastewater_app/app.py
 
-# 3. Run the test suite
-python3 -m pytest tests/ -v
-# or without pytest:
-python3 run_tests.py
+python3 run_tests.py           # full test suite
+python3 run_tests.py --fast    # skip benchmarks
+python3 run_tests.py --benchmark  # benchmark suite only
 ```
+
+---
 
 ## Platform Structure
 
 ```
 water_platform/
-├── core/                    # Shared core engine (domain-agnostic)
-│   ├── project/             # ProjectModel, ProjectManager, ScenarioManager
-│   ├── assumptions/         # AssumptionsManager + YAML defaults per domain
-│   ├── costing/             # CostingEngine: CAPEX, OPEX, lifecycle cost
-│   ├── carbon/              # CarbonEngine: Scope 1/2/3, avoided emissions
-│   ├── risk/                # RiskEngine: scoring, aggregation, narrative
-│   ├── validation/          # ValidationEngine: core + domain hook system
-│   └── reporting/           # ReportEngine: structured report objects
+├── core/                       # Domain-agnostic shared engines
+│   ├── costing/                # CostingEngine: CAPEX, OPEX, LCC, $/kL
+│   ├── carbon/                 # CarbonEngine: Scope 1/2/3, N2O, avoided
+│   ├── risk/                   # RiskEngine: 5x5 matrix, category scores
+│   ├── validation/             # ValidationEngine: hook system
+│   ├── reporting/              # ReportEngine: structured report objects
+│   ├── assumptions/            # AssumptionsManager: YAML defaults per domain
+│   └── project/                # ProjectModel, ScenarioManager
 │
-├── domains/                 # Domain-specific modules (engineering science)
-│   ├── wastewater/          # BNR, MBR plugins + domain interface
-│   ├── drinking_water/      # (stub — ready to build)
-│   ├── prw/                 # (stub — ready to build)
-│   └── biosolids/           # (stub — ready to build)
+├── domains/wastewater/         # Wastewater engineering science
+│   ├── technologies/           # BNR, MBR, AGS, MABR+BNR, IFAS/MBBR, ...
+│   ├── domain_interface.py     # Orchestrates run_scenario()
+│   ├── decision_engine.py      # Capital planning decision logic
+│   ├── technology_fit.py       # Green/amber/red fit ratings
+│   └── risk_items.py           # Scenario-sensitive risk items
 │
-├── apps/                    # Streamlit user interfaces
-│   ├── shared/              # Shared UI components and session state
-│   ├── wastewater_app/      # 6-page wastewater application (complete)
-│   ├── drinking_water_app/  # (stub — ready to build)
-│   ├── prw_app/             # (stub — ready to build)
-│   └── biosolids_app/       # (stub — ready to build)
+├── apps/wastewater_app/pages/  # 11-page Streamlit application
+│   ├── page_01-04              # Setup, inputs, selection, results
+│   ├── page_05                 # Multi-scenario comparison
+│   ├── page_06                 # Report download
+│   ├── page_09-10              # Assumptions viewer, sensitivity analysis
+│   └── page_11_decision.py     # Decision Framework
 │
-├── data/                    # YAML data libraries
-│   ├── cost_libraries/      # CAPEX/OPEX unit costs
-│   ├── carbon_libraries/    # Emission factors
-│   └── benchmark_data/      # Industry benchmark ranges
+├── tests/
+│   ├── benchmark/              # 8-scenario regression suite (282 checks)
+│   ├── core/                   # Engine unit tests
+│   ├── domains/wastewater/     # Engineering + decision engine tests
+│   ├── integration/            # Full pipeline integration
+│   └── test_release_readiness.py
 │
-├── storage/projects/        # Saved project JSON files
-├── tests/                   # Unit + integration tests (35 tests)
-└── config/                  # Platform configuration
+└── docs/benchmark_scenarios.md
 ```
 
-## Architecture Principles
+---
 
-**Share the framework. Separate the science.**
+## Decision Engine
 
-- The shared core handles: costing, carbon, risk, validation, reporting
-- Domain modules handle: engineering calculations, process science
-- Technology plugins are isolated: add a new technology by adding one file
-- All assumptions are in YAML: editable, versioned, auditable
+`domains/wastewater/decision_engine.py`
 
-## Adding a New Treatment Technology (Wastewater Example)
+### Selection hierarchy (strictly enforced)
 
-1. Create `domains/wastewater/technologies/my_technology.py`
-2. Inherit from `BaseTechnology` and implement `calculate()`
-3. Add to `TECHNOLOGY_REGISTRY` in `domains/wastewater/domain_interface.py`
-4. Add default assumptions to `core/assumptions/defaults/wastewater_defaults.yaml`
-5. Write unit tests in `tests/domains/wastewater/`
+```
+1. COMPLIANCE   mandatory — non-compliant options excluded first
+2. COST         lowest LCC among compliant options wins
+3. RISK         tiebreaker only — never overrides cost
+```
 
-No other files need to change.
+If only one option is compliant, it is recommended regardless of cost or risk.
+Compliance is non-negotiable.
 
-## Adding a New Domain Application
+### Key outputs
 
-1. Copy the stub from `domains/drinking_water/` and implement the domain interface
-2. Copy the app structure from `apps/drinking_water_app/` and adapt the pages
-3. Add domain defaults YAML to `core/assumptions/defaults/`
-4. The shared core engines work unchanged
+| Field | Description |
+|-------|-------------|
+| `selection_basis` | Why chosen: "Sole compliant" / "Lowest LCC" / "All fail — reference only" |
+| `non_viable` | Options that fail compliance with reasons |
+| `regulatory_note` | Explains why low regulatory confidence does not block recommendation |
+| `alternative_pathways` | Engineered interventions to make non-viable options viable |
+| `client_framing` | Two-option executive framing: what you get / risks you accept |
+| `confidence` | High / Moderate / Low with drivers and caveats |
+| `profiles` | Delivery model, constructability, staging, ops complexity, failure modes, regulatory |
 
-## Key Engineering Modules Implemented
+### Example: S2 Cold Climate Nitrification (12C)
 
-### Wastewater Domain
-- **BNRTechnology**: Activated sludge with biological N and P removal
-  - A2O, modified Bardenpho, UCT configurations
-  - Sludge yield via endogenous decay model (Metcalf & Eddy)
-  - Oxygen demand (carbonaceous + nitrification − denitrification credit)
-  - N₂O and CH₄ Scope 1 process emissions (IPCC factors)
-  - Secondary clarifier sizing
-  - Chemical P removal (ferric chloride / alum)
+```
+Selection basis: Sole compliant option — compliance constraint forces selection
+Recommended: MABR + BNR
+Non-viable: BNR (NH4=6.0 > target 3.0), AGS (NH4=4.5, TP=1.5), IFAS (TN=14.4)
 
-- **MBRTechnology**: Submerged hollow-fibre/flat-sheet MBR
-  - Membrane area from design flux and net/gross factor
-  - Scour aeration energy (SAD-based)
-  - CIP chemical demand (NaOCl, citric acid)
-  - N₂O Scope 1 emissions
-  - LRV credits for pathogen removal
+Alternative pathway: BNR + thermal management (>=15C) + supplemental carbon
+  LCC: $1,324k/yr vs MABR $1,815k/yr  — $491k/yr cheaper
+  CAPEX increment: +$0.8M
+  Procurement: D&C viable
+  Regulatory: High confidence
 
-### Shared Core
-- **CostingEngine**: CAPEX/OPEX with library lookup + user override
-- **CarbonEngine**: Scope 1/2/3 + avoided emissions + carbon pricing
-- **RiskEngine**: 5×5 matrix, weighted categories, automated narrative
-- **ValidationEngine**: Core checks + domain hook registration system
-- **ReportEngine**: Structured report objects → Streamlit / JSON / future PDF
+Recommendation confidence: Moderate
+  Caveat: Alternative pathway available and cheaper — evaluate before committing to MABR
+```
 
-## Project Data Model
+---
 
-Every project stores:
-- `ProjectMetadata`: name, domain, plant, author, dates, version
-- `ScenarioModel[]`: inputs, treatment pathway, assumptions, all results
-- `CostResult`: CAPEX/OPEX breakdown, lifecycle cost, specific cost
-- `CarbonResult`: Scope 1/2/3, avoided, net, carbon cost
-- `RiskResult`: category scores, item register, narrative
-- `ValidationResult`: pass/warn/fail messages per field
+## Test Suite
 
-Projects are saved as JSON and support full round-trip serialisation.
+| File | Tests | Covers |
+|------|-------|--------|
+| `test_costing_engine.py` | 12 | CAPEX/OPEX/LCC |
+| `test_carbon_engine.py` | 7 | Scope 1/2/3 |
+| `test_engineering_calculations.py` | 30 | O2 demand, SRT, sludge |
+| `test_bnr_mbr.py` | 16 | BNR + MBR technology |
+| `test_decision_engine.py` | 65 | Hierarchy, new fields, consistency |
+| `test_wastewater_full_run.py` | 8 | Full pipeline |
+| `run_benchmarks.py` | 282 | 8 scenarios x 17 metrics + 8 decision-tension checks |
+| `test_release_readiness.py` | 60 | Release gate |
+
+### Benchmark scenarios
+
+| ID | Scenario | Key constraint |
+|----|----------|----------------|
+| S1 | Medium municipal BNR baseline | Reference — all compliant |
+| S2 | Cold climate nitrification (12C) | Only MABR achieves NH4<3 |
+| S3 | Tight ammonia compliance (NH4<1) | All achievable at 18C |
+| S4 | Capacity expansion, footprint constrained | AGS footprint 32% less |
+| S5 | Carbon-limited denitrification (COD/TKN=5.3) | All fail TN without carbon |
+| S6 | High electricity ($0.22/kWh) | AGS wins LCC |
+| S7 | High sludge disposal ($450/t DS) | Sludge = 33% of BNR OPEX |
+| S8 | Reuse-ready polishing | MBR TSS<1 essential for RO |
+
+---
+
+## Engineering References
+
+Metcalf & Eddy 5th Ed | WEF Cost Estimating Manual 2018 | de Kreuk 2007 |
+GE/Ovivo 2017 | IWA 2022 | IPCC 2019 Tier 1 | AU Water Association benchmarks
+
+All costs AUD 2024. CAPEX ±40% concept estimate.
+Not for procurement, funding approval, or regulatory submission.
+
+---
 
 ## Version History
 
-| Version | Date | Notes |
-|---------|------|-------|
-| 1.0.0 | 2024 | Initial release — shared core + wastewater domain |
-
+| Version | Notes |
+|---------|-------|
+| 1.0 | Initial — shared core + wastewater domain |
+| 1.1 | Engineering remediation (O2, sludge, cold T, N2O) |
+| 1.2 | Benchmark pack, technology fit, sensitivity, report |
+| 1.3 | Stabilisation sprint (costing, schema, datetime) |
+| 1.4 | Benchmark regression framework (282 checks, decision-tension) |
+| 1.5 | Decision engine (delivery, constructability, staging, failure modes) |
+| 1.6 | Decision integrity (compliance hierarchy, alternative pathways, client framing) |

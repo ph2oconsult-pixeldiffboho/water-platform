@@ -146,6 +146,14 @@ class GranularSludgeTechnology(BaseTechnology):
 
         flow = design_flow_mld * 1000.0   # m³/day
 
+        # ── Temperature: inherit from scenario if not explicitly overridden ──
+        import dataclasses as _dc
+        _T_default = next(f.default for f in _dc.fields(type(inputs))
+                          if f.name == "design_temperature_celsius")
+        if inputs.design_temperature_celsius == _T_default:
+            _scenario_T = self._get_eng("influent_temperature_celsius", _T_default)
+            inputs = _dc.replace(inputs, design_temperature_celsius=_scenario_T)
+
         # ── 1. Influent loads ──────────────────────────────────────────────
         inf = self._load_influent()
         bod_load = flow * inf["bod_mg_l"] / 1000.0
@@ -189,7 +197,21 @@ class GranularSludgeTechnology(BaseTechnology):
         )
 
         # ── 3. Reactor volume ──────────────────────────────────────────────
-        reactor_m3 = (vss_prod * inputs.srt_days * 1000.0) / (mlss * vss_tss)
+        # Temperature penalty factors — computed in section 4 but needed here.
+        # Pre-compute from design temperature so reactor sizing is correct.
+        _T_pre = inputs.design_temperature_celsius
+        if _T_pre < 10.0:
+            _reactor_penalty = 1.40; _energy_penalty = 1.15; _eff_nh4_penalty = 5.0; _granule_stable = False
+        elif _T_pre < 12.0:
+            _reactor_penalty = 1.25; _energy_penalty = 1.08; _eff_nh4_penalty = 3.0; _granule_stable = False
+        elif _T_pre < 15.0:
+            _reactor_penalty = 1.10; _energy_penalty = 1.03; _eff_nh4_penalty = 1.5; _granule_stable = True
+        else:
+            _reactor_penalty = 1.0;  _energy_penalty = 1.0;  _eff_nh4_penalty = 0.0; _granule_stable = True
+
+        # Apply cold-temperature reactor volume penalty (extended SRT needed)
+        _cold_srt = inputs.srt_days * _reactor_penalty
+        reactor_m3 = (vss_prod * _cold_srt * 1000.0) / (mlss * vss_tss)
         # Number of SBR reactors for continuous flow: typically 3 reactors in rotation
         n_reactors  = max(3, int(design_flow_mld / 10) + 2)   # scale with plant size
         vol_per_reactor = reactor_m3 / n_reactors
@@ -224,20 +246,48 @@ class GranularSludgeTechnology(BaseTechnology):
         theta_nit = 1.072
         T_factor  = theta_nit ** (T - 20.0)
 
-        if T < 12.0:
+        # ── Granule stability and performance penalties at cold temperature ──
+        # Literature basis:
+        #   van Dijk et al. (2020) — full-scale Nereda below 10°C: granule fragmentation,
+        #     deteriorating settling, washout events. SVI increases from ~50 to >200 mL/g.
+        #   de Kreuk (2007) — bio-P deteriorates below 15°C (PAO activity suppressed).
+        #   Pronk et al. (2015) — nitrification unreliable below 12°C without SRT extension.
+        #
+        # Implementation: penalise effluent quality and add volume/SRT buffer for cold climates.
+
+        if T < 10.0:
+            # Critical: granule fragmentation risk; plant may not achieve stable operation
             r.notes.warn(
-                f"⚠ Design temperature {T}°C is below 12°C. "
-                f"Nitrification rate reduced to {T_factor*100:.0f}% of 20°C value. "
-                "Granule stability is also at risk — granules may fragment at low temperatures. "
-                "Full-scale AGS plants have reported performance issues below 10°C "
-                "(van Dijk 2020). Consider tank insulation or indoor installation."
+                f"⚠️ CRITICAL: T={T}°C — below practical minimum for AGS. "
+                "Full-scale AGS plants (van Dijk 2020) show granule fragmentation, "
+                "SVI > 200 mL/g, and washout events below 10°C. "
+                "This technology is NOT recommended at this temperature without thermal management. "
+                "Consider heated reactor, BNR, or IFAS instead."
             )
+            # Penalise: effluent quality severely impaired, energy up for mixing
+            pass  # penalties already set above in section 3
+
+        elif T < 12.0:
+            r.notes.warn(
+                f"⚠️ T={T}°C — granule stability at risk. "
+                f"Nitrification rate = {T_factor*100:.0f}% of 20°C. "
+                "Granule fragmentation possible (van Dijk 2020). "
+                "SRT must be extended; biological P removal unreliable. "
+                "Recommend: chemical P backup, tank insulation, SRT extension."
+            )
+            pass  # penalties already set above in section 3
+
         elif T < 15.0:
             r.notes.warn(
-                f"⚠ Design temperature {T}°C is approaching granule stability boundary. "
-                f"Nitrification rate reduced to {T_factor*100:.0f}% of 20°C value. "
-                "Biological P removal may become unreliable."
+                f"⚠️ T={T}°C — approaching granule stability boundary. "
+                f"Nitrification reduced to {T_factor*100:.0f}%. "
+                "Biological P removal may become unreliable (de Kreuk 2007). "
+                "Enable chemical P polish for reliable TP compliance."
             )
+            pass  # penalties already set above in section 3
+
+        else:
+            pass  # penalties already set above in section 3
 
         # C:N ratio check — granule feast/famine requires sufficient organic loading
         c_n_ratio = inf["bod_mg_l"] / max(inf["tn_mg_l"], 1.0)
@@ -269,7 +319,12 @@ class GranularSludgeTechnology(BaseTechnology):
         o2_dn    = 2.86 * tn_removed * snd_dn_frac               # SND credit
         o2_kg    = max(0.0, o2_c + o2_n - o2_dn)
 
-        aer_kwh = o2_kg / sae
+        # Cold temperature energy: lower nitrification O2 reduces aeration slightly,
+        # but longer SBR cycle times (more mixing, more cycles) offset this.
+        # For concept planning, apply penalty to base 20°C O2 demand to avoid
+        # showing decreasing energy with temperature (would mislead planners).
+        _o2_base_T20 = o2_kg / max(0.5, T_factor)   # reverse Arrhenius to get base demand
+        aer_kwh = (max(o2_kg, _o2_base_T20 * 0.90) / sae) * _energy_penalty
         mix_kwh = reactor_m3 * 0.005 * 24.0   # 5 W/m³ low-speed agitators between cycles
         dec_kwh = flow * 0.005                  # Decant pumping ~5 Wh/m³
 
@@ -277,12 +332,14 @@ class GranularSludgeTechnology(BaseTechnology):
         r.energy.mixing_kwh_day   = round(mix_kwh, 1)
         # AGS SBR: no RAS or MLR (settled sludge stays in reactor — no clarifier)
         # Pumping: decant discharge + WAS feed pump
-        # Ancillary (screening, UV, SCADA, sludge handling): 70 kWh/ML
-        ancillary_kwh = 70.0 * design_flow_mld
+        # Ancillary: 50 kWh/ML (lower than BNR because no clarifier drives,
+        # no RAS/WAS controls — saves ~15 kWh/ML vs CAS baseline of 70)
+        ancillary_kwh = 50.0 * design_flow_mld
         r.energy.pumping_kwh_day  = round(dec_kwh + ancillary_kwh, 1)
         r.notes.add_assumption(
             f"Pumping: decant={dec_kwh:.0f} + ancillary={ancillary_kwh:.0f} kWh/day "
-            "(no RAS or MLR — AGS SBR retains sludge in reactor)"
+            "(no RAS or MLR — AGS SBR retains sludge; ancillary 50 kWh/ML vs 70 for BNR "
+            "because no clarifier drives or RAS/WAS controls)"
         )
 
         r.notes.add_assumption(
@@ -294,7 +351,10 @@ class GranularSludgeTechnology(BaseTechnology):
 
         # ── 6. Chemical consumption ────────────────────────────────────────
         chems: Dict[str, float] = {}
-        if inputs.chemical_p_polish:
+        # Compute ferric dose when chemical P polish needed
+        # (explicit flag OR TP target < 0.5 mg/L where biological AGS alone insufficient)
+        _needs_chem_p = inputs.chemical_p_polish or eff_tp < 0.5
+        if _needs_chem_p:
             p_mol = tp_removed * 1000.0 / 31.0
             chems["ferric_chloride_kg_day"] = round(p_mol * 2.5 * 162.2 / 1000.0, 2)
             r.notes.add_assumption(
@@ -305,10 +365,17 @@ class GranularSludgeTechnology(BaseTechnology):
         # ── 7. Effluent quality ────────────────────────────────────────────
         r.performance.effluent_bod_mg_l = eff_bod
         r.performance.effluent_tss_mg_l = eff_tss
-        r.performance.effluent_nh4_mg_l = eff_nh4
+        # Cold temperature degrades nitrification — effluent NH4 increases
+        r.performance.effluent_nh4_mg_l = round(
+            min(eff_nh4 + _eff_nh4_penalty,
+                inf["tn_mg_l"] * self._get_eng("influent_nh4_mg_l", 35.0) /
+                max(self._get_eng("influent_tkn_mg_l", 45.0), 1.0) * 0.8),
+            2
+        )
         r.performance.effluent_tn_mg_l  = eff_tn
+        _bio_p_ok = inputs.biological_p_removal and T >= 15.0
         r.performance.effluent_tp_mg_l  = (
-            eff_tp if (inputs.biological_p_removal and T >= 15.0) or inputs.chemical_p_polish
+            eff_tp if _bio_p_ok or inputs.chemical_p_polish or eff_tp < 0.5
             else min(eff_tp + 0.5, 1.5)
         )
         r.performance.additional.update({
@@ -346,8 +413,11 @@ class GranularSludgeTechnology(BaseTechnology):
         r.risk.implementation_risk    = "Moderate"   # Limited vendors; specialist startup required
 
         r.risk.additional_flags["granule_stability_risk"] = (
-            "High" if T < 12.0 else "Moderate" if T < 15.0 else "Low"
+            "Critical" if T < 10.0 else "High" if T < 12.0 else "Moderate" if T < 15.0 else "Low"
         )
+        r.performance.additional["granule_stable"] = _granule_stable
+        r.performance.additional["cold_reactor_penalty"] = round(_reactor_penalty, 2)
+        r.performance.additional["design_temperature_celsius"] = T
         r.risk.additional_flags["bio_p_reliability_risk"] = (
             "High" if T < 12.0 else "Moderate" if T < 15.0 else "Low"
         )
@@ -439,7 +509,10 @@ class GranularSludgeTechnology(BaseTechnology):
                 "t DS/day",
             ),
         ]
-        if inputs.chemical_p_polish and "ferric_chloride_kg_day" in chems:
+        # Auto-trigger chemical P polish if TP target < 0.5 mg/L
+        # AGS biological P is reliable to ~0.3-0.5 mg/L; below this, chemical polish needed.
+        apply_chem_p = inputs.chemical_p_polish or eff_tp < 0.5
+        if apply_chem_p and "ferric_chloride_kg_day" in chems:
             r.opex_items.append(CostItem(
                 "Ferric chloride (P polish)",
                 "ferric_chloride_per_kg",

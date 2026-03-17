@@ -9,7 +9,7 @@ are provided via the domain_specific_outputs dict in ScenarioModel.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from core.project.project_model import (
@@ -40,7 +40,7 @@ class ReportObject:
     domain: str = ""
     prepared_by: str = ""
     reviewed_by: str = ""
-    generated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     report_version: str = "1.0"
 
     # Ordered sections
@@ -57,8 +57,13 @@ class ReportObject:
     # Chart data (Plotly-compatible dicts)
     charts: Dict[str, Any] = field(default_factory=dict)
 
+    # Decision framework output (populated when wastewater domain scenarios are present)
+    decision: Optional[Any] = None  # ScenarioDecision from decision_engine
+
     # Metadata
     scenario_names: List[str] = field(default_factory=list)
+    # Design data per scenario: {scenario_name: {tech_code: perf_dict, design_params: {...}}}
+    scenario_design_data: Dict[str, Any] = field(default_factory=dict)
     preferred_scenario: Optional[str] = None
 
 
@@ -141,6 +146,13 @@ class ReportEngine:
                 content=report.risk_table,
             ))
 
+        # ── Scenario definitions section ──────────────────────────────────
+        report.sections.append(ReportSection(
+            title="Scenario Definitions",
+            content_type="table",
+            content=self._build_scenario_definition_table(scenarios),
+        ))
+
         # ── Comparison table ──────────────────────────────────────────────
         if len(scenarios) > 1:
             report.comparison_table = self._build_comparison_table(scenarios)
@@ -150,6 +162,202 @@ class ReportEngine:
                 content=report.comparison_table,
             ))
             report.charts["comparison_radar"] = self._build_radar_chart_data(scenarios)
+
+        # ── Decision framework ───────────────────────────────────────────
+        # Run decision engine for wastewater scenarios with full results
+        decision_scenarios = [
+            s for s in scenarios
+            if s.cost_result and s.risk_result and s.domain_specific_outputs
+               and s.treatment_pathway
+        ]
+        if decision_scenarios:
+            try:
+                from domains.wastewater.decision_engine import evaluate_scenario
+                from domains.wastewater.input_model import WastewaterInputs
+
+                # Reconstruct inputs from first scenario's domain_inputs
+                di = decision_scenarios[0].domain_inputs or {}
+                known_fields = {f for f in WastewaterInputs.__dataclass_fields__}
+                inp_kwargs = {k: v for k, v in di.items() if k in known_fields}
+                try:
+                    ref_inputs = WastewaterInputs(**inp_kwargs)
+                except Exception:
+                    ref_inputs = WastewaterInputs()
+
+                report.decision = evaluate_scenario(decision_scenarios, ref_inputs)
+
+                # Add decision sections to report
+                d = report.decision
+                if d and d.recommended_tech:
+                    report.sections.append(ReportSection(
+                        title="Decision Framework",
+                        content_type="decision",
+                        content={
+                            "selection_basis": d.selection_basis,
+                            "recommended_label": d.recommended_label,
+                            "non_viable": d.non_viable,
+                            "why_recommended": d.why_recommended,
+                            "key_risks": d.key_risks,
+                            "regulatory_note": getattr(d, "regulatory_note", ""),
+                            "trade_offs": d.trade_offs,
+                            "conclusion": d.conclusion,
+                        },
+                        notes=d.selection_basis,
+                    ))
+
+                    # Alternative pathways section
+                    alt_paths = getattr(d, "alternative_pathways", [])
+                    if alt_paths:
+                        report.sections.append(ReportSection(
+                            title="Alternative Pathways",
+                            content_type="list",
+                            content=[{
+                                "tech_label": p.tech_label,
+                                "intervention": p.intervention,
+                                "capex_delta_m": p.capex_delta_m,
+                                "opex_delta_k": p.opex_delta_k,
+                                "lcc_total_k": p.lcc_total_k,
+                                "achieves_compliance": p.achieves_compliance,
+                                "residual_risks": p.residual_risks,
+                                "procurement": p.procurement,
+                                "regulatory": p.regulatory,
+                                "summary": p.summary,
+                            } for p in alt_paths],
+                        ))
+
+                    # Per-technology profiles (delivery, constructability, etc.)
+                    if d.profiles:
+                        profiles_content = {}
+                        for name, profile in d.profiles.items():
+                            profiles_content[name] = {
+                                "delivery_recommended": profile.delivery.recommended_model,
+                                "delivery_dnc":         profile.delivery.dnc.value,
+                                "delivery_dbom":        profile.delivery.dbom.value,
+                                "delivery_alliance":    profile.delivery.alliance.value,
+                                "delivery_note":        profile.delivery.procurement_note,
+                                "construct_overall":    profile.constructability.overall.value,
+                                "construct_brownfield": profile.constructability.brownfield_note,
+                                "construct_tiein":      profile.constructability.tie_in_risk,
+                                "staging_can_stage":    profile.staging.can_stage,
+                                "staging_stages":       profile.staging.stages,
+                                "ops_overall":          profile.ops_complexity.overall.value,
+                                "ops_skill":            profile.ops_complexity.operator_skill,
+                                "failure_critical":     profile.failure_modes.critical_note,
+                                "failure_modes":        [
+                                    {"name": f.name, "likelihood": f.likelihood,
+                                     "consequence": f.consequence, "mitigation": f.mitigation}
+                                    for f in profile.failure_modes.modes
+                                ],
+                                "reg_overall":          profile.regulatory.overall.value,
+                                "reg_note":             profile.regulatory.note,
+                            }
+                        report.sections.append(ReportSection(
+                            title="Technology Profiles",
+                            content_type="profiles",
+                            content=profiles_content,
+                        ))
+
+                    # Confidence
+                    conf = getattr(d, "confidence", None)
+                    if conf:
+                        report.sections.append(ReportSection(
+                            title="Recommendation Confidence",
+                            content_type="text",
+                            content=(
+                                f"**{conf.level}**\n\n"
+                                "Drivers:\n" + "\n".join(f"- {dr}" for dr in conf.drivers) +
+                                "\n\nCaveats:\n" + "\n".join(f"- {c}" for c in conf.caveats)
+                            ),
+                        ))
+
+                    # Financial risk perspective
+                    cf_fr = getattr(d, "client_framing", None)
+                    alt_fr = getattr(d, "alternative_pathways", [])
+                    if cf_fr and alt_fr:
+                        a_fr = alt_fr[0]
+                        report.sections.append(ReportSection(
+                            title="Financial Risk Perspective",
+                            content_type="list",
+                            content=[
+                                {
+                                    "dimension": "CAPEX exposure",
+                                    "option_a": next((b for b in cf_fr.option_a_bullets if "CAPEX" in b), "—"),
+                                    "option_b": next((b for b in cf_fr.option_b_bullets if "CAPEX" in b), "—"),
+                                },
+                                {
+                                    "dimension": "OPEX character",
+                                    "option_a": "Moderate — electricity + vendor DBOM fee",
+                                    "option_b": "Higher — heating energy + methanol (ongoing)",
+                                },
+                                {
+                                    "dimension": "Energy dependency",
+                                    "option_a": "Moderate — MABR gas-side pressure control",
+                                    "option_b": "High — continuous heating critical at 15°C",
+                                },
+                                {
+                                    "dimension": "Chemical dependency",
+                                    "option_a": "None — biological process only",
+                                    "option_b": "High — methanol supply, storage, dosing",
+                                },
+                                {
+                                    "dimension": "LCC sensitivity",
+                                    "option_a": "Electricity price, vendor contract fee",
+                                    "option_b": "Gas/heating energy price, methanol price",
+                                },
+                                {
+                                    "dimension": "Long-term financial risk",
+                                    "option_a": f"Vendor dependency; technology evolution risk",
+                                    "option_b": "Commodity price exposure; heating system replacement at 15–20yr",
+                                },
+                            ],
+                            notes=(
+                                f"Option A: {d.recommended_label}  |  "
+                                f"Option B: {a_fr.tech_label} + thermal management. "
+                                "Both carry ±25% LCC uncertainty at concept stage."
+                            ),
+                        ))
+
+                    # Strategic insight (two-pathway framing)
+                    si = getattr(d, "strategic_insight", "")
+                    if si:
+                        report.sections.append(ReportSection(
+                            title="Strategic Insight",
+                            content_type="text",
+                            content=si,
+                        ))
+
+                    # Recommended approach (parallel evaluation steps)
+                    ra = getattr(d, "recommended_approach", [])
+                    if ra:
+                        report.sections.append(ReportSection(
+                            title="Recommended Approach",
+                            content_type="list",
+                            content=ra,
+                        ))
+
+                    # Update executive summary to use decision engine output
+                    report.executive_summary = self._build_decision_executive_summary(
+                        project, scenarios, d
+                    )
+
+            except Exception as _decision_err:
+                # Decision engine failure must not break report generation
+                import warnings
+                warnings.warn(f"Decision engine failed: {_decision_err}")
+
+        # ── Key warnings section ──────────────────────────────────────────
+        report.sections.append(ReportSection(
+            title="Warnings and Engineering Flags",
+            content_type="table",
+            content=self._build_warnings_table(scenarios),
+        ))
+
+        # ── Limitations and uncertainties ─────────────────────────────────
+        report.sections.append(ReportSection(
+            title="Limitations and Uncertainties",
+            content_type="text",
+            content=self._build_limitations_text(scenarios),
+        ))
 
         # ── Assumptions appendix ──────────────────────────────────────────
         if include_assumptions and scenarios:
@@ -164,6 +372,18 @@ class ReportEngine:
                     content_type="table",
                     content=report.assumptions_appendix,
                 ))
+
+        # ── Design data per scenario (for PFD and design tables) ──────────
+        for s in scenarios:
+            eng = s.domain_specific_outputs.get("engineering_summary", {})
+            tp  = s.domain_specific_outputs.get("technology_performance", {})
+            report.scenario_design_data[s.scenario_name] = {
+                "tech_sequence": s.treatment_pathway.technology_sequence if s.treatment_pathway else [],
+                "tech_performance": tp,
+                "total_energy_kwh_day": eng.get("total_energy_kwh_day", 0),
+                "specific_energy_kwh_kl": eng.get("specific_energy_kwh_kl", 0),
+                "domain_inputs": s.domain_inputs or {},
+            }
 
         return report
 
@@ -183,7 +403,7 @@ class ReportEngine:
             f"**{domain_name} — Concept Planning Study**",
             f"**Plant:** {meta.plant_name or 'Not specified'}  ",
             f"**Prepared by:** {meta.author or 'Not specified'}  ",
-            f"**Date:** {datetime.utcnow().strftime('%B %Y')}",
+            f"**Date:** {datetime.now(timezone.utc).strftime('%B %Y')}",
             "",
             "## Study Overview",
             (
@@ -236,6 +456,139 @@ class ReportEngine:
                 lines.append(
                     f"- Risk level: {preferred.risk_result.overall_level}"
                 )
+
+        return "\n".join(lines)
+
+    def _build_decision_executive_summary(
+        self,
+        project: ProjectModel,
+        scenarios: list,
+        decision: Any,
+    ) -> str:
+        """
+        Executive summary that leads with the decision engine output.
+        Replaces the generic summary when decision data is available.
+        """
+        meta = project.metadata
+        lines = [
+            f"# {meta.project_name}",
+            f"**Wastewater Treatment — Capital Planning Options Study**",
+            f"**Plant:** {meta.plant_name or 'Not specified'}  ",
+            f"**Prepared by:** {meta.author or 'Not specified'}  ",
+            f"**Date:** {datetime.now(timezone.utc).strftime('%B %Y')}",
+            "",
+        ]
+
+        # Selection basis
+        lines += [
+            "## Selection Basis",
+            f"_{decision.selection_basis}_",
+            "",
+        ]
+
+        # Recommendation — use qualified display label
+        display_label = getattr(decision, "display_recommended_label",
+                                decision.recommended_label)
+        lines += [
+            "## Recommended Option",
+            f"**{display_label}**",
+            "",
+        ]
+        for reason in decision.why_recommended:
+            lines.append(f"- {reason}")
+        lines.append("")
+
+        # Non-viable
+        if decision.non_viable:
+            lines += [
+                "## Base Case Non-Compliant Options (without intervention)",
+            ]
+            for nv in decision.non_viable:
+                lines.append(f"- **{nv}** — non-compliant as base case; compliant with engineering intervention")
+            lines.append("")
+
+        # Key risks
+        if decision.key_risks:
+            lines += ["## Key Risks"]
+            for risk in decision.key_risks:
+                lines.append(f"- {risk}")
+            lines.append("")
+
+        # Alternative pathway summary
+        alt_paths = getattr(decision, "alternative_pathways", [])
+        if alt_paths:
+            lines += ["## Alternative Pathway Available"]
+            for p in alt_paths:
+                icon = "✓" if p.achieves_compliance else "⚠"
+                lines.append(
+                    f"- **{p.tech_label}** + intervention: "
+                    f"${p.lcc_total_k:.0f}k/yr LCC  |  "
+                    f"{icon} {'Achieves' if p.achieves_compliance else 'Partial'} compliance  |  "
+                    f"{p.procurement}"
+                )
+            lines.append("")
+
+        # Regulatory note
+        reg_note = getattr(decision, "regulatory_note", "")
+        if reg_note:
+            lines += [
+                "## Regulatory Note",
+                reg_note,
+                "",
+            ]
+
+        # Cost summary
+        costed = [s for s in scenarios if s.cost_result]
+        if costed:
+            lines += ["## Cost Summary"]
+            for s in costed:
+                cr = s.cost_result
+                is_rec = (s.scenario_name == decision.recommended_label)
+                star = "★ " if is_rec else ""
+                lines.append(
+                    f"- **{star}{s.scenario_name}**: "
+                    f"CAPEX ${cr.capex_total/1e6:.1f}M | "
+                    f"LCC ${cr.lifecycle_cost_annual/1e3:.0f}k/yr | "
+                    f"${cr.specific_cost_per_kl:.3f}/kL"
+                )
+            lines.append("")
+
+        # Confidence
+        conf = getattr(decision, "confidence", None)
+        if conf:
+            lines += [
+                f"## Recommendation Confidence: {conf.level}",
+            ]
+            for c in conf.caveats[:2]:
+                lines.append(f"- {c}")
+            lines.append("")
+
+        # Strategic insight
+        si = getattr(decision, "strategic_insight", "")
+        if si:
+            lines += [
+                "## Strategic Insight",
+                si,
+                "",
+            ]
+
+        # Recommended approach
+        ra = getattr(decision, "recommended_approach", [])
+        if ra:
+            lines += ["## Recommended Approach"]
+            for step in ra:
+                lines.append(f"- {step}")
+            lines.append("")
+
+        # Conclusion
+        lines += [
+            "## Conclusion",
+            decision.conclusion,
+            "",
+            "---",
+            "_Concept-level study, AUD 2024. CAPEX ±40%. "
+            "Not for procurement or regulatory submission._",
+        ]
 
         return "\n".join(lines)
 
@@ -293,19 +646,74 @@ class ReportEngine:
 
     def _build_comparison_table(self, scenarios: List[ScenarioModel]) -> List[Dict]:
         """Multi-criteria comparison table (rows = criteria, cols = scenarios)."""
+
+        def _eng(s, key, fmt="{:.0f}", fallback="—"):
+            """Extract a value from engineering_summary or technology_performance."""
+            eng = s.domain_specific_outputs.get("engineering_summary", {})
+            if key in eng:
+                v = eng[key]
+                return fmt.format(v) if v is not None else fallback
+            # Try summing across technology_performance dicts
+            tp = s.domain_specific_outputs.get("technology_performance", {})
+            for tc_data in tp.values():
+                if key in tc_data:
+                    v = tc_data[key]
+                    return fmt.format(v) if v is not None else fallback
+            return fallback
+
         criteria = [
-            ("CAPEX ($M)", lambda s: f"{s.cost_result.capex_total/1e6:.2f}" if s.cost_result else "—"),
-            ("OPEX (k$/yr)", lambda s: f"{s.cost_result.opex_annual/1e3:.0f}" if s.cost_result else "—"),
-            ("Lifecycle Cost ($/yr)", lambda s: f"{s.cost_result.lifecycle_cost_annual:,.0f}" if s.cost_result else "—"),
-            ("Net Carbon (tCO₂e/yr)", lambda s: f"{s.carbon_result.net_tco2e_yr:.0f}" if s.carbon_result else "—"),
-            ("Overall Risk", lambda s: s.risk_result.overall_level if s.risk_result else "—"),
-            ("Risk Score", lambda s: f"{s.risk_result.overall_score:.0f}" if s.risk_result else "—"),
+            # ── Cost ───────────────────────────────────────────────────────
+            ("CAPEX ($M)",
+             lambda s: f"{s.cost_result.capex_total/1e6:.1f}" if s.cost_result else "—"),
+            ("OPEX (k$/yr)",
+             lambda s: f"{s.cost_result.opex_annual/1e3:.0f}" if s.cost_result else "—"),
+            ("Lifecycle Cost (k$/yr)",
+             lambda s: f"{s.cost_result.lifecycle_cost_annual/1e3:.0f}" if s.cost_result else "—"),
+            ("Specific Cost ($/kL)",
+             lambda s: f"{s.cost_result.specific_cost_per_kl:.2f}" if s.cost_result and s.cost_result.specific_cost_per_kl else "—"),
+
+            # ── Energy ────────────────────────────────────────────────────
+            ("Specific Energy (kWh/ML)",
+             lambda s: f"{s.domain_specific_outputs.get('engineering_summary',{}).get('specific_energy_kwh_kl',0)*1000:.0f}"
+                       if s.domain_specific_outputs else "—"),
+
+            # ── Carbon ────────────────────────────────────────────────────
+            ("Net Carbon (tCO₂e/yr)",
+             lambda s: f"{s.carbon_result.net_tco2e_yr:.0f}" if s.carbon_result else "—"),
+            ("Scope 2 Electricity (tCO₂e/yr)",
+             lambda s: f"{s.carbon_result.scope_2_tco2e_yr:.0f}" if s.carbon_result else "—"),
+
+            # ── Sludge ────────────────────────────────────────────────────
+            ("Sludge Production (kgDS/day)",
+             lambda s: f"{s.domain_specific_outputs.get('engineering_summary',{}).get('total_sludge_kgds_day',0):.0f}"
+                       if s.domain_specific_outputs else "—"),
+
+            # ── Physical sizing ───────────────────────────────────────────
+            ("Reactor Volume (m³)",
+             lambda s: _eng(s, "reactor_volume_m3", "{:.0f}")),
+            ("Process Footprint (m²)",
+             lambda s: _eng(s, "footprint_m2", "{:.0f}")),
+
+            # ── Effluent quality ──────────────────────────────────────────
+            ("Effluent TN (mg/L)",
+             lambda s: _eng(s, "effluent_tn_mg_l", "{:.1f}")),
+            ("Effluent TP (mg/L)",
+             lambda s: _eng(s, "effluent_tp_mg_l", "{:.1f}")),
+
+            # ── Risk ──────────────────────────────────────────────────────
+            ("Risk Level",
+             lambda s: s.risk_result.overall_level if s.risk_result else "—"),
+            ("Risk Score (/100)",
+             lambda s: f"{s.risk_result.overall_score:.0f}" if s.risk_result else "—"),
         ]
         rows = []
         for criterion_name, getter in criteria:
             row = {"Criterion": criterion_name}
             for s in scenarios:
-                row[s.scenario_name] = getter(s)
+                try:
+                    row[s.scenario_name] = getter(s)
+                except Exception:
+                    row[s.scenario_name] = "—"
             rows.append(row)
         return rows
 
@@ -404,3 +812,104 @@ class ReportEngine:
                 "values": values,
             })
         return chart_data
+
+    def _build_scenario_definition_table(self, scenarios: List[ScenarioModel]) -> List[Dict]:
+        """Phase 7: Scenario definition table for report."""
+        rows = []
+        for s in scenarios:
+            di = s.domain_inputs or {}
+            rows.append({
+                "Scenario":         s.scenario_name,
+                "Flow (MLD)":       di.get("design_flow_mld", "—"),
+                "Peak Factor":      di.get("peak_flow_factor", "—"),
+                "BOD (mg/L)":       di.get("influent_bod_mg_l", "—"),
+                "TKN (mg/L)":       di.get("influent_tkn_mg_l", "—"),
+                "NH₄ (mg/L)":       di.get("influent_nh4_mg_l", "—"),
+                "TP (mg/L)":        di.get("influent_tp_mg_l", "—"),
+                "Temp (°C)":        di.get("influent_temperature_celsius", "—"),
+                "Eff. TN (mg/L)":   di.get("effluent_tn_mg_l", "—"),
+                "Eff. TP (mg/L)":   di.get("effluent_tp_mg_l", "—"),
+                "Technologies":     " + ".join(
+                    s.treatment_pathway.technology_sequence
+                    if s.treatment_pathway else []
+                ).upper(),
+            })
+        return rows
+
+    def _build_warnings_table(self, scenarios: List[ScenarioModel]) -> List[Dict]:
+        """Phase 7: Collect engineering warnings from all scenarios."""
+        rows = []
+        for s in scenarios:
+            tp = s.domain_specific_outputs.get("technology_performance", {}) if s.domain_specific_outputs else {}
+            for tech_code, perf in tp.items():
+                notes = perf.get("_notes", {})
+                if isinstance(notes, dict):
+                    for warning in notes.get("warnings", []):
+                        rows.append({
+                            "Scenario":   s.scenario_name,
+                            "Technology": tech_code.upper(),
+                            "Warning":    str(warning)[:200],
+                        })
+                # Compliance flag
+                if perf.get("compliance_flag") == "warning":
+                    for issue in (perf.get("compliance_issues") or []):
+                        rows.append({
+                            "Scenario":   s.scenario_name,
+                            "Technology": tech_code.upper(),
+                            "Warning":    f"Compliance: {issue}",
+                        })
+        if not rows:
+            rows = [{"Scenario": "—", "Technology": "—",
+                     "Warning": "No engineering warnings raised for any scenario."}]
+        return rows
+
+    def _build_limitations_text(self, scenarios: List[ScenarioModel]) -> str:
+        """Phase 7: Standard limitations and uncertainties section."""
+        # Check for any cold climate or carbon-limited scenarios
+        warnings = []
+        for s in scenarios:
+            di = s.domain_inputs or {}
+            T = di.get("influent_temperature_celsius", 20) or 20
+            bod = di.get("influent_bod_mg_l", 250) or 250
+            tkn = di.get("influent_tkn_mg_l", 45) or 45
+            if T < 15:
+                warnings.append(f"• {s.scenario_name}: design temperature {T}°C — "
+                                 "nitrification performance should be verified with detailed design.")
+            if bod * 2 / max(tkn, 1) < 7:
+                warnings.append(f"• {s.scenario_name}: COD/TKN = {bod*2/tkn:.1f} — "
+                                 "supplemental carbon may be required for TN compliance.")
+
+        limitations = [
+            "COST ESTIMATES",
+            f"All capital cost estimates are concept-level (±40%) in AUD 2024. "
+            "They cover the biological treatment train only and exclude: site preparation and "
+            "earthworks, headworks, inlet works, sludge treatment, buildings, land, owner's costs, "
+            "and connection to existing infrastructure. Detailed cost estimates require site "
+            "investigation and preliminary design.",
+            "",
+            "ENGINEERING CALCULATIONS",
+            "All engineering calculations use Metcalf & Eddy 5th Edition methodology. "
+            "Calculations are at average design flow — peak flow performance is not simulated. "
+            "Effluent quality predictions are based on design steady-state conditions; "
+            "wet weather performance, startup periods, and upset conditions are not modelled.",
+            "",
+            "CARBON ESTIMATES",
+            "Net carbon estimates use the IPCC 2019 Tier 1 N₂O emission factor (0.016 kg N₂O/kg N "
+            "removed). The actual factor varies ×3–10 between sites. Site-specific monitoring is "
+            "strongly recommended before using carbon estimates for formal reporting. "
+            f"Grid emission factor: 0.79 kgCO₂e/kWh (AUS NEM 2024).",
+            "",
+            "RISK SCORES",
+            "Risk scores are screening-level assessments based on technology maturity and "
+            "scenario operating conditions. They should be supplemented by a formal risk "
+            "register and stakeholder engagement for detailed feasibility studies.",
+            "",
+            "SCENARIO-SPECIFIC NOTES",
+        ] + (warnings if warnings else ["• No specific warnings for these scenarios."]) + [
+            "",
+            "This report was produced by the Water Utility Planning Platform. "
+            "It is intended to support concept design and option evaluation only. "
+            "It is not suitable for procurement, funding approval, or regulatory submission "
+            "without further detailed design and independent review.",
+        ]
+        return "\n".join(limitations)

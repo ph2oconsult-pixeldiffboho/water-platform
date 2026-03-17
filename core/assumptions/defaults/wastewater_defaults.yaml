@@ -27,12 +27,77 @@ cost_assumptions:
     # Sidestream
     struvite_reactor_per_kgp_day: 8500.0 # $/kg P/day capacity
 
+    # IFAS/MBBR carrier media
+    ifas_media_per_m2: 45.0              # $/m² protected surface area installed
+
+    # AD + CHP
+    digester_per_m3: 1800.0             # $/m³ digester volume (mesophilic CSTR)
+    digester_instrumentation_per_m3: 250.0
+    gas_handling_per_m3_biogas_day: 1200.0  # $/m³ CH4/day (pipes, flare, compressor)
+    chp_per_kw_installed: 1800.0        # $/kW electrical installed (gas engine)
+    biogas_chp_per_kw: 1800.0           # $/kW (alias used by AnMBR module)
+    sludge_handling_per_kgds_day: 850.0 # $/kgDS/day (heat exchanger, pumps)
+
+    # Advanced reuse (UF+RO+UV/AOP)
+    uf_membrane_per_m2: 35.0            # $/m² UF installed
+    ro_membrane_per_m2: 55.0            # $/m² RO installed
+    uv_per_kw_installed: 2200.0         # $/kW UV/AOP installed
+
+    # Thermal biosolids (drying + incineration or pyrolysis)
+    thermal_biosolids_incineration_per_kwh_thermal: 180.0  # $/kWth installed
+    thermal_recovery_per_kw_electrical: 2400.0             # $/kWe recovery system
+    scrubber_per_kwh_thermal: 45.0                         # $/kWth flue gas cleaning
+    biosolids_feed_handling_per_t_ds_yr: 380.0             # $/t DS/yr feed system
+
+    # Mobile Organic Biofilm (MOB)
+    mob_carrier_per_m3_reactor: 650.0   # $/m³ reactor volume (media + retention)
+    fine_bubble_diffuser_upgrade_per_m3: 120.0  # $/m³ aerobic volume
+
+    # Chemical P removal (CPR)
+    coagulant_dosing_per_kgday: 850.0   # $/kg P/day dosing capacity
+    lamella_per_m2: 2200.0              # $/m² lamella clarifier
+
+    # Tertiary filtration
+    rsf_per_m2_filter: 3800.0           # $/m² filter area (rapid sand filter)
+
+    # Sidestream PN/A (Anammox)
+    scada_per_m3_reactor: 350.0         # $/m³ reactor (specialised SCADA for Anammox)
+
   opex_unit_rates:
     # Membrane replacement (annualised)
     mbr_membrane_replacement_per_m2_yr: 8.50   # $/m²/yr (10yr life)
     mbr_membrane_flat_sheet_replacement_per_m2_yr: 10.00
 
     electricity_per_kwh: 0.14                  # $/kWh (inherited from shared, restated)
+
+    # Maintenance and labour — applied by domain_interface to all scenarios
+    # Maintenance: 1.5% of CAPEX/yr (WEF Cost Estimating Manual 2018)
+    # Labour: 0.8 FTE per 10 MLD average flow (AU wages fully loaded)
+    # maintenance_pct_of_capex_annual: not set — costing engine uses tech-specific defaults
+    labour_fte_per_10mld: 2.5                  # FTE per 10 MLD (operators + maintenance technicians, AU benchmark)
+    labour_cost_per_fte: 105000.0              # AUD/yr fully loaded (2024)
+
+    # Sludge disposal — used by ALL biological treatment modules
+    # Alias for shared_defaults.biosolids_disposal_per_tonne_ds
+    sludge_disposal_per_tds: 280.0             # $/t DS (dewatered cake to land/landfill)
+
+    # IFAS/MBBR carrier media replacement (~5%/yr of installed cost)
+    ifas_media_per_m2: 2.25                    # $/m²/day ≈ $45/m²/yr × 5% / 365
+
+    # AD+CHP maintenance
+    digestion_maintenance_per_kgds_day: 15.0   # $/kgDS/day capacity/yr annualised to $/day
+
+    # Advanced reuse OPEX
+    membrane_chemical_per_m3_product: 0.08     # $/m³ product (RO/UF cleaning chemicals)
+    ro_membrane_replacement_per_m2_yr: 12.0    # $/m²/yr RO membrane replacement
+
+    # Thermal biosolids
+    natural_gas_per_kwh: 0.04                  # $/kWh thermal (if supplemental gas needed)
+    thermal_maintenance_per_t_ds_yr: 85.0      # $/t DS/yr thermal plant O&M
+    ash_disposal_per_tonne: 120.0              # $/t dry ash to landfill
+
+    # Mobile Organic Biofilm (MOB) carrier media
+    mob_carrier_per_kg: 8.50                   # $/kg/yr carrier media attrition
 
   # Wastewater-specific chemicals
   chemical_prices:

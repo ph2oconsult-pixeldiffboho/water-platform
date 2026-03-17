@@ -101,6 +101,12 @@ class MABRBNRInputs:
     chemical_p_removal: bool = False
     # Bio-P often achievable via anaerobic zone; chemical polish optional
 
+    # ── Primary clarifier option ───────────────────────────────────────────
+    include_primary_clarifier: bool = False
+    # Same as BNR: routes ~35% BOD to AD for CHP credit, reduces reactor size.
+    # COD/TKN check applies — supplemental carbon may be needed post-PC.
+    primary_clarifier_bod_removal_pct: float = 0.35
+
     _field_bounds: dict = field(default_factory=lambda: {
         "nh4_surface_loading_g_m2_day":     (0.5, 4.0),
         "membrane_specific_area_m2_per_m3": (150, 600),
@@ -185,6 +191,33 @@ class MABRBNRTechnology(BaseTechnology):
         tp_removed  = max(0.0, flow * (inf["tp_mg_l"] - eff_tp)  / 1000.0)
         bod_removed = max(0.0, flow * (inf["bod_mg_l"] - eff_bod) / 1000.0)
 
+        # ── 1b. Primary clarifier (optional) ──────────────────────────────
+        pc_sludge_kgds_day  = 0.0
+        pc_area_m2          = 0.0
+        pc_ch4_m3_day       = 0.0
+        pc_chp_kwh_day      = 0.0
+        pc_methanol_kg_day  = 0.0
+        need_supplemental_c = False
+
+        if inputs.include_primary_clarifier:
+            pc_r               = inputs.primary_clarifier_bod_removal_pct
+            pc_sludge_kgds_day = flow * inf["tss_mg_l"] * 0.55 / 1000.0
+            bod_removed        = max(0.0, flow * (inf["bod_mg_l"] * (1 - pc_r) - eff_bod) / 1000.0)
+            cod_after_pc       = inf["bod_mg_l"] * 2.0 * (1 - pc_r * 1.20)
+            cod_tkn_ratio      = cod_after_pc / max(inf["tn_mg_l"], 1.0)
+            need_supplemental_c = cod_tkn_ratio < 10.0
+            if need_supplemental_c:
+                pc_methanol_kg_day = flow * max(0.0, 10.0 * inf["tn_mg_l"] - cod_after_pc) / 1000.0 / 1.5
+            pc_area_m2     = self._get_eng("peak_flow_factor", 2.5) * flow / 24.0 / 1.5
+            pc_chp_kwh_day = pc_sludge_kgds_day * 0.80 * 0.60 * 0.35 * 10.0 * 0.35
+            pc_ch4_m3_day  = pc_sludge_kgds_day * 0.80 * 0.60 * 0.35
+            r.notes.add_assumption(
+                f"Primary clarifier: {pc_r*100:.0f}% BOD removal | "
+                f"COD/TKN = {cod_tkn_ratio:.1f} | CHP = {pc_chp_kwh_day:.0f} kWh/day"
+            )
+            if need_supplemental_c:
+                r.notes.warn(f"⚠️ COD/TKN={cod_tkn_ratio:.1f} — methanol {pc_methanol_kg_day:.0f} kg/day needed")
+
         r.notes.add_assumption(
             f"Influent: BOD {inf['bod_mg_l']:.0f}, TN {inf['tn_mg_l']:.0f}, "
             f"TP {inf['tp_mg_l']:.0f} mg/L at Q = {design_flow_mld:.1f} MLD"
@@ -238,7 +271,7 @@ class MABRBNRTechnology(BaseTechnology):
         # ── 4. Sludge production ───────────────────────────────────────────
         inorg_tss    = flow * inf["tss_mg_l"] * (1.0 - vss_tss) / 1000.0
         biofilm_shed = vss_prod * 0.10   # 10% extra from MABR biofilm shedding
-        total_sludge = tss_prod + inorg_tss + biofilm_shed / vss_tss
+        total_sludge = tss_prod + inorg_tss + biofilm_shed / vss_tss + pc_sludge_kgds_day
 
         r.sludge.biological_sludge_kgds_day = round(total_sludge, 1)
         r.sludge.vs_fraction = vss_tss
@@ -302,7 +335,8 @@ class MABRBNRTechnology(BaseTechnology):
 
         r.energy.aeration_kwh_day = round(mabr_aer_kwh, 1)
         r.energy.mixing_kwh_day   = round(mix_kwh, 1)
-        r.energy.pumping_kwh_day  = round(ras_kwh + mlr_kwh + was_kwh + ancillary_kwh, 1)
+        r.energy.pumping_kwh_day   = round(ras_kwh + mlr_kwh + was_kwh + ancillary_kwh, 1)
+        r.energy.generation_kwh_day = round(pc_chp_kwh_day, 1)
 
         r.notes.add_assumption(
             f"Aerobic blowers (70% NH₄ + BOD): O₂={o2_aer:.0f} kg/day → {conv_aer_kwh:.0f} kWh/day | "
@@ -401,7 +435,16 @@ class MABRBNRTechnology(BaseTechnology):
         mabr_unit_rate = 65.0    # $/m² membrane installed (GE/Ovivo ZeeNon 2015 indicative; ±40%)
         # Comparable to MBR cassettes but gas-side rather than liquid-side
 
-        r.capex_items = [
+        r.capex_items = []
+        if inputs.include_primary_clarifier:
+            r.capex_items.append(CostItem(
+                "Primary clarifier",
+                "secondary_clarifier_per_m2",
+                pc_area_m2,
+                "m²",
+                notes=f"Primary clarifier: {inputs.primary_clarifier_bod_removal_pct*100:.0f}% BOD removal; primary sludge to AD",
+            ))
+        r.capex_items += [
             CostItem(
                 "MABR membrane modules",
                 "mabr_membrane_per_m2",
@@ -473,6 +516,14 @@ class MABRBNRTechnology(BaseTechnology):
         if inputs.chemical_p_removal and "ferric_chloride_kg_day" in chems:
             r.opex_items.append(CostItem("Ferric chloride (P removal)", "ferric_chloride_per_kg",
                                          chems["ferric_chloride_kg_day"], "kg/day"))
+        if inputs.include_primary_clarifier and need_supplemental_c and pc_methanol_kg_day > 0:
+            r.opex_items.append(CostItem("Methanol (post-primary clarifier)", "methanol_per_kg",
+                                         pc_methanol_kg_day, "kg/day",
+                                         notes="Supplemental carbon to raise COD/TKN to 10"))
+        if inputs.include_primary_clarifier and pc_chp_kwh_day > 0:
+            r.opex_items.append(CostItem("Primary sludge CHP electricity credit", "electricity_per_kwh",
+                                         -pc_chp_kwh_day, "kWh/day",
+                                         notes=f"CHP from primary sludge AD: {pc_ch4_m3_day:.0f} m³ CH4/day"))
 
         # ── 13. Assumptions log ───────────────────────────────────────────
         r.assumptions_used = {

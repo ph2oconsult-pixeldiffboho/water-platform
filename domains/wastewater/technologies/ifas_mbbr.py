@@ -77,7 +77,9 @@ class IFASMBBRInputs:
     # Basin design temperature (°C). Critical for biofilm nitrification rate.
 
     # ── Chemistry ─────────────────────────────────────────────────────────
-    chemical_p_removal: bool = True
+    chemical_p_removal: bool = False
+    # Auto-triggered when effluent TP target < 1.0 mg/L — biological P removal
+    # from the activated sludge fraction typically achieves 1-2 mg/L without dosing.
     coagulant: str = "ferric_chloride"   # "ferric_chloride" | "alum"
 
     supplemental_carbon: bool = False
@@ -153,6 +155,14 @@ class IFASMBBRTechnology(BaseTechnology):
         )
 
         flow = design_flow_mld * 1000.0   # m³/day
+
+        # ── Temperature: inherit from scenario if not explicitly overridden ──
+        import dataclasses as _dc
+        _T_default = next(f.default for f in _dc.fields(type(inputs))
+                          if f.name == "design_temperature_celsius")
+        if inputs.design_temperature_celsius == _T_default:
+            _scenario_T = self._get_eng("influent_temperature_celsius", _T_default)
+            inputs = _dc.replace(inputs, design_temperature_celsius=_scenario_T)
 
         # ── 1. Influent loads ──────────────────────────────────────────────
         inf = self._load_influent()
@@ -311,7 +321,10 @@ class IFASMBBRTechnology(BaseTechnology):
 
         # ── 6. Chemical consumption ────────────────────────────────────────
         chems: Dict[str, float] = {}
-        if inputs.chemical_p_removal:
+        # Compute ferric dose whenever chemical P removal is needed
+        # (explicit flag OR TP target < 1.0 mg/L where biological alone insufficient)
+        _needs_cpr = inputs.chemical_p_removal or eff_tp < 1.0
+        if _needs_cpr:
             p_mol = tp_removed * 1000.0 / 31.0
             chems["ferric_chloride_kg_day"] = round(p_mol * 2.5 * 162.2 / 1000.0, 2)
         if inputs.supplemental_carbon:
@@ -320,18 +333,50 @@ class IFASMBBRTechnology(BaseTechnology):
         r.chemical_consumption = chems
 
         # ── 7. Effluent quality ────────────────────────────────────────────
+        # Carbon-limited denitrification (Metcalf Table 7-32 adapted for IFAS).
+        # IFAS aerobic zone dominates; anoxic fraction typically 20-30%.
+        # Without dedicated anoxic zone, denitrification efficiency is lower
+        # than BNR — COD/TKN thresholds tighter:
+        cod_tkn_ratio_ifas = inf["bod_mg_l"] * 2.0 / max(inf["tn_mg_l"], 1.0)
+        if inputs.supplemental_carbon:
+            eff_tn_actual = eff_tn
+        elif cod_tkn_ratio_ifas < 5.0:
+            eff_tn_actual = max(eff_tn, inf["tn_mg_l"] * 0.65)
+            r.notes.warn(
+                f"⚠️ COD/TKN = {cod_tkn_ratio_ifas:.1f} — severely carbon-limited. "
+                f"IFAS achievable TN ≈ {eff_tn_actual:.1f} mg/L (target {eff_tn:.1f}). "
+                "Supplemental carbon (methanol) required."
+            )
+        elif cod_tkn_ratio_ifas < 8.0:
+            eff_tn_actual = max(eff_tn, inf["tn_mg_l"] * 0.45)
+            r.notes.warn(
+                f"⚠️ COD/TKN = {cod_tkn_ratio_ifas:.1f} — carbon-limited. "
+                f"IFAS achievable TN ≈ {eff_tn_actual:.1f} mg/L (limited anoxic zone). "
+                "Consider supplemental carbon or dedicated anoxic stage."
+            )
+        elif cod_tkn_ratio_ifas < 10.0:
+            eff_tn_actual = max(eff_tn, inf["tn_mg_l"] * 0.30)
+            if eff_tn_actual > eff_tn:
+                r.notes.warn(
+                    f"⚠️ COD/TKN = {cod_tkn_ratio_ifas:.1f} — marginal for IFAS. "
+                    f"Achievable TN ≈ {eff_tn_actual:.1f} mg/L. "
+                    "Increase carbon source or add dedicated anoxic zone."
+                )
+        else:
+            eff_tn_actual = eff_tn
+
         r.performance.effluent_bod_mg_l = eff_bod
         r.performance.effluent_tss_mg_l = eff_tss
         r.performance.effluent_nh4_mg_l = eff_nh4
-        r.performance.effluent_tn_mg_l  = eff_tn
+        r.performance.effluent_tn_mg_l  = round(eff_tn_actual, 2)
         r.performance.effluent_tp_mg_l  = (
-            eff_tp if inputs.chemical_p_removal else min(eff_tp + 0.3, 1.2)
+            eff_tp if (inputs.chemical_p_removal or eff_tp < 1.0) else min(eff_tp + 0.3, 1.2)
         )
         r.performance.reactor_volume_m3           = round(reactor_m3, 0)
         r.performance.hydraulic_retention_time_hr = round(reactor_m3 / flow * 24.0, 1)
         r.performance.footprint_m2 = round(
             reactor_m3 / 4.5                    # basin depth ~4.5 m
-            + flow * 2.5 / 24.0 / 1.5,          # secondary clarifier at peak SOR
+            + self._get_eng("peak_flow_factor", 2.5) * flow / 24.0 / 1.5,          # secondary clarifier at peak SOR
             0
         )
         r.performance.additional.update({
@@ -439,7 +484,12 @@ class IFASMBBRTechnology(BaseTechnology):
                 notes="~5% annual replacement for attrition and fouled carriers",
             ),
         ]
-        if inputs.chemical_p_removal and "ferric_chloride_kg_day" in chems:
+        # Apply chemical P removal if explicitly enabled OR if TP target < 1.0 mg/L
+        # Biological P from activated sludge fraction typically achieves ~1-2 mg/L.
+        # Chemical dosing required to reliably achieve < 1 mg/L.
+        apply_cpr = inputs.chemical_p_removal or eff_tp < 1.0
+
+        if apply_cpr and "ferric_chloride_kg_day" in chems:
             r.opex_items.append(CostItem(
                 "Ferric chloride (P removal)",
                 "ferric_chloride_per_kg",

@@ -522,6 +522,7 @@ class TechnologyResult:
             "sludge_production_tds_yr":   self.sludge.total_tds_yr,
             "energy_intensity_kwh_kl":    self.energy_intensity_kwh_kl,
             "net_energy_kwh_day":         self.net_energy_kwh_day,
+            "aeration_energy_kwh_day":    self.energy.aeration_kwh_day,   # for aeration page cross-check
             "scope1_tco2e_yr":            self.carbon.total_scope1_tco2e_yr,
             "scope2_tco2e_yr":            self.carbon.scope2_tco2e_yr,
             "total_tco2e_yr":             self.carbon.total_tco2e_yr,

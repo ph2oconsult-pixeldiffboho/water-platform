@@ -8,7 +8,7 @@ Domain-specific content is contained within typed extension fields.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import uuid
@@ -221,7 +221,7 @@ class AssumptionsSet:
     assumptions_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     domain: DomainType = DomainType.WASTEWATER
     base_version: str = "default"
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     cost_assumptions: Dict[str, Any] = field(default_factory=dict)
     carbon_assumptions: Dict[str, Any] = field(default_factory=dict)
@@ -266,8 +266,8 @@ class ScenarioModel:
     scenario_name: str = ""
     scenario_type: ScenarioType = ScenarioType.BASE_CASE
     description: str = ""
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    last_modified: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_modified: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     is_preferred: bool = False
 
     # Design inputs
@@ -299,11 +299,11 @@ class ScenarioModel:
 
     def mark_stale(self) -> None:
         self.is_stale = True
-        self.last_modified = datetime.utcnow().isoformat()
+        self.last_modified = datetime.now(timezone.utc).isoformat()
 
     def mark_calculated(self) -> None:
         self.is_stale = False
-        self.last_calculated_at = datetime.utcnow().isoformat()
+        self.last_calculated_at = datetime.now(timezone.utc).isoformat()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -322,8 +322,8 @@ class ProjectMetadata:
     client_name: str = ""
     author: str = ""
     reviewer: str = ""
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    last_modified: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_modified: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     version: str = "1.0.0"
     planning_scenario: Optional[str] = None  # PlanningScenario value
     notes: str = ""
@@ -366,7 +366,7 @@ class ProjectModel:
         self.scenarios[scenario.scenario_id] = scenario
         if self.active_scenario_id is None:
             self.active_scenario_id = scenario.scenario_id
-        self.metadata.last_modified = datetime.utcnow().isoformat()
+        self.metadata.last_modified = datetime.now(timezone.utc).isoformat()
 
     def set_active_scenario(self, scenario_id: str) -> None:
         if scenario_id not in self.scenarios:
@@ -384,12 +384,12 @@ class ProjectModel:
 
     def log_change(self, description: str, author: str = "") -> None:
         self.version_history.append({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "description": description,
             "author": author,
             "version": self.metadata.version,
         })
-        self.metadata.last_modified = datetime.utcnow().isoformat()
+        self.metadata.last_modified = datetime.now(timezone.utc).isoformat()
 
     # ── Serialisation ─────────────────────────────────────────────────────
 
@@ -435,8 +435,8 @@ def _dict_to_project(data: Dict[str, Any]) -> ProjectModel:
         client_name=metadata_data.get("client_name", ""),
         author=metadata_data.get("author", ""),
         reviewer=metadata_data.get("reviewer", ""),
-        created_at=metadata_data.get("created_at", datetime.utcnow().isoformat()),
-        last_modified=metadata_data.get("last_modified", datetime.utcnow().isoformat()),
+        created_at=metadata_data.get("created_at", datetime.now(timezone.utc).isoformat()),
+        last_modified=metadata_data.get("last_modified", datetime.now(timezone.utc).isoformat()),
         version=metadata_data.get("version", "1.0.0"),
         planning_scenario=metadata_data.get("planning_scenario"),
         notes=metadata_data.get("notes", ""),
@@ -476,7 +476,7 @@ def _dict_to_scenario(data: Dict[str, Any]) -> ScenarioModel:
             assumptions_id=assumptions_data.get("assumptions_id", str(uuid.uuid4())),
             domain=DomainType(assumptions_data.get("domain", "wastewater")),
             base_version=assumptions_data.get("base_version", "default"),
-            created_at=assumptions_data.get("created_at", datetime.utcnow().isoformat()),
+            created_at=assumptions_data.get("created_at", datetime.now(timezone.utc).isoformat()),
             cost_assumptions=assumptions_data.get("cost_assumptions", {}),
             carbon_assumptions=assumptions_data.get("carbon_assumptions", {}),
             risk_assumptions=assumptions_data.get("risk_assumptions", {}),
@@ -516,8 +516,8 @@ def _dict_to_scenario(data: Dict[str, Any]) -> ScenarioModel:
         scenario_name=data.get("scenario_name", ""),
         scenario_type=ScenarioType(data.get("scenario_type", "base_case")),
         description=data.get("description", ""),
-        created_at=data.get("created_at", datetime.utcnow().isoformat()),
-        last_modified=data.get("last_modified", datetime.utcnow().isoformat()),
+        created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
+        last_modified=data.get("last_modified", datetime.now(timezone.utc).isoformat()),
         is_preferred=data.get("is_preferred", False),
         design_flow_mld=data.get("design_flow_mld"),
         planning_horizon_years=data.get("planning_horizon_years", 30),

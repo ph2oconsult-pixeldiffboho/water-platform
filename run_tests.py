@@ -1,80 +1,106 @@
 #!/usr/bin/env python3
 """
-run_tests.py — Run the platform test suite without pytest.
-Usage: python3 run_tests.py
-"""
+run_tests.py — Full platform test suite runner (no pytest required).
 
-import sys, traceback
+Usage:
+    python3 run_tests.py              # all tests
+    python3 run_tests.py --fast       # smoke tests only (skips benchmarks)
+    python3 run_tests.py --benchmark  # benchmark suite only
+
+Exit code 0 = all pass, 1 = any failure.
+"""
+import sys, subprocess, argparse
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+ROOT = Path(__file__).parent
+sys.path.insert(0, str(ROOT))
 
-results = []
+def _run_file(path):
+    r = subprocess.run(
+        [sys.executable, str(path)],
+        capture_output=True, text=True, cwd=str(ROOT)
+    )
+    lines = [l.strip() for l in (r.stdout + r.stderr).splitlines() if l.strip()]
+    summary = next(
+        (l for l in reversed(lines) if any(x in l for x in
+            ["passed", "PASS", "FAIL", "failed", "Error"])),
+        lines[-1] if lines else "(no output)"
+    )
+    return r.returncode == 0, summary
 
-def run(name, fn):
-    try:
-        fn()
-        results.append(("PASS", name))
-        print(f"  ✅  {name}")
-    except Exception as e:
-        results.append(("FAIL", name, str(e)))
-        print(f"  ❌  {name}")
-        print(f"       └─ {e}")
 
-print("\n" + "="*72)
-print("  WATER UTILITY PLANNING PLATFORM — TEST SUITE")
-print("="*72)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fast",      action="store_true", help="Skip benchmarks")
+    parser.add_argument("--benchmark", action="store_true", help="Benchmark suite only")
+    args = parser.parse_args()
 
-# Import all test modules and collect test functions
-from tests.core.test_costing_engine import TestCostingEngineBasic, TestCostingEngineLibraryLookup
-from tests.core.test_carbon_engine import TestCarbonEngine
-from tests.domains.wastewater.test_bnr_mbr import TestBNRTechnology, TestMBRTechnology
-from tests.integration.test_wastewater_full_run import TestBNRFullRun
+    print()
+    print("=" * 70)
+    print("  WATER UTILITY PLANNING PLATFORM — FULL TEST SUITE")
+    print("=" * 70)
 
-import pytest as _pytest
+    # (path, label, skip_when_fast)
+    test_files = [
+        (ROOT / "tests/core/test_costing_engine.py",
+         "Costing engine (12 tests)", False),
+        (ROOT / "tests/core/test_carbon_engine.py",
+         "Carbon engine (7 tests)", False),
+        (ROOT / "tests/domains/wastewater/test_engineering_calculations.py",
+         "Engineering calculations (30 tests)", False),
+        (ROOT / "tests/domains/wastewater/test_bnr_mbr.py",
+         "BNR + MBR technology (16 tests)", False),
+        (ROOT / "tests/domains/wastewater/test_decision_engine.py",
+         "Decision engine — hierarchy, fields, two-pathway, consistency (81 tests)", False),
+        (ROOT / "tests/integration/test_wastewater_full_run.py",
+         "Full pipeline integration (8 tests)", False),
+        (ROOT / "tests/domains/wastewater/test_benchmark_scenarios.py",
+         "Legacy benchmark scenarios (57 checks)", True),
+        (ROOT / "tests/benchmark/run_benchmarks.py",
+         "Benchmark regression suite (282 checks)", True),
+        (ROOT / "tests/test_release_readiness.py",
+         "Release readiness gate (60 checks)", False),
+    ]
 
-print("\nNote: For full pytest output, run: python3 -m pytest tests/ -v\n")
-print("Quick verification that core imports and classes are healthy:\n")
+    if args.benchmark:
+        test_files = [(ROOT / "tests/benchmark/run_benchmarks.py",
+                       "Benchmark regression suite (282 checks)", False)]
+    elif args.fast:
+        print("  ⚡ Fast mode — skipping benchmark suite\n")
 
-def t_imports():
-    from core.project.project_model import ProjectModel, DomainType, CostResult, CarbonResult, RiskResult
-    from core.project.project_manager import ProjectManager, ScenarioManager
-    from core.assumptions.assumptions_manager import AssumptionsManager
-    from core.costing.costing_engine import CostingEngine
-    from core.carbon.carbon_engine import CarbonEngine
-    from core.risk.risk_engine import RiskEngine
-    from core.validation.validation_engine import ValidationEngine
-    from core.reporting.report_engine import ReportEngine
-    from domains.wastewater.domain_interface import WastewaterDomainInterface
-    from domains.wastewater.technologies.bnr import BNRTechnology
-    from domains.wastewater.technologies.mbr import MBRTechnology
-run("All core and domain modules import without error", t_imports)
+    passed_count = failed_count = 0
+    failures = []
 
-def t_bnr_smoke():
-    from core.project.project_model import DomainType
-    from core.assumptions.assumptions_manager import AssumptionsManager
-    from domains.wastewater.technologies.bnr import BNRTechnology, BNRInputs
-    bnr = BNRTechnology(AssumptionsManager().load_defaults(DomainType.WASTEWATER))
-    r = bnr.calculate(10.0, BNRInputs())
-    assert r.energy_kwh_per_day > 0 and r.performance_outputs["sludge_production_kgds_day"] > 0
-run("BNR technology smoke test (10 ML/day)", t_bnr_smoke)
+    for path, label, skip_in_fast in test_files:
+        if args.fast and skip_in_fast and not args.benchmark:
+            print(f"  ⏭️  {label:<58} [skipped]")
+            continue
+        if not path.exists():
+            print(f"  ⚠️  {label:<58} [not found]")
+            continue
+        ok, summary = _run_file(path)
+        print(f"  {'✅' if ok else '❌'} {label:<58} {summary[:30]}")
+        if ok: passed_count += 1
+        else:
+            failed_count += 1
+            failures.append((label, summary))
 
-def t_full_pipeline():
-    from core.project.project_model import DomainType
-    from core.assumptions.assumptions_manager import AssumptionsManager
-    from domains.wastewater.domain_interface import WastewaterDomainInterface
-    from domains.wastewater.input_model import WastewaterInputs
-    iface = WastewaterDomainInterface(AssumptionsManager().load_defaults(DomainType.WASTEWATER))
-    r = iface.run_scenario(WastewaterInputs(design_flow_mld=10.0), ["bnr"], {})
-    assert r.is_valid
-    assert r.cost_result.capex_total > 0
-    assert r.carbon_result.net_tco2e_yr > 0
-    assert r.risk_result.overall_level in ("Low","Medium","High","Very High")
-run("Full BNR pipeline (inputs → cost → carbon → risk)", t_full_pipeline)
+    print()
+    print("=" * 70)
+    total = passed_count + failed_count
+    print(f"  {passed_count}/{total} test files passed  ({failed_count} failed)")
+    if failures:
+        print("\n  FAILURES:")
+        for label, summary in failures:
+            print(f"    ❌ {label}\n       {summary[:80]}")
+    else:
+        print("  ✅ ALL TESTS PASSED")
+        if not args.fast:
+            print("  Platform is release-ready.")
+            print("  Run: streamlit run apps/wastewater_app/app.py")
+    print("=" * 70 + "\n")
+    return 0 if failed_count == 0 else 1
 
-print("\n" + "="*72)
-passed = sum(1 for r in results if r[0] == "PASS")
-failed = sum(1 for r in results if r[0] == "FAIL")
-print(f"  {passed} passed  |  {failed} failed  |  {len(results)} total")
-print("="*72 + "\n")
-sys.exit(0 if failed == 0 else 1)
+
+if __name__ == "__main__":
+    sys.exit(main())

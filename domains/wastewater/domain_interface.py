@@ -171,6 +171,7 @@ class WastewaterDomainInterface:
             opex_items=aggregated["all_opex_items"],
             design_flow_mld=inputs.design_flow_mld,
             analysis_period_years=inputs.planning_horizon_years,
+            tech_codes=technology_sequence,
         )
 
         result.carbon_result = self._carbon_engine.calculate(
@@ -249,6 +250,29 @@ class WastewaterDomainInterface:
             else:
                 tech_inputs = {}
 
+            # ── Inject influent quality from WastewaterInputs ─────────────
+            # CRITICAL: modules read influent via _load_influent() from
+            # engineering_assumptions. Without this injection every scenario
+            # runs on YAML defaults (BOD=250, TKN=45) regardless of user inputs.
+            influent_overrides = {
+                "influent_bod_mg_l":            inputs.influent_bod_mg_l,
+                "influent_cod_mg_l":            inputs.influent_cod_mg_l,
+                # Canonical public field is influent_tkn_mg_l (WastewaterInputs).
+                # Technology modules read influent_tn_mg_l internally via _load_influent().
+                # Both keys are written so all read paths resolve correctly.
+                "influent_tkn_mg_l":            inputs.influent_tkn_mg_l,
+                "influent_tn_mg_l":             inputs.influent_tkn_mg_l,  # internal alias
+                "influent_nh4_mg_l":            inputs.influent_nh4_mg_l,
+                "influent_tss_mg_l":            inputs.influent_tss_mg_l,
+                "influent_tp_mg_l":             inputs.influent_tp_mg_l,
+                "influent_temperature_celsius": inputs.influent_temperature_celsius,
+                # Peak flow factor — used by clarifier sizing in all CAS-family modules
+                "peak_flow_factor":             inputs.peak_flow_factor,
+            }
+            for k, v in influent_overrides.items():
+                if v is not None:
+                    tech_instance.assumptions.engineering_assumptions[k] = v
+
             # ── Inject effluent targets from WastewaterInputs ─────────────
             # This ensures technology modules use scenario-specific targets
             # rather than YAML defaults (which are fixed at 10/1/0.5 mg/L)
@@ -305,6 +329,16 @@ class WastewaterDomainInterface:
             for r in tech_results.values()
         )
 
+        # Aggregate N2O and CH4 for UI display (N2O uncertainty panel)
+        total_n2o_tco2e_yr = sum(
+            getattr(r.carbon, "n2o_biological_tco2e_yr", 0.0) or 0.0
+            for r in tech_results.values()
+        )
+        total_ch4_tco2e_yr = sum(
+            getattr(r.carbon, "ch4_fugitive_tco2e_yr", 0.0) or 0.0
+            for r in tech_results.values()
+        )
+
         return {
             "total_energy_kwh_day": round(total_energy, 2),
             "total_chemical_consumption": {
@@ -314,6 +348,8 @@ class WastewaterDomainInterface:
             "total_sludge_kgds_day": round(total_sludge_kgds_day, 1),
             "all_capex_items": all_capex_items,
             "all_opex_items": all_opex_items,
+            "total_n2o_tco2e_yr": round(total_n2o_tco2e_yr, 1),
+            "total_ch4_tco2e_yr": round(total_ch4_tco2e_yr, 1),
         }
 
     def _build_engineering_summary(

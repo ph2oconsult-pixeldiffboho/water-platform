@@ -215,7 +215,8 @@ class BNRMBRTechnology(BaseTechnology):
         # Peak flux: BNR+MBR feeds membrane with clarified BNR effluent at lower MLSS
         # → can operate at higher peak flux than integrated MBR
         peak_flux   = min(inputs.design_flux_lmh * 1.8, 40.0)
-        mem_area_pk = flow_lph * 2.5 / peak_flux
+        _peak_factor = self._get_eng("peak_flow_factor", 2.5)
+        mem_area_pk = flow_lph * _peak_factor / peak_flux
         mem_area_m2 = max(mem_area_av, mem_area_pk)
 
         # Membrane tank volume — sized to achieve the membrane tank MLSS target

@@ -117,6 +117,22 @@ class BNRTechnology(BaseTechnology):
         )
         flow = design_flow_mld * 1000.0  # m³/day
 
+        # ── Temperature: prefer scenario value injected via engineering_assumptions ──
+        # WastewaterInputs.influent_temperature_celsius → engineering_assumptions
+        # BNRInputs.design_temperature_celsius is a per-run override (defaults to 20°C)
+        # If the user hasn't explicitly set BNRInputs.design_temperature_celsius,
+        # inherit from the scenario's influent temperature.
+        import dataclasses
+        _default_T = next(
+            f.default for f in dataclasses.fields(BNRInputs)
+            if f.name == "design_temperature_celsius"
+        )
+        if inputs.design_temperature_celsius == _default_T:
+            # Not explicitly overridden — inherit from scenario
+            scenario_T = self._get_eng("influent_temperature_celsius", _default_T)
+            import dataclasses as _dc
+            inputs = _dc.replace(inputs, design_temperature_celsius=scenario_T)
+
         # ── 1. Influent loads ──────────────────────────────────────────────
         inf = self._load_influent()
         bod_load   = flow * inf["bod_mg_l"] / 1000.0   # kg/day
@@ -248,10 +264,43 @@ class BNRTechnology(BaseTechnology):
         )
 
         # ── 4. Reactor sizing ──────────────────────────────────────────────
-        reactor_m3 = (vss_prod * inputs.srt_days * 1000.0) / (inputs.mlss_mg_l * vss_to_tss)
+        # SRT adjustment for tight TN limits:
+        # TN < 8 mg/L requires higher anoxic fraction (≥35%) and longer SRT.
+        # TN < 5 mg/L: near-complete denitrification, SRT ≥ 15d often needed.
+        # Ref: Metcalf 5th Ed Table 7-32; Tchobanoglous 2014 BNR design criteria.
+        design_srt = inputs.srt_days
+        anoxic_frac = inputs.anoxic_fraction
+        if eff_tn < 8.0 and eff_tn >= 5.0:
+            # Moderate TN target: increase anoxic fraction to 35%, SRT +20%
+            anoxic_frac  = max(anoxic_frac, 0.35)
+            design_srt   = max(design_srt, design_srt * 1.20)
+        elif eff_tn < 5.0:
+            # Tight TN target: substantial anoxic volume, SRT +40%, supplemental C likely
+            anoxic_frac  = max(anoxic_frac, 0.40)
+            design_srt   = max(design_srt, design_srt * 1.40)
+            if not need_supplemental_c and cod_tkn_ratio < 10.0:
+                r.notes.warn(
+                    f"⚠️ TN target {eff_tn:.0f} mg/L with COD/TKN={cod_tkn_ratio:.1f} — "
+                    "supplemental carbon (methanol) likely required for reliable compliance."
+                )
+
+        # Re-derive y_obs with adjusted SRT if changed
+        if design_srt != inputs.srt_days:
+            y_obs    = Y_true / (1.0 + kd_T * design_srt)
+            vss_prod = y_obs * bod_removed
+            tss_prod = vss_prod / vss_to_tss
+            total_sludge = tss_prod + inorg_tss + pc_sludge_kgds_day
+            r.sludge.biological_sludge_kgds_day = round(total_sludge, 1)
+            r.notes.add_assumption(
+                f"SRT extended to {design_srt:.1f}d (from {inputs.srt_days}d) "
+                f"for TN target {eff_tn:.0f} mg/L — Metcalf Table 7-32"
+            )
+
+        reactor_m3 = (vss_prod * design_srt * 1000.0) / (inputs.mlss_mg_l * vss_to_tss)
+        aerobic_frac = max(0.0, 1.0 - inputs.anaerobic_fraction - anoxic_frac)
         v_an = reactor_m3 * inputs.anaerobic_fraction
-        v_ax = reactor_m3 * inputs.anoxic_fraction
-        v_ae = reactor_m3 * inputs.aerobic_fraction
+        v_ax = reactor_m3 * anoxic_frac
+        v_ae = reactor_m3 * aerobic_frac
         hrt  = reactor_m3 / flow * 24.0
 
         r.performance.reactor_volume_m3          = round(reactor_m3, 0)
@@ -334,18 +383,108 @@ class BNRTechnology(BaseTechnology):
         r.chemical_consumption = chems
 
         # ── 8. Clarifier + footprint ───────────────────────────────────────
-        peak_m3hr   = flow * 2.5 / 24.0
+        # Use scenario peak flow factor (injected from WastewaterInputs)
+        # Peak flow drives clarifier area — the primary hydraulic constraint.
+        peak_factor = self._get_eng("peak_flow_factor", 2.5)
+        peak_m3hr   = flow * peak_factor / 24.0
         clar_area   = peak_m3hr / inputs.clarifier_overflow_rate_m_hr
         n_clar      = max(2, int(clar_area / 900) + 1)
         r.performance.footprint_m2 = round(reactor_m3 / 4.5 + clar_area, 0)
-        r.performance.additional.update({"clarifier_area_m2": round(clar_area, 0),
-                                         "n_clarifiers": n_clar})
+
+        # Peak hydraulic HRT check — at peak flow, reactor HRT must remain
+        # sufficient for biological treatment (minimum ~2 hr for BNR).
+        # Ref: Metcalf 5th Ed, Table 7-20 — minimum HRT at peak flow.
+        peak_flow_m3d  = flow * peak_factor
+        peak_hrt_hr    = reactor_m3 / peak_flow_m3d * 24.0
+        if peak_hrt_hr < 2.0:
+            r.notes.warn(
+                f"⚠️ At peak flow ({peak_factor:.1f}× = {peak_flow_m3d:.0f} m³/d), "
+                f"reactor HRT = {peak_hrt_hr:.1f} hr — below 2 hr minimum for BNR. "
+                "Consider increasing reactor volume or peak flow attenuation."
+            )
+        elif peak_hrt_hr < 3.0:
+            r.notes.add_assumption(
+                f"Peak HRT = {peak_hrt_hr:.1f} hr at {peak_factor:.1f}× peak — "
+                "marginal; confirm with hydraulic modelling."
+            )
+
+        r.notes.add_assumption(
+            f"Clarifier sized at peak flow factor {peak_factor:.1f}× "
+            f"(SOR={inputs.clarifier_overflow_rate_m_hr} m/hr at peak)"
+        )
+        r.performance.additional.update({
+            "clarifier_area_m2": round(clar_area, 0),
+            "n_clarifiers": n_clar,
+            "peak_flow_factor": peak_factor,
+            "peak_hrt_hr": round(peak_hrt_hr, 1),
+        })
 
         # ── 9. Effluent quality ────────────────────────────────────────────
+        # Effluent NH4 degrades at low temperature and short SRT.
+        # At T < 15°C nitrification kinetics slow — Metcalf Fig 7-42.
+        # At T < 12°C or SRT < 10d, reliable nitrification is marginal.
+        T = inputs.design_temperature_celsius
+        if T < 12.0 or design_srt < 8.0:
+            # Poor nitrification — NH4 may not meet target
+            eff_nh4_actual = min(eff_nh4 * 4.0, inf["tn_mg_l"] * nh4_frac * 0.6)
+            r.notes.warn(
+                f"⚠️ T={T}°C, SRT={design_srt:.1f}d — nitrification unreliable. "
+                f"Modelled effluent NH4 = {eff_nh4_actual:.1f} mg/L (target {eff_nh4:.1f} mg/L). "
+                "Consider IFAS, MABR, or longer SRT."
+            )
+        elif T < 15.0:
+            # Marginal nitrification — NH4 may be 2-3× target
+            eff_nh4_actual = min(eff_nh4 * 2.0, inf["tn_mg_l"] * nh4_frac * 0.4)
+            r.notes.warn(
+                f"⚠️ T={T}°C — nitrification marginal. "
+                f"Modelled effluent NH4 = {eff_nh4_actual:.1f} mg/L (target {eff_nh4:.1f} mg/L). "
+                "Confirm SRT adequacy with detailed design."
+            )
+        else:
+            eff_nh4_actual = eff_nh4  # full nitrification achievable
+
+        # ── Effluent TN: carbon-availability constraint ───────────────
+        # The target eff_tn is only achievable if sufficient BOD is available
+        # for denitrification. Minimum COD/TKN thresholds (Metcalf Table 7-32,
+        # WEF MOP 32 Section 7.4):
+        #   COD/TKN < 4.5  → very limited DN, achievable TN ≈ TKN × 0.60
+        #   COD/TKN 4.5-7  → partial DN,       achievable TN ≈ TKN × 0.40
+        #   COD/TKN 7-10   → good DN,           achievable TN ≈ TKN × 0.25
+        #   COD/TKN > 10   → enhanced DN, TN target achievable without external C
+        # With supplemental carbon, TN target is achievable regardless of ratio.
+        if inputs.supplemental_carbon:
+            eff_tn_actual = eff_tn   # external C overcomes limitation
+        else:
+            if cod_tkn_ratio < 4.5:
+                eff_tn_actual = max(eff_tn, inf["tn_mg_l"] * 0.60)
+                r.notes.warn(
+                    f"⚠️ COD/TKN = {cod_tkn_ratio:.1f} — severely carbon-limited. "
+                    f"Achievable TN ≈ {eff_tn_actual:.1f} mg/L (target {eff_tn:.1f}). "
+                    "Supplemental carbon (methanol) required to meet TN target. "
+                    "Ref: Metcalf 5th Ed Table 7-32."
+                )
+            elif cod_tkn_ratio < 7.0:
+                eff_tn_actual = max(eff_tn, inf["tn_mg_l"] * 0.40)
+                r.notes.warn(
+                    f"⚠️ COD/TKN = {cod_tkn_ratio:.1f} — carbon-limited denitrification. "
+                    f"Achievable TN ≈ {eff_tn_actual:.1f} mg/L (target {eff_tn:.1f}). "
+                    "Consider supplemental carbon or primary sludge fermentation."
+                )
+            elif cod_tkn_ratio < 10.0:
+                eff_tn_actual = max(eff_tn, inf["tn_mg_l"] * 0.25)
+                if eff_tn_actual > eff_tn:
+                    r.notes.warn(
+                        f"⚠️ COD/TKN = {cod_tkn_ratio:.1f} — marginal carbon availability. "
+                        f"Achievable TN ≈ {eff_tn_actual:.1f} mg/L. "
+                        "Increase anoxic fraction or add supplemental carbon for reliable compliance."
+                    )
+            else:
+                eff_tn_actual = eff_tn   # adequate carbon — target achievable
+
         r.performance.effluent_bod_mg_l = eff_bod
         r.performance.effluent_tss_mg_l = eff_tss
-        r.performance.effluent_nh4_mg_l = eff_nh4
-        r.performance.effluent_tn_mg_l  = eff_tn
+        r.performance.effluent_nh4_mg_l = round(eff_nh4_actual, 2)
+        r.performance.effluent_tn_mg_l  = round(eff_tn_actual, 2)
         r.performance.effluent_tp_mg_l  = eff_tp if inputs.chemical_p_removal else min(eff_tp + 0.3, 1.0)
 
         # ── 10. Scope 1 carbon ────────────────────────────────────────────

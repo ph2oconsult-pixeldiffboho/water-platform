@@ -39,6 +39,9 @@ PAGES = {
     "🔁 Compare Scenarios": "05_comparison",
     "📄 Report": "06_report",
     "📖 User Manual": "08_manual",
+    "📋 Assumptions": "09_assumptions",
+    "📈 Sensitivity": "10_sensitivity",
+    "🎯 Decision Framework": "11_decision",
 }
 
 # Use query params for navigation so browser back button works
@@ -83,6 +86,18 @@ elif page_key == "06_report":
 elif page_key == "08_manual":
     from apps.wastewater_app.pages import page_08_manual
     page_08_manual.render()
+
+elif page_key == "09_assumptions":
+    from apps.wastewater_app.pages import page_09_assumptions
+    page_09_assumptions.render()
+
+elif page_key == "10_sensitivity":
+    from apps.wastewater_app.pages import page_10_sensitivity
+    page_10_sensitivity.render()
+
+elif page_key == "11_decision":
+    from apps.wastewater_app.pages import page_11_decision
+    page_11_decision.render()
 
 # ── Sidebar footer ─────────────────────────────────────────────────────────
 st.sidebar.divider()

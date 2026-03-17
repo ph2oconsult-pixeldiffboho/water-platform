@@ -8,7 +8,7 @@ and tracks all changes for auditability.
 
 from __future__ import annotations
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
@@ -107,7 +107,7 @@ class AssumptionsManager:
         override_key = f"{category}.{key}"
         updated.user_overrides[override_key] = value
         updated.override_log.append({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "category": category,
             "key": key,
             "new_value": value,

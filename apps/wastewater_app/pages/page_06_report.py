@@ -6,7 +6,7 @@ apps/wastewater_app/pages/page_06_report.py
 
 from __future__ import annotations
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import streamlit as st
 import pandas as pd
 
@@ -69,7 +69,7 @@ def render() -> None:
           <tr><td><b>Location:</b> {meta.plant_location or '—'}</td>
               <td><b>Project No.:</b> {meta.project_number or '—'}</td></tr>
           <tr><td><b>Prepared by:</b> {meta.author or '—'}</td>
-              <td><b>Date:</b> {datetime.utcnow().strftime('%B %Y')}</td></tr>
+              <td><b>Date:</b> {datetime.now(timezone.utc).strftime('%B %Y')}</td></tr>
         </table>
     </div>
     """, unsafe_allow_html=True)
@@ -194,26 +194,71 @@ def render() -> None:
 
     # ── Export ─────────────────────────────────────────────────────────────
     st.divider()
-    st.subheader("Export")
-    col1, col2 = st.columns(2)
-    with col1:
-        report_dict = {
-            "project": report.project_name, "plant": report.plant_name,
-            "generated_at": report.generated_at,
-            "executive_summary": report.executive_summary,
-            "cost_table": report.cost_table,
-            "carbon_table": report.carbon_table,
-            "risk_table": report.risk_table,
-        }
-        st.download_button("📥 Export Report (JSON)",
-            data=json.dumps(report_dict, indent=2, default=str),
-            file_name=f"{meta.project_name.replace(' ','_')}_report.json",
-            mime="application/json", use_container_width=True)
-    with col2:
-        st.download_button("📥 Export Project (JSON)",
-            data=json.dumps(project.to_dict(), indent=2, default=str),
-            file_name=f"{meta.project_name.replace(' ','_')}_project.json",
-            mime="application/json", use_container_width=True)
+    st.subheader("Download Report")
+    fname_base = meta.project_name.replace(" ", "_") if meta.project_name else "report"
+
+    from core.reporting.report_exporter import ReportExporter
+
+    # Two report types
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**📋 Executive Summary** (1–2 pages)")
+        st.caption("Key metrics, comparison table, cost and carbon summary")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            try:
+                pdf_exec = ReportExporter.to_pdf(report, mode="executive")
+                st.download_button("📄 PDF", data=pdf_exec,
+                    file_name=f"{fname_base}_executive_summary.pdf",
+                    mime="application/pdf", use_container_width=True, type="primary")
+            except Exception as e:
+                st.error(f"PDF failed: {e}")
+        with col_b:
+            try:
+                docx_exec = ReportExporter.to_docx(report, mode="executive")
+                st.download_button("📝 Word", data=docx_exec,
+                    file_name=f"{fname_base}_executive_summary.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True)
+            except Exception as e:
+                st.error(f"Word failed: {e}")
+
+    with c2:
+        st.markdown("**📑 Comprehensive Report** (full detail)")
+        st.caption("Introduction, methodology, all tables, assumptions appendix, recommendations")
+        col_c, col_d = st.columns(2)
+        with col_c:
+            try:
+                pdf_full = ReportExporter.to_pdf(report, mode="comprehensive")
+                st.download_button("📄 PDF", data=pdf_full,
+                    file_name=f"{fname_base}_full_report.pdf",
+                    mime="application/pdf", use_container_width=True, type="primary")
+            except Exception as e:
+                st.error(f"PDF failed: {e}")
+        with col_d:
+            try:
+                docx_full = ReportExporter.to_docx(report, mode="comprehensive")
+                st.download_button("📝 Word", data=docx_full,
+                    file_name=f"{fname_base}_full_report.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True)
+            except Exception as e:
+                st.error(f"Word failed: {e}")
+
+    st.divider()
+    report_dict = {
+        "project": report.project_name, "plant": report.plant_name,
+        "generated_at": report.generated_at,
+        "executive_summary": report.executive_summary,
+        "cost_table": report.cost_table,
+        "carbon_table": report.carbon_table,
+        "risk_table": report.risk_table,
+        "comparison_table": report.comparison_table,
+    }
+    st.download_button("📥 Export raw data (JSON)",
+        data=json.dumps(report_dict, indent=2, default=str),
+        file_name=f"{fname_base}_data.json",
+        mime="application/json")
 
 
 def _render_calibration_report_section(cal_scenarios, project) -> None:

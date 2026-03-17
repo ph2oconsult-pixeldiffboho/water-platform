@@ -69,38 +69,40 @@ def render() -> None:
     aeration_key = f"aeration_overrides_{scenario.scenario_id}"
     if aeration_key not in st.session_state:
         st.session_state[aeration_key] = {}
-
     overrides = st.session_state[aeration_key]
 
-    # ── Always inject fresh O₂ from the technology module ────────────────
-    # Never trust stored domain_specific_outputs — they may be stale from a
-    # previous technology selection (e.g. old mbr returning 3,657 kg/d).
-    # Run the module directly every render using the current treatment pathway.
+    # ── Always compute O₂ fresh from module with ACTUAL scenario parameters ──
+    # Never trust stored domain_specific_outputs for O₂ — they may be from old
+    # code versions that didn't store o2_demand_kg_day. Always run the module
+    # with actual scenario tech_params (SRT, MLSS etc) on every render.
     tech_o2 = 0.0
+    overrides.pop("o2_demand_override_kg_day", None)  # clear any stale value
+
     if scenario.treatment_pathway and scenario.domain_inputs:
         try:
             from core.assumptions.assumptions_manager import AssumptionsManager
             from core.project.project_model import DomainType
-            from domains.wastewater.domain_interface import (
-                TECHNOLOGY_REGISTRY, TECHNOLOGY_INPUT_CLASSES,
-            )
-            _a = AssumptionsManager().load_defaults(DomainType.WASTEWATER)
+            from domains.wastewater.domain_interface import TECHNOLOGY_REGISTRY, TECHNOLOGY_INPUT_CLASSES
+            import dataclasses
+            _a    = AssumptionsManager().load_defaults(DomainType.WASTEWATER)
             _flow = scenario.domain_inputs.get("design_flow_mld", 10.0)
-            for tc in scenario.treatment_pathway.technology_sequence:
+            _tp   = scenario.treatment_pathway.technology_parameters
+            for tc in tech_seq:
                 if tc in TECHNOLOGY_REGISTRY:
-                    _r = TECHNOLOGY_REGISTRY[tc](_a).calculate(
-                        _flow, TECHNOLOGY_INPUT_CLASSES[tc](),
-                    )
+                    # Use actual scenario parameters — not defaults
+                    raw   = _tp.get(tc, {})
+                    cls   = TECHNOLOGY_INPUT_CLASSES[tc]
+                    known = {f.name for f in dataclasses.fields(cls) if not f.name.startswith("_")}
+                    _inp  = cls(**{k: v for k, v in raw.items() if k in known})
+                    _r    = TECHNOLOGY_REGISTRY[tc](_a).calculate(_flow, _inp)
                     tech_o2 += _r.performance.additional.get("o2_demand_kg_day", 0) or 0
         except Exception:
-            pass  # Fall through to aeration model's own O₂ calculation
+            pass  # aeration model will use its own O₂ calculation
 
     if tech_o2 > 0:
         overrides["o2_demand_override_kg_day"] = tech_o2
 
-    # ── Technology-specific SAE overrides ────────────────────────────────
-    # MABR: effective SAE = 1.8 × (OTE_MABR 0.95 / OTE_conv 0.20) = 8.55
-    # Always set/clear based on current technology — never leave stale values.
+    # ── Technology-specific SAE: MABR uses high-OTE bubble-free delivery ──
     if "mabr_bnr" in tech_seq:
         overrides["standard_aeration_efficiency_kg_o2_kwh"] = 8.55
         overrides["alpha_factor"] = 1.0
@@ -127,6 +129,23 @@ def render() -> None:
     # Store in domain_specific_outputs for comparison page
     scenario.domain_specific_outputs["aeration"] = result.to_summary_dict()
     update_current_project(project)
+
+    # ── Cross-check: aeration page O₂ vs Page 04 stored result ───────────
+    # Warn if they diverge by more than 10% — indicates page 04 needs re-run
+    p04_eng = scenario.domain_specific_outputs.get("engineering_summary", {})
+    p04_total_kwh_ml = (p04_eng.get("specific_energy_kwh_kl") or 0) * 1000
+    p04b_blower_kwh_ml = result.energy_intensity.kwh_per_ml_treated
+    if p04_total_kwh_ml > 0 and tech_o2 > 0:
+        # Blower is a subset of total plant energy — show context note
+        st.caption(
+            f"ℹ️ **Blower energy = {p04b_blower_kwh_ml:.0f} kWh/ML** "
+            f"({p04b_blower_kwh_ml/p04_total_kwh_ml*100:.0f}% of total plant "
+            f"{p04_total_kwh_ml:.0f} kWh/ML). "
+            f"Difference = mixing, RAS, screening, and other auxiliaries. "
+            f"See **Results page** for total plant energy breakdown."
+        )
+    elif p04_total_kwh_ml == 0:
+        st.warning("⚠️ Page 04 Results not yet calculated — run calculations on the Results page first for a full cross-check.")
 
     st.subheader(f"Aeration: {scenario.scenario_name}")
 

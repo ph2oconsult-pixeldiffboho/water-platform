@@ -74,30 +74,47 @@ def render_validation_banner(validation_result: ValidationResult) -> None:
 
 def render_cost_summary_card(cost_result: CostResult) -> None:
     """Display a cost summary metric card row."""
+    # Concept-level disclaimer
+    st.caption(
+        f"⚠️ **Concept-level estimate ({cost_result.cost_confidence})** — "
+        "AUD 2024. Not for procurement or funding approval."
+    )
+
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.metric(
             label="CAPEX",
             value=f"${cost_result.capex_total/1e6:.2f}M",
-            help=f"Capital cost — confidence {cost_result.cost_confidence}",
+            help=(
+                f"Capital cost. Confidence: {cost_result.cost_confidence}. "
+                "Includes civil, mechanical, electrical, and membranes for the "
+                "biological treatment train only. Excludes headworks, buildings, "
+                "land, sludge treatment, and owner's costs."
+            ),
         )
     with col2:
         st.metric(
             label="OPEX (per year)",
             value=f"${cost_result.opex_annual/1e3:.0f}k",
+            help="Electricity + sludge disposal + chemicals + maintenance + labour.",
         )
     with col3:
         st.metric(
-            label="Annualised Lifecycle Cost",
+            label="Lifecycle Cost (annualised)",
             value=f"${cost_result.lifecycle_cost_annual/1e3:.0f}k/yr",
-            help=f"Over {cost_result.analysis_period_years} year analysis period",
+            help=(
+                f"CAPEX × CRF({cost_result.discount_rate*100:.0f}%, "
+                f"{cost_result.analysis_period_years}yr) + OPEX annual. "
+                "CRF = Capital Recovery Factor."
+            ),
         )
     with col4:
         if cost_result.specific_cost_per_kl is not None:
             st.metric(
-                label="Specific Cost",
+                label="Specific Cost ($/kL treated)",
                 value=f"${cost_result.specific_cost_per_kl:.2f}/kL",
+                help="Annualised lifecycle cost ÷ annual treated volume.",
             )
         elif cost_result.specific_cost_per_tonne_ds is not None:
             st.metric(
@@ -163,6 +180,61 @@ def render_carbon_summary_card(carbon_result: CarbonResult) -> None:
     st.subheader("Carbon Breakdown")
     fig = _build_carbon_waterfall(carbon_result)
     st.plotly_chart(fig, use_container_width=True)
+
+    # ── Step 8: N2O uncertainty range ──────────────────────────────────────
+    # N2O is the dominant carbon uncertainty at concept stage.
+    # IPCC 2019 Table 6.8: EF central=0.016, low=0.005, high=0.050 kg N2O/kg N removed.
+    _scope1 = getattr(carbon_result, "scope_1_tco2e_yr", 0) or 0
+    _net    = getattr(carbon_result, "net_tco2e_yr", 0) or 0
+    # N2O is stored on TechnologyResult.carbon, aggregated into engineering_summary
+    # Try to get from engineering_summary first (passed via n2o_central kwarg),
+    # then fall back to estimating from scope_1 (N2O dominates, ~90% of scope_1)
+    _n2o_central = getattr(carbon_result, "n2o_biological_tco2e_yr", None)
+    if _n2o_central is None:
+        # Estimate: N2O typically 85-95% of Scope 1 for BNR/AGS/MABR
+        _n2o_central = _scope1 * 0.90 if _scope1 > 0 else None
+
+    if _n2o_central and _n2o_central > 0:
+        # Back-calculate N removal from central EF
+        # N2O_central = N_removed × EF_central × GWP / 1000
+        _EF_central = 0.016
+        _EF_low     = 0.005
+        _EF_high    = 0.050
+        _n2o_low    = _n2o_central * (_EF_low  / _EF_central)
+        _n2o_high   = _n2o_central * (_EF_high / _EF_central)
+        _net_low    = _net - _n2o_central + _n2o_low
+        _net_high   = _net - _n2o_central + _n2o_high
+
+        with st.expander("⚠️ N₂O Uncertainty Range (dominant carbon uncertainty)", expanded=False):
+            st.caption(
+                "N₂O emissions are the largest uncertainty in wastewater carbon accounting. "
+                "The IPCC 2019 Tier 1 emission factor has a ×10 range across sites. "
+                "**Site measurement is strongly recommended for detailed assessments.**"
+            )
+            col_n1, col_n2, col_n3 = st.columns(3)
+            with col_n1:
+                st.metric("N₂O — Low scenario",   f"{_n2o_low:.0f} tCO₂e/yr",
+                          help="EF = 0.005 kg N₂O/kg N (IPCC 2019 lower bound)")
+            with col_n2:
+                st.metric("N₂O — Central (used)", f"{_n2o_central:.0f} tCO₂e/yr",
+                          help="EF = 0.016 kg N₂O/kg N (IPCC 2019 Tier 1 default)")
+            with col_n3:
+                st.metric("N₂O — High scenario",  f"{_n2o_high:.0f} tCO₂e/yr",
+                          help="EF = 0.050 kg N₂O/kg N (IPCC 2019 upper bound)")
+
+            st.info(
+                f"**Net carbon range: {_net_low:.0f} – {_net_high:.0f} tCO₂e/yr** "
+                f"(central estimate: {_net:.0f} tCO₂e/yr). "
+                f"N₂O accounts for {_n2o_central/_net*100:.0f}% of net emissions at the central estimate."
+                if _net > 0 else
+                f"N₂O range: {_n2o_low:.0f} – {_n2o_high:.0f} tCO₂e/yr "
+                f"(central: {_n2o_central:.0f})"
+            )
+    else:
+        st.caption(
+            "💡 N₂O is typically the dominant Scope 1 uncertainty (IPCC EF range ×10). "
+            "Site-specific measurement recommended for formal carbon accounting."
+        )
 
 
 def _build_carbon_waterfall(carbon_result: CarbonResult) -> go.Figure:

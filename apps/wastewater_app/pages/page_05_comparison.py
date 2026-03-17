@@ -11,6 +11,8 @@ import plotly.express as px
 import pandas as pd
 
 from apps.ui.session_state import require_project, get_current_project
+from domains.wastewater.technology_fit import assess_all_technologies, FitLevel
+from domains.wastewater.input_model import WastewaterInputs
 from apps.ui.ui_components import render_page_header, render_comparison_table
 from core.project.project_manager import ProjectManager, ScenarioManager
 
@@ -462,6 +464,68 @@ def render() -> None:
             "They reflect relative risk between pathways, not absolute risk magnitude."
         )
 
+    # ── Step 5: Effluent quality comparison ──────────────────────────────────
+    st.divider()
+    st.subheader("🧪 Effluent Quality Comparison")
+    st.caption(
+        "Achievable effluent quality for each scenario at design conditions. "
+        "🟢 = at or below target  🟡 = within 20% of target  🔴 = exceeds target"
+    )
+
+    eff_rows = []
+    for s in calc:
+        tp   = s.domain_specific_outputs.get("technology_performance", {})
+        di   = s.domain_inputs or {}
+        tech_code = (s.treatment_pathway.technology_sequence[0]
+                     if s.treatment_pathway and s.treatment_pathway.technology_sequence else "")
+        perf = tp.get(tech_code, {})
+
+        targets = {
+            "BOD":  di.get("effluent_bod_mg_l", 10),
+            "TSS":  di.get("effluent_tss_mg_l", 10),
+            "TN":   di.get("effluent_tn_mg_l", 10),
+            "NH₄":  di.get("effluent_nh4_mg_l", 1),
+            "TP":   di.get("effluent_tp_mg_l", 1),
+        }
+        achieved = {
+            "BOD":  perf.get("effluent_bod_mg_l"),
+            "TSS":  perf.get("effluent_tss_mg_l"),
+            "TN":   perf.get("effluent_tn_mg_l"),
+            "NH₄":  perf.get("effluent_nh4_mg_l"),
+            "TP":   perf.get("effluent_tp_mg_l"),
+        }
+
+        def _fmt(val, target):
+            if val is None: return "—"
+            try:
+                v, t = float(val), float(target)
+                icon = "🟢" if v <= t else ("🟡" if v <= t * 1.2 else "🔴")
+                return f"{icon} {v:.1f}"
+            except (TypeError, ValueError):
+                return str(val)
+
+        row = {"Scenario": s.scenario_name}
+        for param in ["BOD","TSS","TN","NH₄","TP"]:
+            row[f"{param} (mg/L)"] = _fmt(achieved[param], targets[param])
+        eff_rows.append(row)
+
+    if eff_rows:
+        eff_df = pd.DataFrame(eff_rows)
+        st.dataframe(eff_df, use_container_width=True, hide_index=True)
+        st.caption(
+            "Targets are set on page 02 Plant Inputs. "
+            "Achievable values reflect model output at design average flow. "
+            "Peak flow and upset conditions are not modelled at concept stage."
+        )
+
+    # ── Phase 4: Technology Fit Indicators ────────────────────────────────
+    st.divider()
+    _render_technology_fit(calc)
+
+    # ── Phase 3: Visual Highlights Summary ─────────────────────────────────
+    st.divider()
+    _render_highlights_summary(calc)
+
     # ── Set preferred ──────────────────────────────────────────────────────
     st.divider()
     st.subheader("⭐ Set Preferred Option")
@@ -477,3 +541,111 @@ def render() -> None:
             pm.save(project)
             st.success(f"⭐ **{sel}** set as preferred option.")
             st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3: Visual Highlights Summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_highlights_summary(calc):
+    """Phase 3: Highlight best-performing option on key metrics."""
+    if len(calc) < 2:
+        return
+
+    st.subheader("🏆 Best-in-Class Summary")
+    st.caption("Highlights which option performs best on each key decision metric.")
+
+    metrics = [
+        ("lowest_lcc",    "Lowest Lifecycle Cost",  lambda s: s.cost_result.lifecycle_cost_annual if s.cost_result else float("inf")),
+        ("lowest_capex",  "Lowest CAPEX",           lambda s: s.cost_result.capex_total if s.cost_result else float("inf")),
+        ("lowest_energy", "Lowest Energy",           lambda s: s.domain_specific_outputs.get("engineering_summary", {}).get("specific_energy_kwh_kl", float("inf")) or float("inf")),
+        ("lowest_carbon", "Lowest Net Carbon",       lambda s: s.carbon_result.net_tco2e_yr if s.carbon_result else float("inf")),
+        ("lowest_sludge", "Lowest Sludge",           lambda s: s.domain_specific_outputs.get("engineering_summary", {}).get("total_sludge_kgds_day", float("inf")) or float("inf")),
+        ("lowest_risk",   "Lowest Overall Risk",     lambda s: s.risk_result.overall_score if s.risk_result else float("inf")),
+        ("lowest_fp",     "Smallest Footprint",      lambda s: s.domain_specific_outputs.get("technology_performance", {}).get(
+                                                        (s.treatment_pathway.technology_sequence[0] if s.treatment_pathway and s.treatment_pathway.technology_sequence else ""), {}
+                                                      ).get("footprint_m2", float("inf")) or float("inf")),
+        ("best_kl",       "Best $/kL",               lambda s: s.cost_result.specific_cost_per_kl if s.cost_result and s.cost_result.specific_cost_per_kl else float("inf")),
+    ]
+
+    cols = st.columns(len(metrics))
+    for col, (key, label, getter) in zip(cols, metrics):
+        try:
+            values = [(s.scenario_name, getter(s)) for s in calc]
+            best_name, best_val = min(values, key=lambda x: x[1])
+            with col:
+                st.markdown(f"**{label}**")
+                st.success(f"🏆 {best_name}")
+                # Format value
+                if "Cost" in label or "CAPEX" in label:
+                    st.caption(f"${best_val/1e6:.1f}M" if best_val > 1e5 else f"${best_val/1e3:.0f}k/yr")
+                elif "Energy" in label:
+                    st.caption(f"{best_val*1000:.0f} kWh/ML")
+                elif "Carbon" in label:
+                    st.caption(f"{best_val:.0f} tCO₂e/yr")
+                elif "Sludge" in label:
+                    st.caption(f"{best_val:.0f} kgDS/day")
+                elif "Risk" in label:
+                    st.caption(f"{best_val:.1f}/100")
+                elif "Footprint" in label:
+                    st.caption(f"{best_val:.0f} m²")
+                elif "$/kL" in label:
+                    st.caption(f"${best_val:.3f}/kL")
+        except Exception:
+            pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 4: Technology Fit Indicators
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_technology_fit(calc):
+    """Phase 4: Technology fit indicators for the scenario conditions."""
+    if not calc:
+        return
+
+    st.subheader("🎯 Technology Fit Assessment")
+    st.caption(
+        "Evaluates how well each technology suits the scenario operating conditions. "
+        "Based on temperature, COD:TKN ratio, effluent targets, footprint, and technology maturity. "
+        "This is screening-level guidance — not a substitute for detailed design."
+    )
+
+    # Use first scenario's inputs as the reference conditions
+    ref = calc[0]
+    di = ref.domain_inputs or {}
+
+    known = {f for f in WastewaterInputs.__dataclass_fields__ if not f.startswith("_")}
+    clean = {k: v for k, v in di.items() if k in known}
+    try:
+        inputs = WastewaterInputs(**clean)
+    except Exception:
+        inputs = WastewaterInputs()
+
+    fit_cols = st.columns(len(calc))
+    for col, s in zip(fit_cols, calc):
+        tech_code = (s.treatment_pathway.technology_sequence[0]
+                     if s.treatment_pathway and s.treatment_pathway.technology_sequence else "")
+        tp = s.domain_specific_outputs.get("technology_performance", {}).get(tech_code, {}) if s.domain_specific_outputs else {}
+
+        try:
+            result = assess_all_technologies([tech_code], inputs, {tech_code: tp})
+            fit = result.get(tech_code)
+        except Exception as e:
+            fit = None
+
+        with col:
+            st.markdown(f"**{s.scenario_name}**")
+            if fit:
+                # Overall badge
+                colour = {"good": "🟢", "conditional": "🟡", "poor": "🔴"}[fit.overall_level.value]
+                st.markdown(f"{colour} **{fit.label}**")
+                st.caption(fit.summary[:120])
+
+                # Criteria detail in expander
+                with st.expander("Details", expanded=False):
+                    for crit in fit.criteria:
+                        icon = {"good": "✅", "conditional": "⚠️", "poor": "❌"}[crit.level.value]
+                        st.markdown(f"{icon} **{crit.criterion}**: {crit.reason}")
+            else:
+                st.markdown("⚪ **Not assessed**")
