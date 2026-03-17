@@ -7,4 +7,5 @@ from core.qa.rules import (
     carbon_rules,
     decision_rules,
     report_rules,
+    differentiation_rules,
 )

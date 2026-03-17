@@ -1113,6 +1113,37 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
         "The Word version contains the design parameter tables above for each scenario.",
         7)
 
+    # ── Technology Differentiation Summary ────────────────────────────────
+    diff_summary = getattr(report, "differentiation_summary", [])
+    if diff_summary:
+        _docx_heading(doc, "Technology Differentiation Summary", 1)
+        _docx_body(doc,
+            "The following table summarises the structural and process identity of each "
+            "evaluated technology option. Key differences in process configuration, "
+            "advantages, and trade-offs are shown to support the selection narrative.",
+            9)
+
+        diff_rows = [["Scenario", "Process Type", "Clarifiers", "RAS", "Batch Cycle",
+                      "Key Advantage", "Key Penalty"]]
+        for d in diff_summary:
+            diff_rows.append([
+                d.get("scenario", ""),
+                d.get("structural_summary", ""),
+                d.get("has_clarifiers", ""),
+                d.get("has_ras", ""),
+                d.get("uses_batch", ""),
+                d.get("advantage", ""),
+                d.get("penalty", ""),
+            ])
+        _docx_table(doc, diff_rows, [4.0, 5.0, 2.5, 2.0, 2.5, 6.0, 6.0])
+
+        # Per-scenario notes box
+        for d in diff_summary:
+            if d.get("notes"):
+                _docx_body(doc,
+                    f"Note — {d['scenario']}: {d['notes']}",
+                    7)
+
     # 5. Cost
     if report.cost_table:
         _docx_heading(doc, "5. Capital and Lifecycle Cost Assessment")

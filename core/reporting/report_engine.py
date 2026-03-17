@@ -65,6 +65,7 @@ class ReportObject:
     # Design data per scenario: {scenario_name: {tech_code: perf_dict, design_params: {...}}}
     scenario_design_data: Dict[str, Any] = field(default_factory=dict)
     preferred_scenario: Optional[str] = None
+    differentiation_summary: List[Dict] = field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -384,6 +385,9 @@ class ReportEngine:
                 "specific_energy_kwh_kl": eng.get("specific_energy_kwh_kl", 0),
                 "domain_inputs": s.domain_inputs or {},
             }
+
+        # Store differentiation summary for Word exporter
+        report.differentiation_summary = self._build_differentiation_summary(scenarios)
 
         return report
 
@@ -868,6 +872,44 @@ class ReportEngine:
         if not rows:
             rows = [{"Scenario": "—", "Technology": "—",
                      "Warning": "No engineering warnings raised for any scenario."}]
+        return rows
+
+    def _build_differentiation_summary(self, scenarios: list) -> list:
+        """
+        Build Technology Differentiation Summary — one row per scenario.
+        Documents process type, structural identity, advantage and penalty vs BNR.
+        """
+        from domains.wastewater.technology_signatures import get_signature
+        rows = []
+        for sc in scenarios:
+            tp = getattr(sc, "treatment_pathway", None)
+            tc = (tp.technology_sequence[0]
+                  if tp and getattr(tp, "technology_sequence", None) else None)
+            sig = get_signature(tc) if tc else None
+            if sig:
+                rows.append({
+                    "scenario":           sc.scenario_name,
+                    "process_type":       sig.process_type.replace("_", " ").title(),
+                    "structural_summary": sig.structural_summary,
+                    "advantage":          sig.advantage_vs_bnr,
+                    "penalty":            sig.penalty_vs_bnr,
+                    "has_clarifiers":     "Yes" if sig.has_secondary_clarifiers else "No",
+                    "has_ras":            "Yes" if sig.has_ras else "No",
+                    "has_mlr":            "Yes" if sig.has_mlr else "No",
+                    "uses_batch":         "Yes" if sig.uses_batch_cycles else "No",
+                    "typical_mlss":       f"{sig.typical_mlss_mg_l[0]:.0f}–{sig.typical_mlss_mg_l[1]:.0f}",
+                    "notes":              sig.notes[:120] if sig.notes else "",
+                })
+            else:
+                rows.append({
+                    "scenario":           sc.scenario_name,
+                    "process_type":       tc or "Unknown",
+                    "structural_summary": tc or "—",
+                    "advantage": "—", "penalty": "—",
+                    "has_clarifiers": "—", "has_ras": "—",
+                    "has_mlr": "—", "uses_batch": "—",
+                    "typical_mlss": "—", "notes": "",
+                })
         return rows
 
     def _build_limitations_text(self, scenarios: List[ScenarioModel]) -> str:

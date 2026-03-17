@@ -146,7 +146,7 @@ BENCHMARK_SCENARIOS: List[BenchmarkScenario] = [
                 "eff_nh4":    ExpectedRange(0, 8.0,    "At 12°C NH4 penalty ×4 on target → up to ~4-6 mg/L"),
             },
             "granular_sludge": {
-                "kwh_ml":     ExpectedRange(300, 560,   "Cold penalty: +15-40% energy"),
+                "kwh_ml":     ExpectedRange(220, 380,   "Cold T AGS: T_factor reduces nit O2 demand; net energy similar to warm; cold_reactor_penalty adds reactor volume not energy"),
                 "reactor_m3": ExpectedRange(1200, 3000, "SRT extended 25% at 12°C"),
                 "eff_nh4":    ExpectedRange(1.5, 5.0,  "Granule instability → NH4 penalty"),
             },

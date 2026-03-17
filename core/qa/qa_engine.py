@@ -22,6 +22,7 @@ from core.qa.rules import (
     carbon_rules,
     decision_rules,
     report_rules,
+    differentiation_rules,
 )
 
 
@@ -77,6 +78,9 @@ def validate_project(
         tech_code = (tp.technology_sequence[0]
                      if tp and getattr(tp, "technology_sequence", None) else None)
         result = result.merge(validate_scenario(sc, tech_code))
+
+    # Technology differentiation checks (T1-T4)
+    result = result.merge(differentiation_rules.run(scenarios))
 
     # Decision logic checks
     if decision:
