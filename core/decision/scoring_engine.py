@@ -526,7 +526,9 @@ class ScoringEngine:
         # ── Step 5: Build narrative ───────────────────────────────────────
         recommendation, trade_off, rationale = self._build_narrative(
             preferred, runner_up, eligible, close, weights, tied_criteria,
-            binary_comparison=binary_comparison
+            binary_comparison=binary_comparison,
+            below_uncertainty=below_uncertainty,
+            weight_profile_name=weight_profile.value if hasattr(weight_profile, "value") else str(weight_profile),
         )
 
         return DecisionResult(
@@ -551,13 +553,15 @@ class ScoringEngine:
 
     def _build_narrative(
         self,
-        preferred:      Optional[ScoredOption],
-        runner_up:      Optional[ScoredOption],
-        eligible:       List[ScoredOption],
-        close:          bool,
-        weights:        Dict[str, float],
-        tied_criteria:  List[str],
-        binary_comparison: bool = False,
+        preferred:          Optional[ScoredOption],
+        runner_up:          Optional[ScoredOption],
+        eligible:           List[ScoredOption],
+        close:              bool,
+        weights:            Dict[str, float],
+        tied_criteria:      List[str],
+        binary_comparison:  bool = False,
+        below_uncertainty:  Optional[List[str]] = None,
+        weight_profile_name: str = "selected",
     ) -> Tuple[str, str, List[str]]:
 
         if not preferred:
@@ -642,26 +646,42 @@ class ScoringEngine:
         elif runner_up:
             gap = preferred.total_score - runner_up.total_score
             # Check if significant weight sits on below-uncertainty criteria
-            below_weight = sum(weights.get(c,0) for c in tied_criteria)
+            # Use below_uncertainty (spread < 40% of midpoint) for the uncertainty note.
+            # Do NOT use tied_criteria (spread < 15%) — tied means the two options are
+            # similar on this criterion, which is different from the measurement being uncertain.
+            _below_unc = below_uncertainty or []
+            below_unc_weight = sum(weights.get(c, 0) for c in _below_unc)
+            tied_weight = sum(weights.get(c, 0) for c in tied_criteria)
             uncertainty_note = ""
-            if below_weight >= 0.60:
+            if below_unc_weight >= 0.60:
                 uncertainty_note = (
-                    f" CAUTION: {below_weight*100:.0f}% of the score weight falls on criteria "
+                    f" CAUTION: {below_unc_weight*100:.0f}% of the score weight falls on criteria "
                     "within concept-stage estimate uncertainty. The score margin cannot "
                     "reliably discriminate between these options under current inputs. "
                     "Consider site investigation or additional scenario differentiation "
                     "before using this score to select a technology."
                 )
-            elif below_weight >= 0.25:
+            elif below_unc_weight >= 0.25:
                 uncertainty_note = (
-                    f" Note: {below_weight*100:.0f}% of the score weight falls on criteria "
+                    f" Note: {below_unc_weight*100:.0f}% of the score weight falls on criteria "
                     "within concept-stage estimate uncertainty -- treat the score margin as "
                     "indicative, not definitive."
                 )
+            # Build structured recommendation: decision / basis / caveats separated
+            tied_labels = [CRITERION_LABELS.get(c,c) for c in tied_criteria
+                           if weights.get(c,0) > 0]
+            tied_note = ""
+            if tied_labels:
+                tied_note = (
+                    f" The following criteria are indistinguishable between the options "
+                    f"at concept stage: {', '.join(tied_labels)}."
+                )
             recommendation = (
-                f"{pname} is the preferred option under the selected weight profile "
-                f"({preferred.total_score:.0f}/100, {gap:.0f} points ahead of "
-                f"{runner_up.scenario_name}).{uncertainty_note}{binary_note}"
+                f"{pname} is preferred under the {weight_profile_name} profile "
+                f"({preferred.total_score:.0f}/100 vs {runner_up.total_score:.0f}/100)."
+                f"{tied_note}"
+                f"{uncertainty_note}"
+                f"{binary_note}"
             )
             # Trade-off: where does runner-up score materially better?
             # Store (criterion_key, label) tuples so raw value lookup works
