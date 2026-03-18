@@ -329,6 +329,8 @@ class MOBTechnology(BaseTechnology):
         r.energy.aeration_kwh_day = round(aeration_kwh_day, 1)
         r.energy.mixing_kwh_day   = round(mixing_kwh_day, 1)
         r.energy.pumping_kwh_day  = round(ras_kwh_day, 1)
+        nh4_removed_mob = max(0.001, nh4_load_kg_day * eff_nitrification)
+        r.performance.additional["kwh_per_kg_nh4_removed"] = round(aeration_kwh_day / nh4_removed_mob, 1)
 
         r.note(
             f"O2 demand: {o2_total_kg_day:.0f} kg/day "

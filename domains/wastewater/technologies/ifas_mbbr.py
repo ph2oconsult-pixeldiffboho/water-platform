@@ -289,8 +289,8 @@ class IFASMBBRTechnology(BaseTechnology):
 
         r.energy.aeration_kwh_day = round(aer_kwh, 1)
         r.energy.mixing_kwh_day   = round(mix_kwh, 1)
-
-        # ── Pumping: RAS + MLR + WAS + ancillary (same as BNR) ────────────
+        nh4_removed_ifas = max(0.001, flow * (inf["tn_mg_l"] * nh4_f - eff_nh4) / 1000.0)
+        r.performance.additional["kwh_per_kg_nh4_removed"] = round(aer_kwh / nh4_removed_ifas, 1)
         pump_eff  = self._get_eng("pump_efficiency", 0.72)
         flow_m3s  = flow / 86400.0
         ras_kwh   = (1000 * 9.81 * flow_m3s * 1.0 * 3.0 / pump_eff) * 24.0 / 1000.0  # RAS 1×Q, 3m

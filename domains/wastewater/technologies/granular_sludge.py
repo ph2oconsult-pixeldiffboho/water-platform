@@ -488,6 +488,9 @@ class GranularSludgeTechnology(BaseTechnology):
             "lrv_cryptosporidium":       1.5,   # Modest credit from fast-settling granules
             "cycle_time_hours":          inputs.cycle_time_hours,
         })
+        # kWh per kg NH4 removed — standard energy benchmarking metric
+        nh4_removed_ags = max(0.001, flow * (inf["tn_mg_l"] * nh4_frac - eff_nh4) / 1000.0)
+        r.performance.additional["kwh_per_kg_nh4_removed"] = round(aer_kwh / nh4_removed_ags, 1)
 
         # ── 8. Scope 1 emissions ───────────────────────────────────────────
         n2o_ef  = self._get_eng("n2o_emission_factor_g_n2o_per_g_n_removed", 0.016)

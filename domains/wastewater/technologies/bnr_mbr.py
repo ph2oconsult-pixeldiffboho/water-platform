@@ -280,6 +280,8 @@ class BNRMBRTechnology(BaseTechnology):
         r.energy.membrane_kwh_day = round(scour_kwh, 1)
         r.energy.mixing_kwh_day   = round(mix_kwh, 1)
         r.energy.pumping_kwh_day  = round(perm_kwh + ras_kwh + mlr_kwh + was_kwh + ancillary_kwh, 1)
+        nh4_removed_bnrmbr = max(0.001, flow * (inf["tn_mg_l"] * nh4_frac - eff_nh4) / 1000.0)
+        r.performance.additional["kwh_per_kg_nh4_removed"] = round(bio_aer_kwh / nh4_removed_bnrmbr, 1)
 
         r.notes.add_assumption(
             f"O₂ demand = {o2_kg:.0f} kg/day | Membrane scour = {scour_kwh:.0f} kWh/day"

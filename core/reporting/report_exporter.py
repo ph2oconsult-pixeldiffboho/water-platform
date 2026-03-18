@@ -163,6 +163,124 @@ def _make_pdf_doc(buf, is_exec=False):
     )
 
 
+def _chart_capex(chart_data, width, height=140):
+    """Bar chart: CAPEX by scenario ($M)."""
+    from reportlab.graphics.shapes import Drawing, String, Rect
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.charts.legends import Legend
+    from reportlab.lib import colors
+
+    names  = chart_data.get("x", [])
+    values = chart_data.get("y", [])
+    if not names or not values:
+        return None
+
+    PALETTE = [colors.HexColor("#1F6AA5"), colors.HexColor("#27AE60"),
+               colors.HexColor("#E67E22"), colors.HexColor("#8E44AD"),
+               colors.HexColor("#C0392B")]
+
+    d = Drawing(width, height)
+    chart_w, chart_h = width - 60, height - 50
+
+    bc = VerticalBarChart()
+    bc.x, bc.y = 50, 35
+    bc.width, bc.height = chart_w, chart_h
+    bc.data = [[v] for v in values]
+    bc.categoryAxis.categoryNames = [""]
+    bc.valueAxis.valueMin = 0
+    mx = max(values)
+    bc.valueAxis.valueMax = round(mx * 1.3 + 0.5)
+    bc.valueAxis.valueStep = round(mx * 1.3 / 5, 1) if mx else 2
+    bc.valueAxis.labels.fontSize = 7
+    bc.valueAxis.labels.fontName = "Helvetica"
+    bc.categoryAxis.labels.fontSize = 7
+    bc.categoryAxis.labels.fontName = "Helvetica"
+    bc.categoryAxis.visibleTicks = False
+    bc.groupSpacing = 10
+    bc.barSpacing = 3
+    for i in range(len(values)):
+        bc.bars[i].fillColor = PALETTE[i % len(PALETTE)]
+        bc.bars[i].strokeColor = None
+    d.add(bc)
+
+    col_w = chart_w / len(values)
+    for i, val in enumerate(values):
+        bar_top = 35 + (val / (bc.valueAxis.valueMax or 1)) * chart_h
+        d.add(String(50 + (i + 0.5) * col_w, bar_top + 3,
+                     f"${val:.1f}M", fontSize=7, fontName="Helvetica-Bold",
+                     fillColor=PALETTE[i % len(PALETTE)], textAnchor="middle"))
+
+    leg = Legend()
+    leg.x, leg.y = 50, 10
+    leg.dx, leg.dy = 8, 8
+    leg.fontName, leg.fontSize = "Helvetica", 7
+    leg.columnMaximum = len(names)
+    leg.colorNamePairs = [(PALETTE[i % len(PALETTE)], n) for i, n in enumerate(names)]
+    leg.alignment = "left"
+    d.add(leg)
+    return d
+
+
+def _chart_stacked_h(labels, scenario_data, width, height=160, unit="k$/yr"):
+    """Stacked horizontal bar chart."""
+    from reportlab.graphics.shapes import Drawing, String, Rect
+    from reportlab.lib import colors
+
+    if not labels or not scenario_data:
+        return None
+
+    PALETTE = [colors.HexColor("#1F6AA5"), colors.HexColor("#27AE60"),
+               colors.HexColor("#E67E22"), colors.HexColor("#8E44AD"),
+               colors.HexColor("#C0392B"), colors.HexColor("#16A085"),
+               colors.HexColor("#F39C12")]
+    grey = colors.HexColor("#555555")
+
+    scenarios = list(scenario_data.keys())
+    n = len(scenarios)
+    d = Drawing(width, height)
+
+    LEFT = 95
+    chart_w = width - LEFT - 15
+    slot_h = (height - 35) / max(n, 1)
+    bar_h = slot_h * 0.55
+
+    totals = [sum(scenario_data[s].get(lb, 0) for lb in labels) for s in scenarios]
+    max_t = max(totals) if totals else 1
+
+    legend_seen = []
+    for si, scen in enumerate(scenarios):
+        y_bar = height - 25 - (si + 1) * slot_h + (slot_h - bar_h) / 2
+        d.add(String(LEFT - 5, y_bar + bar_h * 0.3, scen,
+                     fontSize=7, fontName="Helvetica-Bold",
+                     fillColor=grey, textAnchor="end"))
+        x = LEFT
+        for li, lb in enumerate(labels):
+            val = scenario_data[scen].get(lb, 0)
+            if val <= 0:
+                continue
+            seg_w = (val / max_t) * chart_w
+            c = PALETTE[li % len(PALETTE)]
+            d.add(Rect(x, y_bar, seg_w, bar_h, fillColor=c, strokeColor=None))
+            x += seg_w
+            if lb not in legend_seen:
+                legend_seen.append(lb)
+        row_total = sum(scenario_data[scen].get(lb, 0) for lb in labels)
+        d.add(String(x + 3, y_bar + bar_h * 0.3,
+                     f"${row_total:.0f}k" if "k$" in unit else f"{row_total:.0f}",
+                     fontSize=6.5, fontName="Helvetica", fillColor=grey))
+
+    lx = LEFT
+    for li, lb in enumerate(legend_seen[:7]):
+        c = PALETTE[li % len(PALETTE)]
+        d.add(Rect(lx, 4, 8, 8, fillColor=c, strokeColor=None))
+        short = lb[:16]
+        d.add(String(lx + 10, 5, short, fontSize=6, fontName="Helvetica", fillColor=grey))
+        lx += len(short) * 4.2 + 16
+
+    return d
+
+
+
 def _pdf_hr(colours):
     from reportlab.platypus import HRFlowable
     return HRFlowable(width="100%", thickness=0.6,
@@ -371,18 +489,54 @@ def _pdf_executive(report: ReportObject) -> bytes:
 def _pdf_comprehensive(report: ReportObject) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
+    from reportlab.lib import colors
     from reportlab.platypus import (
         Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether,
     )
-    from reportlab.lib import colors
+    from reportlab.platypus.tableofcontents import TableOfContents
+    from reportlab.platypus.doctemplate import BaseDocTemplate, PageTemplate
+    from reportlab.platypus import Frame
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
 
     styles, colours = _pdf_styles()
     buf = io.BytesIO()
-    doc = _make_pdf_doc(buf)
     W = A4[0] - 36*mm
+    H = A4[1]
+    L, R, T, B = 18*mm, 18*mm, 22*mm, 22*mm
+
+    # ── TOC-aware doc template ────────────────────────────────────────────
+    # Add h1_toc style — h1 that registers in the TOC
+    rl_blue = colours["blue"]
+    rl_grey = colours["grey"]
+    styles["h1_toc"] = ParagraphStyle(
+        "rpt_h1_toc", parent=styles["h1"],
+        fontSize=13, fontName="Helvetica-Bold", textColor=rl_blue,
+        spaceBefore=14, spaceAfter=4,
+    )
+
+    class _TocDoc(BaseDocTemplate):
+        def afterFlowable(self, flowable):
+            if isinstance(flowable, Paragraph):
+                style = flowable.style.name
+                if style == "rpt_h1_toc":
+                    txt = flowable.getPlainText()
+                    self.notify("TOCEntry", (0, txt, self.page))
+
+    doc = _TocDoc(buf, pagesize=A4,
+                  leftMargin=L, rightMargin=R, topMargin=T, bottomMargin=B)
+
+    frame = Frame(L, B, A4[0]-L-R, A4[1]-T-B, id="main")
 
     def hf(canvas, doc):
         _pdf_header_footer(canvas, doc, report)
+
+    pt = PageTemplate(id="main", frames=[frame], onPage=hf)
+    doc.addPageTemplates([pt])
+
+    def H1(text):
+        """Heading 1 that registers in TOC."""
+        return Paragraph(text, styles["h1_toc"])
 
     story = []
 
@@ -422,8 +576,20 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         styles["disc"]))
     story.append(PageBreak())
 
+    # ── Table of Contents ──────────────────────────────────────────────────
+    toc = TableOfContents()
+    toc.levelStyles = [
+        ParagraphStyle("TOCHeading1", fontName="Helvetica", fontSize=9,
+                       leftIndent=0, firstLineIndent=0, spaceBefore=4,
+                       leading=14, textColor=colors.HexColor(f"#{GREY_HEX}")),
+    ]
+    story.append(Paragraph("Contents", styles["title"]))
+    story.append(_pdf_hr(colours))
+    story.append(toc)
+    story.append(PageBreak())
+
     # ── 1. Introduction ────────────────────────────────────────────────────
-    story.append(Paragraph("1. Introduction", styles["h1"]))
+    story.append(H1("1. Introduction"))
     story.append(_pdf_hr(colours))
     story.append(Paragraph(
         f"This report presents the results of a concept-stage treatment technology comparison "
@@ -442,7 +608,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
     story.append(Spacer(1, 8))
 
     # ── 2. Study Scope ─────────────────────────────────────────────────────
-    story.append(Paragraph("2. Study Scope and Methodology", styles["h1"]))
+    story.append(H1("2. Study Scope and Methodology"))
     story.append(_pdf_hr(colours))
     story.append(Paragraph(
         f"A total of <b>{len(report.scenario_names)} treatment scenarios</b> were evaluated:",
@@ -469,7 +635,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
 
     # ── 3. Multi-Criteria Comparison ───────────────────────────────────────
     if report.comparison_table:
-        story.append(Paragraph("3. Multi-Criteria Comparison", styles["h1"]))
+        story.append(H1("3. Multi-Criteria Comparison"))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "Table 1 presents the key comparative metrics across all evaluated scenarios.",
@@ -481,7 +647,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(Spacer(1, 8))
 
     # ── 4. Process Design Summary ─────────────────────────────────────────
-    story.append(Paragraph("4. Process Design Summary", styles["h1"]))
+    story.append(H1("4. Process Design Summary"))
     story.append(_pdf_hr(colours))
     story.append(Paragraph(
         "Table 2 presents the key process design parameters for each evaluated scenario, "
@@ -504,7 +670,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
 
     # ── PFD section ────────────────────────────────────────────────────────
     story.append(Spacer(1, 6))
-    story.append(Paragraph("5. Process Flow Diagrams", styles["h1"]))
+    story.append(H1("5. Process Flow Diagrams"))
     story.append(_pdf_hr(colours))
     story.append(Paragraph(
         "The following schematic process flow diagrams illustrate the treatment train "
@@ -589,7 +755,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
     # ── Re-number remaining sections ────────────────────────────────────────
     # ── 6. Capital Cost ─────────────────────────────────────────────────────
     if report.cost_table:
-        story.append(Paragraph("6. Capital and Lifecycle Cost Assessment", styles["h1"]))
+        story.append(H1("6. Capital and Lifecycle Cost Assessment"))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "Table 3 summarises the capital cost, operating cost, and lifecycle cost for each "
@@ -607,11 +773,18 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             "reticulation, owner's costs, and escalation. A 20% design contingency and 12% "
             "contractor margin are included in the unit rates.",
             styles["body"]))
+        # CAPEX chart
+        if report.charts.get("capex_comparison"):
+            ch = _chart_capex(report.charts["capex_comparison"], W, height=150)
+            if ch:
+                story.append(Spacer(1, 4))
+                story.append(ch)
+                story.append(Paragraph("Figure A — CAPEX comparison by scenario ($M, AUD 2024)", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 6a. OPEX Breakdown ────────────────────────────────────────────────
     if getattr(report, "opex_breakdown_table", None):
-        story.append(Paragraph("6a. OPEX Cost Drivers", styles["h1"]))
+        story.append(H1("6a. OPEX Cost Drivers"))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "Table 3a breaks down annual operating cost by category. This identifies the primary "
@@ -626,11 +799,25 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                 "Table 3a: OPEX breakdown by category (AUD 2024/yr). "
                 "Percentages shown as proportion of total annual OPEX.",
                 styles["caption"]))
+        # OPEX stacked chart — build from opex_breakdown chart data
+        opex_cd = report.charts.get("opex_breakdown", {})
+        if opex_cd and opex_cd.get("scenarios") and opex_cd.get("categories"):
+            cats = opex_cd["categories"]
+            scen_data = {
+                scen: {cat: opex_cd["data"].get(cat, [0]*len(opex_cd["scenarios"]))[si]
+                       for cat in cats}
+                for si, scen in enumerate(opex_cd["scenarios"])
+            }
+            ch = _chart_stacked_h(cats, scen_data, W, height=max(120, len(opex_cd["scenarios"]) * 55 + 40))
+            if ch:
+                story.append(Spacer(1, 4))
+                story.append(ch)
+                story.append(Paragraph("Figure B — Annual OPEX breakdown by category (k$/yr)", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 6b. Specific Performance Metrics ──────────────────────────────────
     if getattr(report, "specific_metrics_table", None):
-        story.append(Paragraph("6b. Specific Performance Metrics", styles["h1"]))
+        story.append(H1("6b. Specific Performance Metrics"))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "Table 3b presents normalised performance metrics to enable direct comparison "
@@ -649,7 +836,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
 
     # ── 7. Energy & Carbon ─────────────────────────────────────────────────
     if report.carbon_table:
-        story.append(Paragraph("7. Energy and Carbon Footprint", styles["h1"]))
+        story.append(H1("7. Energy and Carbon Footprint"))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "Table 4 summarises the carbon emissions for each scenario. Scope 1 emissions "
@@ -662,11 +849,32 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         if t:
             story.append(t)
             story.append(Paragraph("Table 4: Carbon and energy summary", styles["caption"]))
+        # Carbon chart — Scope 1 vs Scope 2 stacked
+        carbon_cd = report.charts.get("carbon_comparison", {})
+        if carbon_cd and carbon_cd.get("scenarios"):
+            scens = carbon_cd["scenarios"]
+            scen_data = {
+                scen: {
+                    "Scope 1 (N₂O/CH₄)": carbon_cd["scope_1"][si],
+                    "Scope 2 (Electricity)": carbon_cd["scope_2"][si],
+                }
+                for si, scen in enumerate(scens)
+            }
+            labels = ["Scope 1 (N₂O/CH₄)", "Scope 2 (Electricity)"]
+            ch = _chart_stacked_h(labels, scen_data, W,
+                                   height=max(120, len(scens) * 55 + 40),
+                                   unit="tCO2e")
+            if ch:
+                story.append(Spacer(1, 4))
+                story.append(ch)
+                story.append(Paragraph(
+                    "Figure C — Carbon footprint by scenario and scope (tCO₂e/yr)",
+                    styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 8. Risk Assessment ─────────────────────────────────────────────────
     if report.risk_table:
-        story.append(Paragraph("8. Risk Assessment", styles["h1"]))
+        story.append(H1("8. Risk Assessment"))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "Table 5 presents the technology risk assessment across technical, implementation, "
@@ -680,7 +888,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(Spacer(1, 8))
 
     # ── 7. Conclusions ─────────────────────────────────────────────────────
-    story.append(Paragraph("9. Conclusions and Recommendations", styles["h1"]))
+    story.append(H1("9. Conclusions and Recommendations"))
     story.append(_pdf_hr(colours))
     if report.preferred_scenario:
         story.append(Paragraph(
@@ -767,12 +975,8 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         "applied. All calculations follow Metcalf &amp; Eddy 5th Edition methodology.",
         styles["disc"]))
 
-    doc.build(story, onFirstPage=hf, onLaterPages=hf)
+    doc.multiBuild(story)
     return buf.getvalue()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# WORD EXPORT HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _docx_shade(cell, hex_color):

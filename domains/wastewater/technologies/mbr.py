@@ -279,6 +279,8 @@ class MBRTechnology(BaseTechnology):
         r.energy.membrane_kwh_day = round(scour_kwh, 1)
         r.energy.pumping_kwh_day  = round(perm_kwh + ras_kwh, 1)
         r.energy.other_kwh_day    = round(screen_kwh, 1)
+        nh4_removed_mbr = max(0.001, flow_m3_day * (inf["tn_mg_l"] * nh4_frac - eff_nh4) / 1000.0)
+        r.performance.additional["kwh_per_kg_nh4_removed"] = round(bio_aer_kwh / nh4_removed_mbr, 1)
 
         # ── 10. Chemical consumption (CIP) ────────────────────────────────
         cip_days  = self._get_eng("mbr_cip_interval_days", 30)
