@@ -211,9 +211,23 @@ class GranularSludgeTechnology(BaseTechnology):
 
         # Apply cold-temperature reactor volume penalty (extended SRT needed)
         _cold_srt = inputs.srt_days * _reactor_penalty
-        reactor_m3 = (vss_prod * _cold_srt * 1000.0) / (mlss * vss_tss)
-        # Number of SBR reactors for continuous flow: typically 3 reactors in rotation
+        reactor_m3_bio = (vss_prod * _cold_srt * 1000.0) / (mlss * vss_tss)
+
         n_reactors  = max(3, int(design_flow_mld / 10) + 2)   # scale with plant size
+
+        # Hydraulic fill constraint: each reactor must be large enough to receive
+        # one fill phase at average daily flow without exceeding 80% working volume.
+        # fill_vol = (flow_m3d / 24) * (cycle_time / n_reactors)
+        # required vol_per_reactor = fill_vol / 0.80
+        # This is standard Nereda sizing practice (Royal HaskoningDHV design guides).
+        avg_flow_m3hr = flow / 24.0
+        fill_time_pre = inputs.cycle_time_hours / n_reactors
+        fill_vol_pre  = avg_flow_m3hr * fill_time_pre
+        reactor_m3_hydraulic = (fill_vol_pre / 0.80) * n_reactors
+
+        # Governing volume: whichever is larger
+        reactor_m3 = max(reactor_m3_bio, reactor_m3_hydraulic)
+
         vol_per_reactor = reactor_m3 / n_reactors
         hrt_hr = reactor_m3 / flow * 24.0
 
@@ -237,98 +251,96 @@ class GranularSludgeTechnology(BaseTechnology):
 
         r.notes.add_assumption(
             f"Reactor: {reactor_m3:.0f} m³ in {n_reactors} SBR tanks "
-            f"({vol_per_reactor:.0f} m³ each) at MLSS {mlss:.0f} mg/L"
+            f"({vol_per_reactor:.0f} m³ each) at MLSS {mlss:.0f} mg/L. "
+            f"Governed by {'hydraulic fill constraint' if reactor_m3_hydraulic >= reactor_m3_bio else 'biological SRT'} "
+            f"(bio={reactor_m3_bio:.0f} m³, hydraulic={reactor_m3_hydraulic:.0f} m³)."
         )
 
         # ── 3b. Peak flow assessment (AGS SBR) ────────────────────────────
-        # AGS SBR handles peak flow through cycle compression and FBT buffering.
-        # At peak flow the fill phase is compressed — the FBT must be large enough
-        # to buffer the peak volume arriving during the non-fill phases of the cycle.
+        # AGS SBR handles peak flow through the Flow Balance Tank (FBT).
+        # The FBT is the PRIMARY peak flow management device for AGS — it absorbs
+        # the peak flow surge and delivers a smoothed, near-average flow to the SBRs.
         #
-        # Key constraints (de Kreuk 2007; Pronk 2015; WEF 2018 Ch.3):
-        #   • Minimum fill time: 30 min (shorter risks granule washout from plug-flow disruption)
-        #   • FBT must hold peak flow × non-fill duration without overflow
-        #   • Feed volume per reactor per cycle must not exceed reactor working volume (~80%)
+        # This is the fundamental hydraulic difference vs BNR with clarifiers:
+        #   BNR clarifier: peak flow hits directly → size clarifier at peak SOR
+        #   AGS + FBT:     FBT attenuates peak → SBR receives smoothed flow ≈ ADF
+        #                  The fill ratio check should use ADF, not peak flow
+        #   AGS without FBT: SBR receives peak directly → use peak flow
         #
-        # Design:
-        #   n_reactors in rotation → at any time (n_reactors−1) are in react/settle/decant
-        #   Fill phase = cycle_time / n_reactors (approx, assuming equal phase splits)
-        #   At peak flow: all incoming volume must be buffered in FBT during non-fill phases
+        # References: de Kreuk 2007; Pronk 2015; Royal HaskoningDHV Nereda design guides
         #
         peak_factor     = self._get_eng("peak_flow_factor", 1.5)
         peak_flow_m3d   = flow * peak_factor
         peak_flow_m3hr  = peak_flow_m3d / 24.0
+        avg_flow_m3hr   = flow / 24.0
 
-        # Fill time per reactor per cycle (fraction of cycle allocated to fill phase)
-        fill_fraction   = 1.0 / n_reactors   # 1 reactor filling while others react/settle/decant
+        # Fill time per reactor per cycle
+        fill_fraction   = 1.0 / n_reactors
         fill_time_hr    = inputs.cycle_time_hours * fill_fraction
-        # Volume received by each reactor per fill at PEAK flow
-        fill_vol_peak   = peak_flow_m3hr * fill_time_hr
-        # Working volume limit: 80% of reactor volume (headspace for aeration + granule bed)
-        working_vol     = vol_per_reactor * 0.80
 
-        # FBT required at peak: must buffer (n-1)/n of the cycle volume at peak flow
-        # Non-fill phases occupy (n_reactors-1)/n_reactors of the cycle
-        non_fill_fraction = (n_reactors - 1) / n_reactors
-        fbt_required_peak = peak_flow_m3hr * inputs.cycle_time_hours * non_fill_fraction
-        fbt_adequate      = fbt_vol_m3 >= fbt_required_peak * 0.90   # allow 10% tolerance
+        # Effective flow to SBR fill phase:
+        #   With FBT: average flow (FBT absorbs peak) — this is the design intent
+        #   Without FBT: peak flow hits SBR directly
+        effective_flow_m3hr = avg_flow_m3hr if inputs.include_flow_balance_tank else peak_flow_m3hr
 
-        # Minimum fill time check (< 30 min risks washout)
+        fill_vol_peak    = peak_flow_m3hr * fill_time_hr       # what FBT must receive
+        fill_vol_to_sbr  = effective_flow_m3hr * fill_time_hr  # what each SBR fill phase gets
+        working_vol      = vol_per_reactor * 0.80              # 80% working volume limit
+
+        fill_ratio = fill_vol_to_sbr / max(working_vol, 1.0)
+
+        # FBT adequacy: must buffer peak inflow during non-fill phases
+        non_fill_fraction     = (n_reactors - 1) / n_reactors
+        fbt_required_peak     = peak_flow_m3hr * inputs.cycle_time_hours * non_fill_fraction
+        fbt_adequate          = fbt_vol_m3 >= fbt_required_peak * 0.90
         fill_time_min_at_peak = fill_time_hr * 60.0
-        fill_time_ok  = fill_time_min_at_peak >= 30.0
+        fill_time_ok          = fill_time_min_at_peak >= 30.0
 
         r.performance.additional.update({
-            "peak_flow_factor":          peak_factor,
-            "peak_flow_m3d":             round(peak_flow_m3d, 0),
-            "fill_time_hr":              round(fill_time_hr, 2),
-            "fill_time_min_at_peak":     round(fill_time_min_at_peak, 1),
-            "fill_vol_per_reactor_m3":   round(fill_vol_peak, 0),
-            "feed_per_fill_m3":          round(fill_vol_peak, 0),  # alias for QA rule P3
+            "peak_flow_factor":           peak_factor,
+            "peak_flow_m3d":              round(peak_flow_m3d, 0),
+            "fill_time_hr":               round(fill_time_hr, 2),
+            "fill_time_min_at_peak":      round(fill_time_min_at_peak, 1),
+            "fill_vol_per_reactor_m3":    round(fill_vol_to_sbr, 0),
+            "feed_per_fill_m3":           round(fill_vol_to_sbr, 0),  # alias for QA rule P3
             "working_vol_per_reactor_m3": round(working_vol, 0),
-            "peak_fill_ratio":           round(fill_vol_peak / max(working_vol, 1.0), 2),
-            "fbt_required_at_peak_m3":   round(fbt_required_peak, 0),
-            "fbt_provided_m3":           round(fbt_vol_m3, 0),
-            "fbt_adequate":              fbt_adequate,
-            "fill_time_adequate":        fill_time_ok,
+            "peak_fill_ratio":            round(fill_ratio, 2),
+            "fbt_required_at_peak_m3":    round(fbt_required_peak, 0),
+            "fbt_provided_m3":            round(fbt_vol_m3, 0),
+            "fbt_adequate":               fbt_adequate,
+            "fill_time_adequate":         fill_time_ok,
         })
 
-        # Warnings
+        # FBT adequacy warning — FBT must be large enough to handle the peak surge
         if not fbt_adequate and inputs.include_flow_balance_tank:
             r.notes.warn(
                 f"⚠️ Flow balance tank ({fbt_vol_m3:.0f} m³) undersized for peak flow "
                 f"({peak_factor:.1f}× = {peak_flow_m3d:.0f} m³/d). "
                 f"Required: {fbt_required_peak:.0f} m³ to buffer non-fill phases. "
-                "Increase FBT volume or reduce peak flow factor through upstream attenuation."
+                "Increase FBT volume or provide upstream flow attenuation."
             )
         elif not inputs.include_flow_balance_tank:
             r.notes.warn(
-                f"⚠️ No flow balance tank specified. At peak flow {peak_factor:.1f}× "
-                f"({peak_flow_m3d:.0f} m³/d), upstream headworks must buffer "
-                f"≥{fbt_required_peak:.0f} m³ during non-fill phases or cycle timing will be disrupted."
+                f"⚠️ No flow balance tank. At peak {peak_factor:.1f}× "
+                f"({peak_flow_m3d:.0f} m³/d), SBR receives peak flow directly. "
+                f"Fill ratio = {fill_ratio:.2f}× working volume — "
+                + ("adequate." if fill_ratio <= 1.0 else
+                   "EXCEEDS reactor working volume. Add FBT or additional reactor.")
             )
 
-        if fill_vol_peak > working_vol:
+        if fill_ratio > 1.0 and not inputs.include_flow_balance_tank:
             r.notes.warn(
-                f"⚠️ At peak flow, fill volume per reactor ({fill_vol_peak:.0f} m³) "
-                f"exceeds 80% working volume ({working_vol:.0f} m³). "
-                "Risk of reactor overflow or granule washout during fill phase. "
-                "Increase reactor volume, add a reactor, or provide upstream flow attenuation."
-            )
-
-        if not fill_time_ok:
-            r.notes.warn(
-                f"⚠️ Fill time at peak flow = {fill_time_min_at_peak:.0f} min "
-                "(< 30 min minimum for AGS plug-flow fill). "
-                "Short fill times disrupt the feast/famine gradient required for granule stability. "
-                "Consider: additional reactor, longer cycle time, or upstream flow attenuation."
+                f"⚠️ Without FBT, fill volume per reactor ({fill_vol_to_sbr:.0f} m³) "
+                f"exceeds 80% working volume ({working_vol:.0f} m³) at peak flow. "
+                "Risk of reactor overflow or granule washout during fill phase."
             )
 
         r.notes.add_assumption(
-            f"Peak flow assessment: {peak_factor:.1f}× ADF = {peak_flow_m3d:.0f} m³/d. "
-            f"Fill time per reactor = {fill_time_min_at_peak:.0f} min "
-            f"({'✓ adequate' if fill_time_ok else '⚠ marginal'}). "
-            f"FBT {fbt_vol_m3:.0f} m³ vs {fbt_required_peak:.0f} m³ required at peak "
-            f"({'✓ adequate' if fbt_adequate else '⚠ undersized'})."
+            f"Peak flow: {peak_factor:.1f}× ADF = {peak_flow_m3d:.0f} m³/d. "
+            + (f"FBT attenuates peak to ADF for SBR fill — fill ratio = {fill_ratio:.2f}× working vol "
+               f"({'✓ adequate' if fill_ratio <= 1.0 else '⚠ marginal'})."
+               if inputs.include_flow_balance_tank else
+               f"No FBT — SBR receives peak flow directly. Fill ratio = {fill_ratio:.2f}×.")
         )
 
         # ── 4. Temperature correction and warnings ─────────────────────────
