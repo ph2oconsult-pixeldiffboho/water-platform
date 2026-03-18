@@ -160,3 +160,94 @@ def run_guidance_check(decision) -> "QAResult":
         ))
 
     return QAResult(findings=findings)
+
+
+def run_weighted_scoring_qa(scenario, decision=None) -> "QAResult":
+    """
+    QA checks for the weighted scoring engine output.
+    Checks:
+      W1 — Non-compliant option not ranked first
+      W2 — Score table populated for all eligible scenarios
+      W3 — Weights sum to 100%
+      W4 — Recommendation consistent with top score (or conflict is flagged)
+    """
+    from core.qa.qa_model import QAResult, QAFinding, Severity
+
+    findings = []
+    wd = getattr(decision, "weighted_decision", None) if decision else None
+
+    if wd is None:
+        findings.append(QAFinding(
+            code="W0", category="WeightedScoring", severity=Severity.INFO,
+            message="Weighted scoring not yet run — run decision framework first.",
+        ))
+        return QAResult(findings=findings)
+
+    # W1: Non-compliant must not be ranked first
+    if wd.preferred and wd.preferred.compliance_status == "Non-compliant":
+        findings.append(QAFinding(
+            code="W1", category="WeightedScoring", severity=Severity.FAIL,
+            message=f"Non-compliant option '{wd.preferred.scenario_name}' ranked first. "
+                    "Compliance gate failed.",
+            recommendation="Check compliance_map passed to ScoringEngine.",
+        ))
+    else:
+        findings.append(QAFinding(
+            code="W1", category="WeightedScoring", severity=Severity.INFO,
+            message="Compliance gate: preferred option is compliant ✅",
+        ))
+
+    # W2: Score table populated
+    eligible = [o for o in wd.scored_options if o.is_eligible]
+    missing_scores = [o.scenario_name for o in eligible if not o.criterion_scores]
+    if missing_scores:
+        findings.append(QAFinding(
+            code="W2", category="WeightedScoring", severity=Severity.FAIL,
+            message=f"Score table missing for: {', '.join(missing_scores)}",
+            recommendation="Ensure all scenarios have cost_result, carbon_result, risk_result.",
+        ))
+    else:
+        findings.append(QAFinding(
+            code="W2", category="WeightedScoring", severity=Severity.INFO,
+            message=f"Score table populated for all {len(eligible)} eligible scenario(s) ✅",
+        ))
+
+    # W3: Weights sum to 100%
+    total_w = sum(wd.weights.values())
+    if abs(total_w - 1.0) > 0.02:
+        findings.append(QAFinding(
+            code="W3", category="WeightedScoring", severity=Severity.WARN,
+            message=f"Weights sum to {total_w*100:.1f}% (expected 100%).",
+            recommendation="Adjust weight profile so all weights sum to exactly 100%.",
+        ))
+    else:
+        findings.append(QAFinding(
+            code="W3", category="WeightedScoring", severity=Severity.INFO,
+            message=f"Weights sum to {total_w*100:.0f}% ✅",
+        ))
+
+    # W4: Consistency check — score winner vs LCC winner
+    if decision and wd.preferred:
+        lcc_winner   = getattr(decision, "recommended_label", None)
+        score_winner = wd.preferred.scenario_name
+        if lcc_winner and lcc_winner != score_winner:
+            findings.append(QAFinding(
+                code="W4", category="WeightedScoring", severity=Severity.WARN,
+                message=(
+                    f"Weighted score winner ({score_winner}) differs from "
+                    f"LCC hierarchy winner ({lcc_winner}). "
+                    f"This is a genuine tension, not an error — ensure it is "
+                    f"communicated to the client."
+                ),
+                recommendation=(
+                    "Review the weight profile. If the discrepancy reflects "
+                    "valid utility priorities, flag it explicitly in the report."
+                ),
+            ))
+        else:
+            findings.append(QAFinding(
+                code="W4", category="WeightedScoring", severity=Severity.INFO,
+                message="Weighted score and LCC hierarchy agree on preferred option ✅",
+            ))
+
+    return QAResult(findings=findings)

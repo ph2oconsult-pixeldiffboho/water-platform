@@ -42,6 +42,7 @@ PAGES = {
     "📋 Assumptions": "09_assumptions",
     "📈 Sensitivity": "10_sensitivity",
     "🎯 Decision Framework": "11_decision",
+    "🏆 Decision Scoring": "12_scoring",
 }
 
 # Use query params for navigation so browser back button works

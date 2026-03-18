@@ -82,6 +82,7 @@ def render() -> None:
         "🔀 Alternative Pathways",
         "🤝 Client Decision",
         "💰 Financial Risk",
+        "⚖️ Weighted Scoring",
     ])
 
     with tabs[0]:
@@ -117,10 +118,168 @@ def render() -> None:
     with tabs[10]:
         _render_financial_risk(decision)
 
+    with tabs[11]:
+        _render_weighted_scoring(decision, calc)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# EXECUTIVE SUMMARY
+# WEIGHTED SCORING
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _render_weighted_scoring(decision, calc) -> None:
+    """Weighted multi-criteria scoring panel with profile selector."""
+    import pandas as pd
+    from core.decision.scoring_engine import (
+        ScoringEngine, WeightProfile, WEIGHT_PROFILES, CRITERION_LABELS,
+        DecisionResult,
+    )
+
+    st.subheader("⚖️ Weighted Multi-Criteria Decision Scoring")
+    st.caption(
+        "Normalised 0–100 score per criterion, weighted by selected profile. "
+        "Compliance gate applied first — non-compliant options are excluded from ranking."
+    )
+
+    # ── Profile selector ──────────────────────────────────────────────────────
+    profile_labels = {
+        "Balanced utility planning":       WeightProfile.BALANCED,
+        "Low-risk utility":                WeightProfile.LOW_RISK,
+        "Low-carbon / future-focused":     WeightProfile.LOW_CARBON,
+        "Budget-constrained utility":      WeightProfile.BUDGET,
+        "Custom":                          WeightProfile.CUSTOM,
+    }
+
+    selected_label = st.selectbox(
+        "Weight profile",
+        list(profile_labels.keys()),
+        index=0,
+        help="Select a pre-set weight profile or choose Custom to adjust weights manually.",
+    )
+    selected_profile = profile_labels[selected_label]
+
+    # ── Custom weights ────────────────────────────────────────────────────────
+    custom_weights = None
+    if selected_profile == WeightProfile.CUSTOM:
+        st.markdown("**Adjust weights (must sum to 100%)**")
+        defaults = WEIGHT_PROFILES[WeightProfile.BALANCED]
+        cols = st.columns(3)
+        w = {}
+        crit_list = list(defaults.keys())
+        for i, crit in enumerate(crit_list):
+            col = cols[i % 3]
+            w[crit] = col.slider(
+                CRITERION_LABELS.get(crit, crit),
+                0, 40,
+                int(defaults[crit] * 100),
+                5,
+                key=f"w_{crit}",
+            ) / 100.0
+        total_w = sum(w.values())
+        if abs(total_w - 1.0) > 0.05:
+            st.warning(f"⚠️ Weights sum to {total_w*100:.0f}% — adjust to reach 100%")
+        else:
+            custom_weights = w
+
+    # ── Build compliance map from existing decision ────────────────────────────
+    compliance_map = {
+        s.scenario_name: (
+            "Non-compliant" if s.scenario_name in (decision.non_viable or [])
+            else "Compliant"
+        )
+        for s in calc
+    }
+
+    # ── Run scoring engine ────────────────────────────────────────────────────
+    try:
+        engine = ScoringEngine()
+        result: DecisionResult = engine.score(
+            calc,
+            weight_profile=selected_profile,
+            custom_weights=custom_weights,
+            compliance_map=compliance_map,
+        )
+    except Exception as e:
+        st.error(f"Scoring engine error: {e}")
+        return
+
+    # ── Decision summary card ─────────────────────────────────────────────────
+    if result.preferred:
+        if result.close_decision:
+            st.info(f"🔀 **Close decision** — {result.recommendation}")
+        else:
+            st.success(f"✅ **{result.preferred.scenario_name}** — {result.recommendation}")
+        if result.trade_off:
+            st.caption(f"Trade-off accepted: {result.trade_off}")
+
+    # ── Excluded options ──────────────────────────────────────────────────────
+    if result.excluded:
+        with st.expander(f"⛔ {len(result.excluded)} option(s) excluded from ranking"):
+            for opt in result.excluded:
+                st.markdown(f"- **{opt.scenario_name}** — {opt.excluded_reason}")
+
+    # ── Weighted score table ──────────────────────────────────────────────────
+    st.markdown("#### Weighted Score Breakdown")
+    st.caption(
+        f"Weight profile: **{result.weight_profile}** | "
+        "Scores: 0–100 (higher is always better) | "
+        "Non-compliant options excluded from ranking."
+    )
+
+    eligible = [o for o in result.scored_options if o.is_eligible]
+    if not eligible:
+        st.warning("No compliant options to score.")
+        return
+
+    # Build score table
+    crit_keys = list(WEIGHT_PROFILES[WeightProfile.BALANCED].keys())
+    rows = []
+    for opt in eligible:
+        row = {
+            "Rank":       f"{'★' if opt.rank == 1 else opt.rank}",
+            "Option":     opt.scenario_name,
+            "Compliance": opt.compliance_status,
+            "Total Score": f"{opt.total_score:.0f}/100",
+        }
+        for ck in crit_keys:
+            cs = opt.criterion_scores.get(ck)
+            if cs:
+                row[CRITERION_LABELS.get(ck, ck)] = f"{cs.normalised:.0f}"
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # ── Weight display ────────────────────────────────────────────────────────
+    with st.expander("📊 Active weight set"):
+        w_rows = [
+            {"Criterion": CRITERION_LABELS.get(k, k), "Weight": f"{v*100:.0f}%"}
+            for k, v in result.weights.items()
+        ]
+        st.dataframe(pd.DataFrame(w_rows), use_container_width=True, hide_index=True)
+        total = sum(result.weights.values())
+        if abs(total - 1.0) > 0.01:
+            st.caption(f"⚠️ Weights sum to {total*100:.0f}% (should be 100%)")
+        else:
+            st.caption(f"✓ Weights sum to {total*100:.0f}%")
+
+    # ── Rationale ─────────────────────────────────────────────────────────────
+    if result.rationale and result.preferred:
+        st.markdown(f"#### Why {result.preferred.scenario_name} wins")
+        for r in result.rationale:
+            st.markdown(f"- {r}")
+
+    # ── Guardrail: consistency check ──────────────────────────────────────────
+    if result.preferred and decision.recommended_label:
+        lcc_winner = decision.recommended_label
+        score_winner = result.preferred.scenario_name
+        if lcc_winner != score_winner:
+            st.warning(
+                f"ℹ️ **Note:** The LCC-hierarchy recommendation ({lcc_winner}) differs "
+                f"from the weighted-score recommendation ({score_winner}) under the "
+                f"**{result.weight_profile}** profile. "
+                f"This indicates a genuine tension between cost and other criteria. "
+                f"Review the weight set to reflect your utility's priorities."
+            )
 
 def _render_executive_summary(decision: ScenarioDecision, calc, inputs):
     st.subheader("📋 Executive Summary")

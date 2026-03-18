@@ -206,6 +206,7 @@ class ScenarioDecision:
     profiles:           Dict[str, TechnologyDecisionProfile]
     strategic_insight:  str = ""   # process intensification vs robustness framing
     recommended_approach: List[str] = field(default_factory=list)  # parallel eval steps
+    weighted_decision:  Optional[Any] = None  # DecisionResult from ScoringEngine
 
 
 # ── Technology knowledge base ─────────────────────────────────────────────────
@@ -1699,6 +1700,27 @@ def evaluate_scenario(
     else:
         display_rec_label = rec_label
 
+    # ── Weighted multi-criteria scoring ──────────────────────────────────────
+    # Run the scoring engine with Balanced profile as the default.
+    # The UI can re-run with alternative profiles without re-running engineering.
+    weighted_decision = None
+    try:
+        from core.decision.scoring_engine import ScoringEngine, WeightProfile
+        compliance_map = {}
+        for s in scenarios:
+            if s.scenario_name in non_viable:
+                compliance_map[s.scenario_name] = "Non-compliant"
+            else:
+                compliance_map[s.scenario_name] = "Compliant"
+        se = ScoringEngine()
+        weighted_decision = se.score(
+            scenarios,
+            weight_profile=WeightProfile.BALANCED,
+            compliance_map=compliance_map,
+        )
+    except Exception:
+        pass   # scoring is additive — never block the primary decision
+
     return ScenarioDecision(
         selection_basis=selection_basis,
         recommended_tech=rec_tc,
@@ -1719,4 +1741,5 @@ def evaluate_scenario(
         profiles=profiles,
         strategic_insight=strategic_insight,
         recommended_approach=recommended_approach,
+        weighted_decision=weighted_decision,
     )

@@ -210,7 +210,7 @@ def _make_pdf_doc(buf, is_exec=False):
     )
 
 
-def _chart_capex(chart_data, width, height=140):
+def _chart_capex(chart_data, width, height=140, label_fmt=None):
     """Bar chart: CAPEX by scenario ($M)."""
     from reportlab.graphics.shapes import Drawing, String, Rect
     from reportlab.graphics.charts.barcharts import VerticalBarChart
@@ -254,8 +254,9 @@ def _chart_capex(chart_data, width, height=140):
     col_w = chart_w / len(values)
     for i, val in enumerate(values):
         bar_top = 35 + (val / (bc.valueAxis.valueMax or 1)) * chart_h
+        lbl = label_fmt.format(val) if label_fmt else f"${val:.1f}M"
         d.add(String(50 + (i + 0.5) * col_w, bar_top + 3,
-                     f"${val:.1f}M", fontSize=7, fontName="Helvetica-Bold",
+                     lbl, fontSize=7, fontName="Helvetica-Bold",
                      fillColor=PALETTE[i % len(PALETTE)], textAnchor="middle"))
 
     leg = Legend()
@@ -711,18 +712,66 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         "design methods (Metcalf & Eddy 5th Edition).",
         styles["body"]))
 
-    # Build design table from report sections or comparison
-    _design_rows_added = False
-    for sec in (report.sections or []):
-        if "design" in sec.title.lower() or "sizing" in sec.title.lower():
-            t = _render_list_table(sec.content, styles, colours, W) if isinstance(sec.content, list) else None
-            if t:
-                story.append(t)
-                _design_rows_added = True
+    # Build Table 2 from scenario_design_data
+    design_data = getattr(report, "scenario_design_data", {})
+    if design_data:
+        from reportlab.platypus import Table as _DT, TableStyle as _DTS
+        DESIGN_PARAMS = [
+            ("Bioreactor volume",   "reactor_volume_m3",          "{:,.0f} m³"),
+            ("Process footprint",   "footprint_m2",               "{:,.0f} m²"),
+            ("MLSS",                "mlss_mg_l",                  "{:,.0f} mg/L"),
+            ("O₂ demand",           "o2_demand_kg_day",           "{:,.0f} kg/day"),
+            ("Sludge production",   "sludge_production_kgds_day", "{:,.0f} kgDS/day"),
+            ("Specific energy",     "energy_intensity_kwh_kl",    "{:.0f} kWh/ML"),
+        ]
+        scen_names = list(design_data.keys())
+        # Header row
+        tbl_rows = [[Paragraph("Parameter", styles["h2"])] +
+                    [Paragraph(n, styles["h2"]) for n in scen_names]]
+        for label, key, fmt in DESIGN_PARAMS:
+            row = [Paragraph(rl_safe(label), styles["body"])]
+            for scen_name in scen_names:
+                sd = design_data[scen_name]
+                tech_code = sd.get("tech_sequence", [None])[0]
+                perf = sd.get("tech_performance", {}).get(tech_code, {}) if tech_code else {}
+                val = perf.get(key)
+                # Special case: energy_intensity is in kWh/kL, display as kWh/ML
+                if key == "energy_intensity_kwh_kl" and val is not None:
+                    val = val * 1000
+                if val is not None and val > 0:
+                    try:
+                        cell = fmt.format(val)
+                    except Exception:
+                        cell = str(val)
+                else:
+                    cell = "—"
+                row.append(Paragraph(rl_safe(cell), styles["body"]))
+            tbl_rows.append(row)
 
-    if not _design_rows_added and report.comparison_table:
-        # Extract energy from comparison and add physical sizing if available
-        pass
+        # Effluent quality row
+        eff_row = [Paragraph("Effluent quality", styles["body"])]
+        for scen_name in scen_names:
+            sd = design_data[scen_name]
+            tech_code = sd.get("tech_sequence", [None])[0]
+            perf = sd.get("tech_performance", {}).get(tech_code, {}) if tech_code else {}
+            parts = []
+            for ek, elbl in [("effluent_bod_mg_l","BOD"),("effluent_tss_mg_l","TSS"),
+                              ("effluent_tn_mg_l","TN"),("effluent_nh4_mg_l","NH4")]:
+                v = perf.get(ek)
+                if v is not None:
+                    parts.append(f"{elbl} {v:.0f}")
+            eff_row.append(Paragraph(rl_safe("  ".join(parts) + " mg/L") if parts else "—",
+                                     styles["body"]))
+        tbl_rows.append(eff_row)
+
+        n_cols = 1 + len(scen_names)
+        col_w = [W * 0.32] + [W * 0.68 / len(scen_names)] * len(scen_names)
+        t2 = _DT(tbl_rows, colWidths=col_w, repeatRows=1)
+        t2.setStyle(_pdf_tbl_style(colours))
+        story.append(Spacer(1, 4))
+        story.append(t2)
+        story.append(P("Table 2: Process design summary", styles["caption"]))
+    story.append(Spacer(1, 6))
 
     # ── PFD section ────────────────────────────────────────────────────────
     story.append(Spacer(1, 6))
@@ -846,7 +895,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                     lcc_data["y"].append(0)
         if lcc_data["x"] and any(v > 0 for v in lcc_data["y"]):
             lcc_data["ylabel"] = "LCC (k$/yr)"
-            ch_lcc = _chart_capex(lcc_data, W * 0.48, height=150)
+            ch_lcc = _chart_capex(lcc_data, W * 0.48, height=150, label_fmt="${:.0f}k/yr")
             if ch_lcc:
                 chart_row.append(ch_lcc)
         if chart_row:
@@ -1035,13 +1084,52 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                "due to compliance failure. " if non_compliant else ""),
             styles["body"]))
     elif compliant:
+        # Find the lowest LCC scenario among compliant options
+        lcc_winner = None
+        lcc_min = float("inf")
+        lcc_delta_k = None
+        if report.cost_table:
+            for row in report.cost_table.get("rows", []):
+                scen = row.get("Scenario", "")
+                if scen not in compliant:
+                    continue
+                try:
+                    lcc = float(str(row.get("Lifecycle Cost ($/yr)", "0")).replace(",", ""))
+                    if lcc < lcc_min:
+                        lcc_min = lcc
+                        lcc_winner = scen
+                except (ValueError, TypeError):
+                    pass
+            # Calculate delta vs second-best
+            second_lcc = float("inf")
+            for row in report.cost_table.get("rows", []):
+                scen = row.get("Scenario", "")
+                if scen not in compliant or scen == lcc_winner:
+                    continue
+                try:
+                    lcc = float(str(row.get("Lifecycle Cost ($/yr)", "0")).replace(",", ""))
+                    second_lcc = min(second_lcc, lcc)
+                except (ValueError, TypeError):
+                    pass
+            if second_lcc < float("inf") and lcc_winner:
+                lcc_delta_k = round((second_lcc - lcc_min) / 1e3)
+
         story.append(P(
             f"<b>Compliant options: {', '.join(compliant)}</b>",
             styles["h2"]))
-        story.append(P(
-            "All compliant scenarios have been evaluated on a consistent, first-principles basis. "
-            "Final selection should be based on site-specific investigation.",
-            styles["body"]))
+        if lcc_winner and lcc_delta_k and lcc_delta_k > 0:
+            story.append(P(
+                f"Both scenarios achieve the effluent quality targets as modelled. "
+                f"On lifecycle cost, <b>{lcc_winner}</b> is the preferred option, "
+                f"saving approximately <b>${lcc_delta_k:,}k/yr</b> over the 30-year analysis period "
+                f"compared to the alternative. "
+                f"Final selection should confirm this advantage holds under site-specific conditions.",
+                styles["body"]))
+        else:
+            story.append(P(
+                "All compliant scenarios achieve the effluent quality targets as modelled. "
+                "Final selection should be based on lifecycle cost comparison and site-specific investigation.",
+                styles["body"]))
     else:
         story.append(P(
             "<b>No scenario achieves full compliance as modelled.</b> "
