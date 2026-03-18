@@ -50,6 +50,8 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
     WeightProfile.BALANCED: {
         "lcc":                  0.20,
         "capex":                0.15,
+        "specific_cost":       0.0,
+        "specific_energy":     0.0,
         "footprint":            0.10,
         "carbon":               0.10,
         "sludge":               0.10,
@@ -62,6 +64,8 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
     WeightProfile.LOW_RISK: {
         "lcc":                  0.15,
         "capex":                0.10,
+        "specific_cost":       0.0,
+        "specific_energy":     0.0,
         "footprint":            0.05,
         "carbon":               0.05,
         "sludge":               0.10,
@@ -74,6 +78,8 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
     WeightProfile.LOW_CARBON: {
         "lcc":                  0.15,
         "capex":                0.10,
+        "specific_cost":       0.0,
+        "specific_energy":     0.0,
         "footprint":            0.10,
         "carbon":               0.20,
         "sludge":               0.10,
@@ -86,6 +92,8 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
     WeightProfile.BUDGET: {
         "lcc":                  0.20,
         "capex":                0.25,
+        "specific_cost":       0.0,
+        "specific_energy":     0.0,
         "footprint":            0.10,
         "carbon":               0.05,
         "sludge":               0.05,
@@ -99,6 +107,8 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
 CRITERION_LABELS: Dict[str, str] = {
     "lcc":                 "Lifecycle Cost",
     "capex":               "CAPEX",
+    "specific_cost":       "Specific Cost ($/kL)",
+    "specific_energy":     "Specific Energy",
     "footprint":           "Footprint",
     "carbon":              "Carbon Intensity",
     "sludge":              "Sludge Production",
@@ -113,6 +123,8 @@ CRITERION_LABELS: Dict[str, str] = {
 CRITERION_LOWER_IS_BETTER: Dict[str, bool] = {
     "lcc":                 True,
     "capex":               True,
+    "specific_cost":       True,
+    "specific_energy":     True,
     "footprint":           True,
     "carbon":              True,
     "sludge":              True,
@@ -203,6 +215,15 @@ def _extract_raw(scenario: Any, criterion: str) -> tuple[float, str]:
     if criterion == "carbon":
         v = (car.net_tco2e_yr * 1000 / flow_kl_yr) if car and flow_kl_yr else 0
         return v, "kgCO2e/kL"
+
+    if criterion == "specific_cost":
+        lcc = cr.lifecycle_cost_annual if cr else 0
+        v = lcc / (flow_kl_yr) if flow_kl_yr else 0
+        return v, "$/kL"
+
+    if criterion == "specific_energy":
+        kwh_kl = eng.get("specific_energy_kwh_kl", 0) or 0
+        return kwh_kl * 1000, "kWh/ML"
 
     if criterion == "sludge":
         sludge = eng.get("total_sludge_kgds_day") or 0

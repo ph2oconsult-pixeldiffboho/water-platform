@@ -1253,7 +1253,106 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         styles["body"]))
     story.append(Spacer(1, 8))
 
-    # ── 8. Assumptions Appendix ────────────────────────────────────────────
+    # ── Appendix B — Decision Scoring ────────────────────────────────────
+    sr = getattr(report, "scoring_result", None)
+    if sr and sr.preferred:
+        from reportlab.platypus import Table as _ST, TableStyle as _STS
+        story.append(PageBreak())
+        story.append(P("Appendix B — Decision Scoring", styles["h1"]))
+        story.append(_pdf_hr(colours))
+        story.append(P(
+            f"The following weighted multi-criteria decision analysis was performed using the "
+            f"<b>{sr.weight_profile}</b> weight profile. Scores are normalised 0–100 per criterion "
+            "across the compared scenarios. Higher scores indicate better performance. "
+            "Compliance is a hard gate — non-compliant options are excluded from recommendation.",
+            styles["body"]))
+        story.append(Spacer(1, 6))
+
+        # Recommendation paragraph
+        story.append(P(f"<b>Preferred option:</b> {sr.preferred.scenario_name} "
+                       f"({sr.preferred.total_score:.0f}/100)", styles["body"]))
+        if sr.runner_up:
+            story.append(P(f"<b>Runner-up:</b> {sr.runner_up.scenario_name} "
+                           f"({sr.runner_up.total_score:.0f}/100)", styles["body"]))
+        story.append(P(f"<b>Recommendation:</b> {sr.recommendation}", styles["body"]))
+        if sr.trade_off:
+            story.append(P(f"<b>Trade-off:</b> {sr.trade_off}", styles["body"]))
+        story.append(Spacer(1, 6))
+
+        # Close decision note
+        if sr.close_decision and sr.runner_up:
+            gap = sr.preferred.total_score - sr.runner_up.total_score
+            story.append(P(
+                f"⚠ Close decision: scoring gap is {gap:.1f} points (threshold 5.0). "
+                "Final selection should depend on site-specific conditions and risk appetite, "
+                "not score alone.",
+                styles["disc"]))
+            story.append(Spacer(1, 4))
+
+        # Weighted score table
+        from core.decision.scoring_engine import CRITERION_LABELS, WEIGHT_PROFILES, WeightProfile
+        crit_keys = list(CRITERION_LABELS.keys())
+        crit_lbls = [CRITERION_LABELS[k] for k in crit_keys]
+        weights_used = sr.weights
+
+        # Build header
+        col_w_s = [W * 0.22] + [W * 0.10] + [W * 0.68 / len(crit_keys)] * len(crit_keys)
+        score_hdr = (
+            [Paragraph("Scenario", styles["h2"]),
+             Paragraph("Total", styles["h2"])] +
+            [Paragraph(rl_safe(f"{lbl[:14]}\n{int(weights_used.get(k,0)*100)}%"),
+                       styles["caption"])
+             for k, lbl in zip(crit_keys, crit_lbls)]
+        )
+        score_rows = [score_hdr]
+        for opt in sr.scored_options:
+            prefix = "★ " if opt.rank == 1 else ("✗ " if not opt.is_eligible else "")
+            row = [
+                Paragraph(rl_safe(prefix + opt.scenario_name), styles["body"]),
+                Paragraph(
+                    f"<b>{opt.total_score:.0f}</b>" if opt.is_eligible else
+                    f"<i>{opt.total_score:.0f}</i>",
+                    styles["body"]),
+            ]
+            for k in crit_keys:
+                cs = opt.criterion_scores.get(k)
+                row.append(Paragraph(
+                    rl_safe(f"{cs.normalised:.0f}" if cs else "—"), styles["body"]))
+            score_rows.append(row)
+
+        score_tbl = _ST(score_rows, colWidths=col_w_s, repeatRows=1)
+        score_tbl.setStyle(_STS([
+            ("BACKGROUND",    (0,0), (-1,0), colours["blue"]),
+            ("TEXTCOLOR",     (0,0), (-1,0), _pdf_styles()["body"].textColor.__class__("#FFFFFF")),
+            ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,-1), 7),
+            ("TOPPADDING",    (0,0), (-1,-1), 3),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            ("LEFTPADDING",   (0,0), (-1,-1), 4),
+            ("GRID",          (0,0), (-1,-1), 0.25, colours["lt"]),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colours["lt"], _pdf_styles()["body"].backColor]),
+        ]))
+        story.append(score_tbl)
+        story.append(P(
+            "Table B1: Weighted decision scores by criterion. "
+            "★ = preferred option. ✗ = excluded (non-compliant).",
+            styles["caption"]))
+        story.append(Spacer(1, 6))
+
+        # Excluded options
+        if sr.excluded:
+            story.append(P("<b>Excluded options:</b>", styles["body"]))
+            for opt in sr.excluded:
+                story.append(P(
+                    f"• <b>{opt.scenario_name}</b> — {opt.excluded_reason}",
+                    styles["disc"]))
+        story.append(Spacer(1, 4))
+        story.append(P(
+            f"Weight profile: {sr.weight_profile}. Scores are concept-level (±40%). "
+            "Sensitivity test with alternative profiles before technology lock-in.",
+            styles["disc"]))
+
+    # ── Appendix A — Key Assumptions ────────────────────────────────────────
     if report.assumptions_appendix:
         story.append(PageBreak())
         story.append(P("Appendix A — Key Assumptions", styles["h1"]))

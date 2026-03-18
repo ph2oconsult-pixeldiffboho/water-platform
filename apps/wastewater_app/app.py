@@ -100,6 +100,10 @@ elif page_key == "11_decision":
     from apps.wastewater_app.pages import page_11_decision
     page_11_decision.render()
 
+elif page_key == "12_scoring":
+    from apps.wastewater_app.pages import page_12_scoring
+    page_12_scoring.render()
+
 # ── Sidebar footer ─────────────────────────────────────────────────────────
 st.sidebar.divider()
 from apps.ui.session_state import has_project, has_unsaved_changes, get_current_project

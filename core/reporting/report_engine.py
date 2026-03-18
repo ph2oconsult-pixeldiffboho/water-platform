@@ -62,6 +62,7 @@ class ReportObject:
     # Decision framework output (populated when wastewater domain scenarios are present)
     decision: Optional[Any] = None  # ScenarioDecision from decision_engine
     decision_summary: Optional[Dict] = None  # Structured box: preferred, runner-up, driver, trade-off
+    scoring_result: Optional[Any] = None     # DecisionResult from scoring_engine
 
     # Metadata
     scenario_names: List[str] = field(default_factory=list)
@@ -451,6 +452,24 @@ class ReportEngine:
                 "specific_energy_kwh_kl": eng.get("specific_energy_kwh_kl", 0),
                 "domain_inputs": s.domain_inputs or {},
             }
+
+        # ── Run scoring engine for report integration ─────────────────────
+        scored_scens = [s for s in scenarios if s.cost_result and s.risk_result]
+        if len(scored_scens) >= 2:
+            try:
+                from core.decision.scoring_engine import ScoringEngine, WeightProfile
+                from apps.wastewater_app.pages.page_12_scoring import _classify_compliance
+                compliance_map = {
+                    s.scenario_name: _classify_compliance(s) for s in scored_scens
+                }
+                engine = ScoringEngine()
+                report.scoring_result = engine.score(
+                    scored_scens,
+                    weight_profile=WeightProfile.BALANCED,
+                    compliance_map=compliance_map,
+                )
+            except Exception:
+                pass  # scoring is non-critical — report generates without it
 
         return report
 
