@@ -1,6 +1,8 @@
 [server]
 headless = true
 port = 8501
+runOnSave = true
+fileWatcherType = "auto"
 
 [browser]
 gatherUsageStats = false
