@@ -120,7 +120,8 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
         "capex":                0.10,
         "footprint":            0.10,
         "carbon":               0.25,
-        "sludge":               0.10,
+        "sludge":               0.05,
+        "headroom":             0.05,
         "operational_risk":     0.10,
         "implementation_risk":  0.05,
         "regulatory":           0.05,
@@ -137,6 +138,7 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
         "footprint":            0.10,
         "carbon":               0.05,
         "sludge":               0.05,
+        "headroom":             0.00,   # budget profile: headroom is nice-to-have
         "operational_risk":     0.10,
         "implementation_risk":  0.10,
         "regulatory":           0.05,
@@ -150,6 +152,7 @@ CRITERION_LABELS: Dict[str, str] = {
     "footprint":           "Footprint",
     "carbon":              "Carbon Intensity",
     "sludge":              "Sludge Production",
+    "headroom":            "Effluent Headroom",
     "operational_risk":    "Operational Risk",
     "implementation_risk": "Implementation Risk",
     "regulatory":          "Regulatory Risk",
@@ -173,6 +176,7 @@ CRITERION_LOWER_IS_BETTER: Dict[str, bool] = {
     "footprint":           True,
     "carbon":              True,
     "sludge":              True,
+    "headroom":            False,   # higher effluent headroom below target = better
     "operational_risk":    True,
     "implementation_risk": True,
     "regulatory":          True,    # lower regulatory risk score = better
@@ -271,13 +275,28 @@ def _extract_raw(scenario: Any, criterion: str) -> Tuple[float, str]:
         return v, "kgCO2e/kL"
 
     if criterion == "sludge":
-        # Use tDS/yr — total annual volume matters for disposal contracts, site
-        # storage and biosolids management planning. kgDS/ML is already captured
-        # implicitly in OPEX (sludge disposal = $/tDS × tDS/yr).
-        # tDS/yr is the independent signal: site area, truck movements, pathogen class.
         sludge = eng.get("total_sludge_kgds_day") or 0
         tds_yr = sludge * 365.0 / 1000.0
         return tds_yr, "tDS/yr"
+
+    if criterion == "headroom":
+        # Effluent headroom: average margin below TN and TP targets.
+        # Higher headroom = more buffer against influent variability, seasonal
+        # effects, and future licence tightening. Range 0-100%.
+        # Calculated as mean of (target-actual)/target for TN and TP.
+        dinp = getattr(scenario, "domain_inputs", None) or {}
+        tn_target  = dinp.get("effluent_tn_mg_l", 10.0) or 10.0
+        tp_target  = dinp.get("effluent_tp_mg_l",  1.0) or 1.0
+        margins = []
+        for tech_perf in tp.values():
+            tn_actual = tech_perf.get("effluent_tn_mg_l")
+            tp_actual = tech_perf.get("effluent_tp_mg_l")
+            if tn_actual is not None and tn_actual < tn_target:
+                margins.append((tn_target - tn_actual) / tn_target * 100)
+            if tp_actual is not None and tp_actual < tp_target:
+                margins.append((tp_target - tp_actual) / tp_target * 100)
+        v = sum(margins) / len(margins) if margins else 0.0
+        return round(v, 1), "% margin"
 
     if criterion == "operational_risk":
         v = rr.operational_score if rr else 50
@@ -425,7 +444,21 @@ class ScoringEngine:
             )
             (eligible if is_ok else ineligible).append(opt)
 
-        # ── Step 4: Rank eligible ─────────────────────────────────────────
+        # ── Step 4: Apply CWI ranking constraint then rank ───────────────
+        # CWI options must rank BELOW fully compliant options.
+        # Compliant options whose targets require intervention are not yet meeting
+        # the licence — their cost advantage is pre-intervention and therefore
+        # overstated. Cap CWI score to just below the lowest fully-compliant score.
+        compliant_scores = [o.total_score for o in eligible
+                            if o.compliance_status == "Compliant"]
+        if compliant_scores:
+            lowest_compliant = min(compliant_scores)
+            effective_cwi_cap = min(CWI_SCORE_CAP, lowest_compliant - 1.0)
+            for opt in eligible:
+                if (opt.compliance_status == "Compliant with intervention"
+                        and opt.total_score >= lowest_compliant):
+                    opt.total_score = round(max(0.0, effective_cwi_cap), 1)
+
         eligible.sort(key=lambda o: o.total_score, reverse=True)
         for i, opt in enumerate(eligible):
             opt.rank = i + 1
@@ -435,11 +468,11 @@ class ScoringEngine:
 
         # Close-decision threshold: 15% of winning score (not a fixed 5 points)
         # This scales with the magnitude of the score and reflects concept-stage uncertainty.
-        close_threshold = (preferred.total_score * 0.15) if preferred else 5.0
-        close = (
-            abs(preferred.total_score - runner_up.total_score) <= close_threshold
-            if preferred and runner_up else False
-        )
+        # Minimum threshold of 2 points prevents any non-zero gap from declaring close.
+        close_threshold = max(2.0, preferred.total_score * 0.15) if preferred else 5.0
+        gap = abs(preferred.total_score - runner_up.total_score) if (preferred and runner_up) else 0
+        exact_tie = (gap == 0.0)   # gap = 0 means genuinely identical scores
+        close = (gap <= close_threshold) if (preferred and runner_up) else False
 
         # ── Step 5: Build narrative ───────────────────────────────────────
         recommendation, trade_off, rationale = self._build_narrative(
@@ -523,14 +556,23 @@ class ScoringEngine:
         # ── Main recommendation sentence ─────────────────────────────────
         if close and runner_up:
             gap = preferred.total_score - runner_up.total_score
-            recommendation = (
-                f"Close decision: {pname} is marginally preferred "
-                f"({preferred.total_score:.0f} vs {runner_up.total_score:.0f} points, "
-                f"gap {gap:.1f} — within close-decision threshold of "
-                f"{self._fmt_threshold(preferred)}). "
-                "Final selection depends on utility risk appetite and site-specific conditions. "
-                "Do not lock in technology based on score alone."
-            )
+            exact_tie = (gap == 0.0)
+            if exact_tie:
+                recommendation = (
+                    f"No preference: {pname} and {runner_up.scenario_name} score identically "
+                    f"({preferred.total_score:.0f}/100 each) under this weight profile. "
+                    "Selection must be based on site-specific factors, not this scoring. "
+                    "Consider a site investigation or sensitivity test with additional criteria."
+                )
+            else:
+                recommendation = (
+                    f"Close decision: {pname} is marginally preferred "
+                    f"({preferred.total_score:.0f} vs {runner_up.total_score:.0f} points, "
+                    f"gap {gap:.1f} — within close-decision threshold of "
+                    f"{self._fmt_threshold(preferred)}). "
+                    "Final selection depends on utility risk appetite and site-specific conditions. "
+                    "Do not lock in technology based on score alone."
+                )
             trade_off = (
                 f"{runner_up.scenario_name} is a valid alternative — "
                 "the score difference does not justify excluding it at concept stage. "
