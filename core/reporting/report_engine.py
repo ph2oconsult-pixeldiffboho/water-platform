@@ -661,7 +661,12 @@ class ReportEngine:
             lines += ["## Cost Summary"]
             for s in costed:
                 cr = s.cost_result
-                is_rec = (s.scenario_name == decision.recommended_label)
+                # Compare by tech code (recommended_tech) not display label
+                _rec_tech = getattr(decision, "recommended_tech", None)
+                _s_tech = (s.treatment_pathway.technology_sequence[0]
+                           if s.treatment_pathway and s.treatment_pathway.technology_sequence
+                           else "")
+                is_rec = (_rec_tech and _s_tech == _rec_tech) or (s.scenario_name == decision.recommended_label)
                 star = "★ " if is_rec else ""
                 lines.append(
                     f"- **{star}{s.scenario_name}**: "
