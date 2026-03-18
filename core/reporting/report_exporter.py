@@ -706,15 +706,17 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         ]))
 
         # Blue header bar
+        # Header: ParagraphStyle with white text — table TEXTCOLOR doesn't override Paragraph colour
+        _hdr_style = ParagraphStyle("ds_hdr", parent=styles["h2"],
+                                    textColor=_rlc.white, fontName="Helvetica-Bold", fontSize=10)
         hdr_tbl = _DST([[Paragraph(
-            "<b>🔷 DECISION SUMMARY — " + rl_safe(ds["preferred"]) + " RECOMMENDED</b>",
-            styles["h2"])]],
+            "DECISION SUMMARY — " + rl_safe(ds["preferred"]) + " RECOMMENDED",
+            _hdr_style)]],
             colWidths=[W])
         hdr_tbl.setStyle(_DSTS([
             ("BACKGROUND",    (0,0), (-1,-1), rl_blue),
-            ("TEXTCOLOR",     (0,0), (-1,-1), _rlc.white),
-            ("TOPPADDING",    (0,0), (-1,-1), 7),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+            ("TOPPADDING",    (0,0), (-1,-1), 8),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 8),
             ("LEFTPADDING",   (0,0), (-1,-1), 10),
         ]))
         story.append(hdr_tbl)
@@ -793,10 +795,10 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
     if design_data:
         from reportlab.platypus import Table as _DT, TableStyle as _DTS
         DESIGN_PARAMS = [
-            ("Bioreactor volume",   "reactor_volume_m3",          "{:,.0f} m³"),
-            ("Process footprint",   "footprint_m2",               "{:,.0f} m²"),
-            ("MLSS",                "mlss_mg_l",                  "{:,.0f} mg/L"),
-            ("O₂ demand",           "o2_demand_kg_day",           "{:,.0f} kg/day"),
+            ("Bioreactor volume",   "reactor_volume_m3",          "{:,.0f} m\u00b3"),
+            ("Process footprint",   "footprint_m2",               "{:,.0f} m\u00b2"),
+            ("MLSS",                "mlss_granular_mg_l",         "{:,.0f} mg/L"),
+            ("O\u2082 demand",      "o2_demand_kg_day",           "{:,.0f} kg/day"),
             ("Sludge production",   "sludge_production_kgds_day", "{:,.0f} kgDS/day"),
             ("Specific energy",     "energy_intensity_kwh_kl",    "{:.0f} kWh/ML"),
         ]
@@ -805,7 +807,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         tbl_rows = [[Paragraph("Parameter", styles["h2"])] +
                     [Paragraph(n, styles["h2"]) for n in scen_names]]
         for label, key, fmt in DESIGN_PARAMS:
-            row = [Paragraph(rl_safe(label), styles["body"])]
+            row_vals = []
             for scen_name in scen_names:
                 sd = design_data[scen_name]
                 tech_code = sd.get("tech_sequence", [None])[0]
@@ -820,8 +822,16 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                     except Exception:
                         cell = str(val)
                 else:
-                    cell = "—"
-                row.append(Paragraph(rl_safe(cell), styles["body"]))
+                    cell = None  # Use None to detect all-blank rows
+                row_vals.append(cell)
+
+            # Skip MLSS row if no scenario has it (non-AGS technologies)
+            if key == "mlss_granular_mg_l" and all(v is None for v in row_vals):
+                continue
+
+            row = [Paragraph(rl_safe(label), styles["body"])]
+            for cell in row_vals:
+                row.append(Paragraph(rl_safe(cell or "—"), styles["body"]))
             tbl_rows.append(row)
 
         # Effluent quality row
@@ -841,7 +851,8 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         tbl_rows.append(eff_row)
 
         n_cols = 1 + len(scen_names)
-        col_w = [W * 0.32] + [W * 0.68 / len(scen_names)] * len(scen_names)
+        # Wider first column and more padding to prevent cell text concatenation
+        col_w = [W * 0.30] + [W * 0.70 / len(scen_names)] * len(scen_names)
         t2 = _DT(tbl_rows, colWidths=col_w, repeatRows=1)
         t2.setStyle(_pdf_tbl_style(colours))
         story.append(Spacer(1, 4))
@@ -927,42 +938,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
 
             if tech_code:
                 story.append(P(f"Scenario: {scen_name}", styles["h2"]))
-
-                # ── Design parameters table ──────────────────────────────
-                def _fmt(v, unit=""):
-                    if v is None or v == 0: return "—"
-                    if isinstance(v, float): return f"{v:,.0f}{unit}"
-                    return f"{v}{unit}"
-
-                design_rows = [["Parameter", "Value"]]
-                r_vol = perf.get("reactor_volume_m3")
-                if r_vol: design_rows.append(["Bioreactor volume", _fmt(r_vol, " m³")])
-                fp_m2 = perf.get("footprint_m2")
-                if fp_m2: design_rows.append(["Process footprint", _fmt(fp_m2, " m2")])
-                hrt = perf.get("hydraulic_retention_time_hr")
-                if hrt: design_rows.append(["HRT", f"{hrt:.1f} hr"])
-                mlss = perf.get("mlss_mg_l") or perf.get("mlss_granular_mg_l")
-                if mlss: design_rows.append(["MLSS", _fmt(mlss, " mg/L")])
-                o2 = perf.get("o2_demand_kg_day")
-                if o2: design_rows.append(["O₂ demand", _fmt(o2, " kg/day")])
-                sludge = perf.get("sludge_production_kgds_day")
-                if sludge: design_rows.append(["Sludge production", _fmt(sludge, " kgDS/day")])
-                # Effluent
-                eff_vals = []
-                for k, lbl in [("effluent_bod_mg_l","BOD"), ("effluent_tss_mg_l","TSS"),
-                                ("effluent_tn_mg_l","TN"), ("effluent_nh4_mg_l","NH4")]:
-                    v = perf.get(k)
-                    if v is not None: eff_vals.append(f"{lbl} {v:.0f}")
-                if eff_vals: design_rows.append(["Effluent quality", "  ".join(eff_vals) + " mg/L"])
-                # Energy
-                kwh = sd.get("specific_energy_kwh_kl", 0)
-                if kwh: design_rows.append(["Specific energy", f"{kwh*1000:.0f} kWh/ML"])
-
-                if len(design_rows) > 1:
-                    t = Table(design_rows, colWidths=[W*0.45, W*0.55], repeatRows=1)
-                    t.setStyle(_pdf_tbl_style(colours))
-                    story.append(t)
-                    story.append(Spacer(1, 4))
+                story.append(Spacer(1, 2))
 
                 # ── PFD drawing ───────────────────────────────────────────
                 pfd = get_pfd(tech_code, perf, width=pfd_w, height=pfd_h)

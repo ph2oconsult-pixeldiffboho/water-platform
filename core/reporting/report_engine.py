@@ -206,12 +206,20 @@ class ReportEngine:
                 # ── Build decision_summary box ────────────────────────────
                 d = report.decision
                 if d and d.recommended_tech:
-                    # Find runner-up (next cheapest compliant scenario)
+                    # Find runner-up (next cheapest scenario by scenario_name, not tech label)
                     runner_up = None
                     runner_up_note = ""
-                    rec_name = d.recommended_label
+                    rec_tech = d.recommended_tech  # e.g. "granular_sludge"
+                    # Use scenario_name of the recommended scenario
+                    rec_scenario_name = next(
+                        (s.scenario_name for s in decision_scenarios
+                         if s.treatment_pathway and
+                         s.treatment_pathway.technology_sequence and
+                         s.treatment_pathway.technology_sequence[0] == rec_tech),
+                        d.recommended_label
+                    )
                     other_scens = [s for s in decision_scenarios
-                                   if s.scenario_name != rec_name and s.cost_result]
+                                   if s.scenario_name != rec_scenario_name and s.cost_result]
                     if other_scens:
                         runner_up_s = min(other_scens,
                                           key=lambda s: s.cost_result.lifecycle_cost_annual)
@@ -236,7 +244,7 @@ class ReportEngine:
                                  else "Higher implementation complexity than conventional BNR")
 
                     report.decision_summary = {
-                        "preferred":   rec_name,
+                        "preferred":   rec_scenario_name,
                         "runner_up":   runner_up,
                         "runner_up_note": runner_up_note,
                         "driver":      driver,
