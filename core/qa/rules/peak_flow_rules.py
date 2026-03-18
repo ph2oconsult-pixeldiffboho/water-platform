@@ -112,15 +112,28 @@ def run(scenario: Any, tech_code: str = None) -> QAResult:
             f("P4", Severity.WARN,
               "AGS peak flow fill ratio not computed — cycle compression not checked.",
               rec="Ensure peak_fill_ratio is calculated in granular_sludge technology outputs")
-        elif fill_ratio > 1.0:
+        elif fill_ratio > 1.5:
+            # Severe — genuinely risky at concept stage
             f("P3", Severity.FAIL,
               f"AGS SBR fill ratio at peak = {fill_ratio:.2f}× guideline "
               f"(feed {feed_per_fill:.0f} m³/fill event exceeds 50% reactor volume). "
-              "Granule stability at risk; treatment cycle compression likely.",
+              "Granule stability at risk; treatment cycle compression likely at this level.",
               metric="peak_fill_ratio",
               expected="Fill ratio ≤ 1.0× (≤ 50% reactor volume)",
               actual=f"{fill_ratio:.2f}×",
-              rec="Increase flow balance tank volume or add 4th SBR reactor")
+              rec="Increase flow balance tank volume or add 4th SBR reactor. "
+                  "Confirm with detailed hydraulic modelling at next stage.")
+        elif fill_ratio > 1.0:
+            # Marginal — flag for next stage but don't block report
+            f("P3", Severity.WARN,
+              f"AGS SBR peak fill ratio = {fill_ratio:.2f}× guideline "
+              f"(feed {feed_per_fill:.0f} m³/fill event vs 50% reactor volume limit). "
+              "Flag for detailed hydraulic design — consider increasing FBT or adding SBR reactor.",
+              metric="peak_fill_ratio",
+              expected="Fill ratio ≤ 1.0× (≤ 50% reactor volume)",
+              actual=f"{fill_ratio:.2f}×",
+              rec="Increase flow balance tank volume or add 4th SBR reactor. "
+                  "At concept stage this is a design flag, not a blocking issue.")
         elif fill_ratio > 0.75:
             f("P3", Severity.WARN,
               f"AGS SBR fill ratio at peak = {fill_ratio:.2f}× guideline (marginal). "
