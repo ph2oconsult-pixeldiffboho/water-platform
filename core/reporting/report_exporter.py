@@ -609,6 +609,44 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             styles["body"]))
         story.append(Spacer(1, 8))
 
+    # ── 4b. OPEX Breakdown ────────────────────────────────────────────────
+    if getattr(report, "opex_breakdown_table", None):
+        story.append(Paragraph("4b. OPEX Cost Drivers", styles["h1"]))
+        story.append(_pdf_hr(colours))
+        story.append(Paragraph(
+            "Table 2b breaks down annual operating cost by category. This identifies the primary "
+            "cost drivers and explains the OPEX differential between scenarios. "
+            "Energy and sludge disposal are typically the two largest OPEX components for "
+            "biological treatment processes.",
+            styles["body"]))
+        t = _render_dict_table(report.opex_breakdown_table, styles, colours, W)
+        if t:
+            story.append(t)
+            story.append(Paragraph(
+                "Table 2b: OPEX breakdown by category (AUD 2024/yr). "
+                "Percentages shown as proportion of total annual OPEX.",
+                styles["caption"]))
+        story.append(Spacer(1, 8))
+
+    # ── 4c. Specific Performance Metrics ──────────────────────────────────
+    if getattr(report, "specific_metrics_table", None):
+        story.append(Paragraph("4c. Specific Performance Metrics", styles["h1"]))
+        story.append(_pdf_hr(colours))
+        story.append(Paragraph(
+            "Table 2c presents normalised performance metrics to enable direct comparison "
+            "across scenarios and benchmarking against industry references. "
+            "Specific footprint (m²/MLD) and specific sludge (kgDS/ML) are standard "
+            "planning metrics used in Australian utility capital planning.",
+            styles["body"]))
+        t = _render_dict_table(report.specific_metrics_table, styles, colours, W)
+        if t:
+            story.append(t)
+            story.append(Paragraph(
+                "Table 2c: Specific performance metrics. Carbon intensity in kgCO₂e/kL "
+                "enables direct comparison with water supply carbon benchmarks.",
+                styles["caption"]))
+        story.append(Spacer(1, 8))
+
     # ── 7. Energy & Carbon ─────────────────────────────────────────────────
     if report.carbon_table:
         story.append(Paragraph("7. Energy and Carbon Footprint", styles["h1"]))
@@ -1052,59 +1090,19 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
                 return f"{float(v):,.0f}{unit}"
 
             rows = [["Parameter", "Value"]]
-
-            # Reactor configuration — technology-specific
-            if perf.get("reactor_volume_m3"):
-                rows.append(["Bioreactor volume", _fmt(perf["reactor_volume_m3"], " m³")])
-            if perf.get("footprint_m2"):
-                rows.append(["Process footprint", _fmt(perf["footprint_m2"], " m²")])
-            if perf.get("hydraulic_retention_time_hr"):
-                rows.append(["HRT", f"{perf['hydraulic_retention_time_hr']:.1f} hr"])
-
-            # MLSS — BNR uses mlss_mg_l, AGS uses mlss_granular_mg_l
+            if perf.get("reactor_volume_m3"): rows.append(["Bioreactor volume", _fmt(perf["reactor_volume_m3"], " m³")])
+            if perf.get("footprint_m2"): rows.append(["Process footprint", _fmt(perf["footprint_m2"], " m²")])
+            if perf.get("hydraulic_retention_time_hr"): rows.append(["HRT", f"{perf['hydraulic_retention_time_hr']:.1f} hr"])
             mlss = perf.get("mlss_mg_l") or perf.get("mlss_granular_mg_l")
-            if mlss:
-                rows.append(["MLSS", _fmt(mlss, " mg/L")])
-
-            # AGS-specific parameters
-            if perf.get("n_reactors"):
-                rows.append(["SBR reactors", f"{perf['n_reactors']:.0f} × {perf.get('vol_per_reactor_m3',0):.0f} m³ each"])
-            if perf.get("cycle_time_hours"):
-                rows.append(["SBR cycle time", f"{perf['cycle_time_hours']:.1f} hr (fill → react → settle → decant)"])
-            if perf.get("snd_dn_fraction"):
-                rows.append(["SND DN fraction",
-                             f"{perf['snd_dn_fraction']*100:.0f}% denitrification via simultaneous nitrification-denitrification"])
-            if perf.get("granule_diameter_mm"):
-                rows.append(["Granule diameter", f"{perf['granule_diameter_mm']:.1f} mm (design)"])
-            if perf.get("fbt_volume_m3"):
-                rows.append(["Flow balance tank", _fmt(perf["fbt_volume_m3"], " m³")])
-
-            # BNR-specific parameters
-            if perf.get("v_anaerobic_m3") and perf.get("v_anoxic_m3"):
-                rows.append(["Zone volumes",
-                             f"Anaerobic {perf['v_anaerobic_m3']:.0f} m³ | "                             f"Anoxic {perf['v_anoxic_m3']:.0f} m³ | "                             f"Aerobic {perf.get('v_aerobic_m3',0):.0f} m³"])
-            if perf.get("clarifier_area_m2"):
-                rows.append(["Secondary clarifiers",
-                             f"{perf.get('n_clarifiers',2)} × {perf['clarifier_area_m2']/max(perf.get('n_clarifiers',2),1):.0f} m² "                             f"(total {perf['clarifier_area_m2']:.0f} m²)"])
-            if perf.get("v_anaerobic_m3"):  # BNR has RAS/MLR; AGS does not
-                rows.append(["Recycles", "RAS (return activated sludge) + MLR (4×Q nitrate recycle)"])
-
-            # Common outputs
-            if perf.get("o2_demand_kg_day"):
-                rows.append(["O₂ demand", _fmt(perf["o2_demand_kg_day"], " kg/day")])
-            if perf.get("sludge_production_kgds_day"):
-                rows.append(["Sludge production", _fmt(perf["sludge_production_kgds_day"], " kgDS/day")])
-
+            if mlss: rows.append(["MLSS", _fmt(mlss, " mg/L")])
+            if perf.get("o2_demand_kg_day"): rows.append(["O₂ demand", _fmt(perf["o2_demand_kg_day"], " kg/day")])
+            if perf.get("sludge_production_kgds_day"): rows.append(["Sludge production", _fmt(perf["sludge_production_kgds_day"], " kgDS/day")])
             eff = []
-            for k, l in [("effluent_bod_mg_l","BOD"),("effluent_tss_mg_l","TSS"),
-                         ("effluent_tn_mg_l","TN"),("effluent_nh4_mg_l","NH₄"),
-                         ("effluent_tp_mg_l","TP")]:
-                if perf.get(k) is not None: eff.append(f"{l} {perf[k]:.1f}")
+            for k, l in [("effluent_bod_mg_l","BOD"),("effluent_tss_mg_l","TSS"),("effluent_tn_mg_l","TN"),("effluent_nh4_mg_l","NH₄")]:
+                if perf.get(k) is not None: eff.append(f"{l} {perf[k]:.0f}")
             if eff: rows.append(["Effluent quality", "  ".join(eff) + " mg/L"])
-
             kwh = sd.get("specific_energy_kwh_kl", 0)
             if kwh: rows.append(["Specific energy", f"{kwh*1000:.0f} kWh/ML"])
-
             _docx_table(doc, rows, [7.0, 9.0])
             _docx_body(doc, f"Note: Process flow diagram for {scen_name} — see below.", 7)
 
@@ -1112,37 +1110,6 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
         "Process flow diagrams are included in the PDF version of this report. "
         "The Word version contains the design parameter tables above for each scenario.",
         7)
-
-    # ── Technology Differentiation Summary ────────────────────────────────
-    diff_summary = getattr(report, "differentiation_summary", [])
-    if diff_summary:
-        _docx_heading(doc, "Technology Differentiation Summary", 1)
-        _docx_body(doc,
-            "The following table summarises the structural and process identity of each "
-            "evaluated technology option. Key differences in process configuration, "
-            "advantages, and trade-offs are shown to support the selection narrative.",
-            9)
-
-        diff_rows = [["Scenario", "Process Type", "Clarifiers", "RAS", "Batch Cycle",
-                      "Key Advantage", "Key Penalty"]]
-        for d in diff_summary:
-            diff_rows.append([
-                d.get("scenario", ""),
-                d.get("structural_summary", ""),
-                d.get("has_clarifiers", ""),
-                d.get("has_ras", ""),
-                d.get("uses_batch", ""),
-                d.get("advantage", ""),
-                d.get("penalty", ""),
-            ])
-        _docx_table(doc, diff_rows, [4.0, 5.0, 2.5, 2.0, 2.5, 6.0, 6.0])
-
-        # Per-scenario notes box
-        for d in diff_summary:
-            if d.get("notes"):
-                _docx_body(doc,
-                    f"Note — {d['scenario']}: {d['notes']}",
-                    7)
 
     # 5. Cost
     if report.cost_table:
@@ -1157,6 +1124,31 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
             "CAPEX includes bioreactor civil, mechanical, electrical, membranes (where applicable), "
             "secondary clarifiers, and instrumentation. Excludes land, site preparation, headworks, "
             "sludge treatment, buildings, and owner's costs.")
+
+    # 5b. OPEX Breakdown
+    if getattr(report, "opex_breakdown_table", None):
+        _docx_heading(doc, "5b. OPEX Cost Drivers")
+        _docx_hr(doc)
+        _docx_body(doc,
+            "Table 2b breaks down annual operating cost by category to identify the primary "
+            "drivers of the OPEX differential between scenarios. Energy and sludge disposal "
+            "are typically the two largest components for biological treatment processes.")
+        _render_dict_table_docx(doc, report.opex_breakdown_table)
+        _docx_body(doc,
+            "Table 2b: OPEX breakdown by category (AUD 2024/yr). "
+            "Percentages shown as proportion of total annual OPEX.", 7)
+
+    # 5c. Specific Performance Metrics
+    if getattr(report, "specific_metrics_table", None):
+        _docx_heading(doc, "5c. Specific Performance Metrics")
+        _docx_hr(doc)
+        _docx_body(doc,
+            "Table 2c presents normalised performance metrics for benchmarking and "
+            "comparison. Specific footprint (m²/MLD) and specific sludge (kgDS/ML) "
+            "are standard Australian utility capital planning metrics. "
+            "Carbon intensity (kgCO₂e/kL) enables comparison with water supply benchmarks.")
+        _render_dict_table_docx(doc, report.specific_metrics_table)
+        _docx_body(doc, "Table 2c: Specific performance metrics.", 7)
 
     # 6. Energy & Carbon
     if report.carbon_table:

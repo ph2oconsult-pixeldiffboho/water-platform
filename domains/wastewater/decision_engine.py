@@ -206,8 +206,6 @@ class ScenarioDecision:
     profiles:           Dict[str, TechnologyDecisionProfile]
     strategic_insight:  str = ""   # process intensification vs robustness framing
     recommended_approach: List[str] = field(default_factory=list)  # parallel eval steps
-    conditional_guidance: List[str] = field(default_factory=list)  # if X then Y decision logic
-    fit_for_purpose_flags: List[str] = field(default_factory=list) # site condition flags
 
 
 # ── Technology knowledge base ─────────────────────────────────────────────────
@@ -1239,195 +1237,6 @@ def _build_client_framing(
     )
 
 
-
-def _build_conditional_guidance(
-    profiles: dict,
-    scenarios: list,
-) -> list:
-    """
-    Build 'if X then Y' conditional decision guidance.
-    Extracts metrics directly from ScenarioModel cost/risk/domain results.
-    """
-    valid = [s for s in scenarios if s.cost_result and s.risk_result]
-    if len(valid) < 2:
-        return []
-
-    guidance = []
-
-    # Extract metrics directly from ScenarioModel (not from TechnologyDecisionProfile)
-    metrics = {}
-    for sc in valid:
-        cr = sc.cost_result
-        rr = sc.risk_result
-        tp_all = (sc.domain_specific_outputs or {}).get("technology_performance", {})
-        eng    = (sc.domain_specific_outputs or {}).get("engineering_summary", {})
-        tp_code = (sc.treatment_pathway.technology_sequence[0]
-                   if sc.treatment_pathway and sc.treatment_pathway.technology_sequence else None)
-        perf = tp_all.get(tp_code, {}) if tp_code else {}
-        metrics[sc.scenario_name] = {
-            "label":     sc.scenario_name,
-            "capex":     cr.capex_total if cr else 0,
-            "capex_m":   cr.capex_total / 1e6 if cr else 0,
-            "opex":      cr.opex_annual / 1e3 if cr else 0,
-            "lcc":       cr.lifecycle_cost_annual / 1e3 if cr else 0,
-            "energy":    (eng.get("specific_energy_kwh_kl") or 0) * 1000,
-            "sludge":    perf.get("sludge_production_kgds_day") or 0,
-            "footprint": perf.get("footprint_m2") or 0,
-            "risk":      rr.overall_score if rr else 0,
-        }
-
-    if not metrics:
-        return []
-
-    codes = list(metrics.keys())
-
-    def winner(key, want_min=True):
-        vals = {c: metrics[c][key] for c in codes if metrics[c].get(key, 0) > 0}
-        if not vals: return None, None
-        best = min(vals, key=vals.get) if want_min else max(vals, key=vals.get)
-        return metrics[best]["label"], vals[best]
-
-    low_capex_label, low_capex_val     = winner("capex_m", True)
-    low_opex_label, low_opex_val       = winner("opex", True)
-    low_lcc_label, low_lcc_val         = winner("lcc", True)
-    low_risk_label, _                  = winner("risk", True)
-    low_energy_label, _                = winner("energy", True)
-    small_fp_label, _                  = winner("footprint", True)
-    low_sludge_label, _                = winner("sludge", True)
-
-    # Build guidance statements
-    if low_capex_label:
-        guidance.append(
-            f"→ Lowest capital cost: **{low_capex_label}** "
-            f"(${low_capex_val:.1f}M) — preferred where capital budget is the "
-            "primary constraint or upgrade is funded from reserves."
-        )
-    if low_opex_label:
-        guidance.append(
-            f"→ Lowest operating cost: **{low_opex_label}** "
-            f"(${low_opex_val:.0f}k/yr) — preferred for sites with high electricity "
-            "prices, limited operational budget, or long asset life focus."
-        )
-    if low_lcc_label and low_lcc_label != low_capex_label:
-        guidance.append(
-            f"→ Lowest lifecycle cost: **{low_lcc_label}** "
-            f"(${low_lcc_val:.0f}k/yr annualised) — preferred when total cost of "
-            "ownership over 30 years is the primary selection criterion."
-        )
-    if low_risk_label:
-        guidance.append(
-            f"→ Lowest delivery and operational risk: **{low_risk_label}** — "
-            "preferred where programme certainty, operational simplicity, or "
-            "regulatory track record is the primary concern."
-        )
-    if small_fp_label:
-        guidance.append(
-            f"→ Smallest process footprint: **{small_fp_label}** — "
-            "preferred where available land is constrained, retrofit within "
-            "existing structures is required, or urban development encroaches."
-        )
-    if low_energy_label:
-        guidance.append(
-            f"→ Lowest energy consumption: **{low_energy_label}** — "
-            "preferred for sites with high electricity cost exposure, "
-            "net-zero carbon targets, or demand-charge billing."
-        )
-    if low_sludge_label:
-        guidance.append(
-            f"→ Lowest sludge production: **{low_sludge_label}** — "
-            "preferred where biosolids disposal cost is high, "
-            "beneficial reuse land is limited, or thermal processing is not available."
-        )
-
-    # Dominant option (wins ≥ 3 dimensions)
-    dimension_winners = [
-        low_capex_label, low_opex_label, low_lcc_label,
-        low_risk_label, low_energy_label, small_fp_label, low_sludge_label
-    ]
-    win_counts = {}
-    for w in dimension_winners:
-        if w:
-            win_counts[w] = win_counts.get(w, 0) + 1
-
-    dominant = [label for label, cnt in win_counts.items() if cnt >= 3]
-    if dominant:
-        guidance.append(
-            f"→ Overall preferred option: **{dominant[0]}** — "
-            f"wins {win_counts[dominant[0]]} of {len([w for w in dimension_winners if w])} "
-            "comparison dimensions at this site. "
-            "Recommend as the basis for detailed feasibility."
-        )
-    elif len(win_counts) > 1:
-        guidance.append(
-            "→ No single option dominates all dimensions. "
-            "Select based on the site-specific priority above. "
-            "A structured multi-criteria weighting is recommended for the detailed feasibility stage."
-        )
-
-    return guidance
-
-
-def _build_fit_for_purpose_flags(domain_inputs: dict) -> list:
-    """
-    Generate fit-for-purpose advisory flags based on site inputs.
-    Flags unusual conditions that should influence technology selection.
-    """
-    if not domain_inputs:
-        return []
-    flags = []
-    T = domain_inputs.get("influent_temperature_celsius") or 20.0
-    eff_tn = domain_inputs.get("effluent_tn_mg_l") or 10.0
-    eff_nh4 = domain_inputs.get("effluent_nh4_mg_l") or 1.0
-    eff_tss = domain_inputs.get("effluent_tss_mg_l") or 10.0
-    flow = domain_inputs.get("design_flow_mld") or 10.0
-    cod_tkn = ((domain_inputs.get("influent_cod_mg_l") or 0) /
-               max(domain_inputs.get("influent_tkn_mg_l") or 1, 1))
-
-    if T < 12.0:
-        flags.append(
-            f"❄️ Cold climate ({T:.0f}°C): MABR or IFAS strongly preferred for "
-            "reliable NH₄ compliance. Nereda cold-temperature granule stability "
-            "requires careful monitoring."
-        )
-    elif T < 15.0:
-        flags.append(
-            f"⚠️ Cool climate ({T:.0f}°C): conventional BNR nitrification is "
-            "marginal. Verify SRT adequacy."
-        )
-    if eff_nh4 < 2.0:
-        flags.append(
-            f"🎯 Tight NH₄ target ({eff_nh4:.1f} mg/L): biofilm-augmented options "
-            "(MABR, IFAS) provide insurance for reliable compliance."
-        )
-    if eff_tn < 5.0:
-        flags.append(
-            f"🎯 Tight TN target ({eff_tn:.1f} mg/L): supplemental carbon "
-            "likely required. Evaluate methanol dosing cost."
-        )
-    if eff_tss < 5.0:
-        flags.append(
-            f"💧 Reuse-grade effluent (TSS {eff_tss:.1f} mg/L): MBR is the "
-            "lowest-risk path to consistent solids barrier."
-        )
-    if cod_tkn > 0 and cod_tkn < 6.0:
-        flags.append(
-            f"⚠️ Carbon-limited site (COD:TKN = {cod_tkn:.1f}): denitrification "
-            "capacity constrained. BNR with supplemental carbon or IFAS preferred."
-        )
-    if flow < 3.0:
-        flags.append(
-            f"📐 Small plant ({flow:.1f} MLD): labour cost dominates OPEX. "
-            "Technology energy savings are relatively smaller at this scale."
-        )
-    elif flow > 30.0:
-        flags.append(
-            f"📐 Large plant ({flow:.0f} MLD): energy and sludge disposal costs "
-            "become dominant. AGS or MABR energy savings materially affect "
-            "lifecycle cost at this scale."
-        )
-    return flags
-
-
 def evaluate_scenario(
     scenarios: list,
     inputs: Any = None,
@@ -1821,10 +1630,65 @@ def evaluate_scenario(
                 f"Do not proceed to procurement without resolving compliance."
             )
         else:
+            # Build a substantive conclusion that explicitly states the trade-offs
+            # and when each option is preferred — this is what clients need.
+            rec_cr  = recommended.cost_result
+            rec_rr  = recommended.risk_result
+            alt_scenarios = [s for s in viable if s != recommended]
+
+            _cost_line = (
+                f"{rec_label} has the lowest lifecycle cost "
+                f"(${rec_cr.lifecycle_cost_annual/1e3:.0f}k/yr, "
+                f"${rec_cr.specific_cost_per_kl:.3f}/kL treated)"
+                if rec_cr else f"{rec_label} is the preferred option"
+            )
+
+            # Build "preferred where" guidance for each scenario
+            _preferred_where = []
+            for s in viable:
+                cr = s.cost_result
+                rr = s.risk_result
+                eng = (s.domain_specific_outputs or {}).get("engineering_summary", {})
+                flow = eng.get("design_flow_mld") or 1
+                footprint = eng.get("footprint_m2") or 0
+                specific_fp = footprint / flow if flow else 0
+                sludge = eng.get("total_sludge_kgds_day") or 0
+                is_novel = any(tc in {"granular_sludge", "mabr_bnr", "bnr_mbr", "anmbr"}
+                               for tc in (s.treatment_pathway.technology_sequence if s.treatment_pathway else []))
+                is_rec = (s == recommended)
+
+                attrs = []
+                if is_rec:
+                    attrs.append("lowest lifecycle cost")
+                if rr and rr.overall_level == "Low":
+                    attrs.append("lowest operational risk")
+                elif rr and rr.overall_level == "High":
+                    attrs.append("higher operational complexity")
+                if specific_fp > 0 and specific_fp < 120:
+                    attrs.append(f"compact footprint ({specific_fp:.0f} m²/MLD)")
+                elif specific_fp >= 120:
+                    attrs.append(f"larger footprint ({specific_fp:.0f} m²/MLD)")
+                if cr and rec_cr and cr.opex_annual < rec_cr.opex_annual * 0.85:
+                    attrs.append("significantly lower OPEX")
+                if is_novel:
+                    attrs.append("requires specialist startup and vendor engagement")
+                else:
+                    attrs.append("uses established procurement and O&M pathways")
+
+                if attrs:
+                    _preferred_where.append(
+                        f"**{s.scenario_name}** is preferred where: {'; '.join(attrs)}."
+                    )
+
+            _where_text = " ".join(_preferred_where) if _preferred_where else ""
+
             conclusion = (
-                f"{rec_label} recommended based on lifecycle cost. "
-                f"Recommended procurement: {reg.delivery.recommended_model if reg else 'D&C'}. "
-                f"Regulatory confidence is {reg_conf.value.lower() if reg_conf else 'standard'}."
+                f"{_cost_line}. "
+                f"Recommended procurement model: {reg.delivery.recommended_model if reg else 'D&C'}. "
+                f"Regulatory confidence is {reg_conf.value.lower() if reg_conf else 'standard'}. "
+                + (f"\n\nTechnology selection guidance: {_where_text}" if _where_text else "") +
+                f"\n\nA detailed feasibility study with site-specific cost estimation (±15–20%) "
+                f"is recommended before proceeding to detailed design or procurement."
             )
 
     # Build display label — qualified when two pathways exist
@@ -1855,11 +1719,4 @@ def evaluate_scenario(
         profiles=profiles,
         strategic_insight=strategic_insight,
         recommended_approach=recommended_approach,
-        conditional_guidance=_build_conditional_guidance(profiles, scenarios),
-        fit_for_purpose_flags=_build_fit_for_purpose_flags(
-            # Use inputs param if provided, else first scenario domain_inputs
-            ({k: getattr(inputs, k) for k in inputs.__dataclass_fields__
-              if not k.startswith('_')} if inputs and hasattr(inputs, '__dataclass_fields__')
-             else (valid[0].domain_inputs or {} if valid else {}))
-        ),
     )

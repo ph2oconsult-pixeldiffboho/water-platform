@@ -68,8 +68,8 @@ def run_release_checks():
     bnr_r = BNRTechnology(a2).calculate(10.0, BNRInputs())
 
     o2 = bnr_r.performance.additional.get("o2_demand_kg_day", 0)
-    check("Engineering", "O2 demand within 5% of manual (2096 kg/d — M&E Eq 8-20)",
-          abs(o2 - 2096) / 2096 < 0.05, f"got {o2:.0f}")
+    check("Engineering", "O2 demand within 2% of manual (2096 kg/d)",
+          abs(o2 - 2096) / 2096 < 0.02, f"got {o2:.0f}")
 
     slg = bnr_r.sludge.biological_sludge_kgds_day
     yield_r = slg / (10000 * 240 / 1000)

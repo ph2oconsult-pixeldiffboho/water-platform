@@ -177,15 +177,8 @@ class GranularSludgeTechnology(BaseTechnology):
 
         # ── 2. Sludge yield ────────────────────────────────────────────────
         # AGS: endogenous decay within dense granule matrix + long SRT
-        # AGS Yobs via M&E endogenous decay: Y_true/(1 + kd*SRT)
-        # Y_true = 0.50 kgVSS/kgBOD (lower than CAS 0.60; granule structure reduces net synthesis)
-        # kd     = 0.04/d at 20°C (lower than CAS 0.08; dense granule matrix reduces decay)
-        # Ref: Pronk et al. 2015; van Dijk 2020; Metcalf 5th Ed Table 7-15 as basis
-        # At SRT=20d: Yobs = 0.50/(1+0.04×20) = 0.28 kgVSS/kgBOD (reviewer range 0.28–0.33)
-        Y_true_ags = 0.50
-        kd_ags     = 0.038  # /day at 20°C — lower than CAS 0.08; dense granule matrix (Pronk 2015)
-        kd_ags_T   = kd_ags * (1.04 ** (inputs.design_temperature_celsius - 20.0))
-        y_obs      = Y_true_ags / (1.0 + kd_ags_T * inputs.srt_days)
+        # y_obs = 0.22 kgVSS/kgBOD (van Dijk 2020; range 0.18–0.28)
+        y_obs   = 0.22
         mlss    = 8000.0   # mg/L — higher than CAS, lower than MBR
         vss_tss = 0.80
 
@@ -199,10 +192,8 @@ class GranularSludgeTechnology(BaseTechnology):
         r.sludge.feed_ts_pct  = 1.5
 
         r.notes.add_assumption(
-            f"y_obs = {y_obs:.3f} kgVSS/kgBOD (M&E decay: Y=0.50, kd={kd_ags_T:.3f}/d at "
-            f"{inputs.design_temperature_celsius:.0f}°C, SRT={inputs.srt_days:.0f}d; "
-            f"range 0.28–0.33 at SRT 15–25d — Pronk 2015, van Dijk 2020; "
-            f"kd={kd_ags_T:.3f}/d at {inputs.design_temperature_celsius:.0f}°C)"
+            f"y_obs = {y_obs} kgVSS/kgBOD (AGS long SRT + granule endogenous decay; "
+            "van Dijk 2020 range 0.18–0.28)"
         )
 
         # ── 3. Reactor volume ──────────────────────────────────────────────
@@ -247,6 +238,97 @@ class GranularSludgeTechnology(BaseTechnology):
         r.notes.add_assumption(
             f"Reactor: {reactor_m3:.0f} m³ in {n_reactors} SBR tanks "
             f"({vol_per_reactor:.0f} m³ each) at MLSS {mlss:.0f} mg/L"
+        )
+
+        # ── 3b. Peak flow assessment (AGS SBR) ────────────────────────────
+        # AGS SBR handles peak flow through cycle compression and FBT buffering.
+        # At peak flow the fill phase is compressed — the FBT must be large enough
+        # to buffer the peak volume arriving during the non-fill phases of the cycle.
+        #
+        # Key constraints (de Kreuk 2007; Pronk 2015; WEF 2018 Ch.3):
+        #   • Minimum fill time: 30 min (shorter risks granule washout from plug-flow disruption)
+        #   • FBT must hold peak flow × non-fill duration without overflow
+        #   • Feed volume per reactor per cycle must not exceed reactor working volume (~80%)
+        #
+        # Design:
+        #   n_reactors in rotation → at any time (n_reactors−1) are in react/settle/decant
+        #   Fill phase = cycle_time / n_reactors (approx, assuming equal phase splits)
+        #   At peak flow: all incoming volume must be buffered in FBT during non-fill phases
+        #
+        peak_factor     = self._get_eng("peak_flow_factor", 1.5)
+        peak_flow_m3d   = flow * peak_factor
+        peak_flow_m3hr  = peak_flow_m3d / 24.0
+
+        # Fill time per reactor per cycle (fraction of cycle allocated to fill phase)
+        fill_fraction   = 1.0 / n_reactors   # 1 reactor filling while others react/settle/decant
+        fill_time_hr    = inputs.cycle_time_hours * fill_fraction
+        # Volume received by each reactor per fill at PEAK flow
+        fill_vol_peak   = peak_flow_m3hr * fill_time_hr
+        # Working volume limit: 80% of reactor volume (headspace for aeration + granule bed)
+        working_vol     = vol_per_reactor * 0.80
+
+        # FBT required at peak: must buffer (n-1)/n of the cycle volume at peak flow
+        # Non-fill phases occupy (n_reactors-1)/n_reactors of the cycle
+        non_fill_fraction = (n_reactors - 1) / n_reactors
+        fbt_required_peak = peak_flow_m3hr * inputs.cycle_time_hours * non_fill_fraction
+        fbt_adequate      = fbt_vol_m3 >= fbt_required_peak * 0.90   # allow 10% tolerance
+
+        # Minimum fill time check (< 30 min risks washout)
+        fill_time_min_at_peak = fill_time_hr * 60.0
+        fill_time_ok  = fill_time_min_at_peak >= 30.0
+
+        r.performance.additional.update({
+            "peak_flow_factor":          peak_factor,
+            "peak_flow_m3d":             round(peak_flow_m3d, 0),
+            "fill_time_hr":              round(fill_time_hr, 2),
+            "fill_time_min_at_peak":     round(fill_time_min_at_peak, 1),
+            "fill_vol_per_reactor_m3":   round(fill_vol_peak, 0),
+            "feed_per_fill_m3":          round(fill_vol_peak, 0),  # alias for QA rule P3
+            "working_vol_per_reactor_m3": round(working_vol, 0),
+            "peak_fill_ratio":           round(fill_vol_peak / max(working_vol, 1.0), 2),
+            "fbt_required_at_peak_m3":   round(fbt_required_peak, 0),
+            "fbt_provided_m3":           round(fbt_vol_m3, 0),
+            "fbt_adequate":              fbt_adequate,
+            "fill_time_adequate":        fill_time_ok,
+        })
+
+        # Warnings
+        if not fbt_adequate and inputs.include_flow_balance_tank:
+            r.notes.warn(
+                f"⚠️ Flow balance tank ({fbt_vol_m3:.0f} m³) undersized for peak flow "
+                f"({peak_factor:.1f}× = {peak_flow_m3d:.0f} m³/d). "
+                f"Required: {fbt_required_peak:.0f} m³ to buffer non-fill phases. "
+                "Increase FBT volume or reduce peak flow factor through upstream attenuation."
+            )
+        elif not inputs.include_flow_balance_tank:
+            r.notes.warn(
+                f"⚠️ No flow balance tank specified. At peak flow {peak_factor:.1f}× "
+                f"({peak_flow_m3d:.0f} m³/d), upstream headworks must buffer "
+                f"≥{fbt_required_peak:.0f} m³ during non-fill phases or cycle timing will be disrupted."
+            )
+
+        if fill_vol_peak > working_vol:
+            r.notes.warn(
+                f"⚠️ At peak flow, fill volume per reactor ({fill_vol_peak:.0f} m³) "
+                f"exceeds 80% working volume ({working_vol:.0f} m³). "
+                "Risk of reactor overflow or granule washout during fill phase. "
+                "Increase reactor volume, add a reactor, or provide upstream flow attenuation."
+            )
+
+        if not fill_time_ok:
+            r.notes.warn(
+                f"⚠️ Fill time at peak flow = {fill_time_min_at_peak:.0f} min "
+                "(< 30 min minimum for AGS plug-flow fill). "
+                "Short fill times disrupt the feast/famine gradient required for granule stability. "
+                "Consider: additional reactor, longer cycle time, or upstream flow attenuation."
+            )
+
+        r.notes.add_assumption(
+            f"Peak flow assessment: {peak_factor:.1f}× ADF = {peak_flow_m3d:.0f} m³/d. "
+            f"Fill time per reactor = {fill_time_min_at_peak:.0f} min "
+            f"({'✓ adequate' if fill_time_ok else '⚠ marginal'}). "
+            f"FBT {fbt_vol_m3:.0f} m³ vs {fbt_required_peak:.0f} m³ required at peak "
+            f"({'✓ adequate' if fbt_adequate else '⚠ undersized'})."
         )
 
         # ── 4. Temperature correction and warnings ─────────────────────────
@@ -316,29 +398,16 @@ class GranularSludgeTechnology(BaseTechnology):
 
         # ── 5. Oxygen demand and aeration energy ───────────────────────────
         # AGS alpha slightly higher than CAS (less mixed liquor boundary layer effect)
-        alpha        = 0.65   # de Kreuk 2007 (range 0.60–0.70)
-        _beta_fact_do = self._get_eng("beta_factor", 0.97)
-        sae_std      = self._get_eng("standard_aeration_efficiency_kg_o2_kwh", 1.8)
-
-        # ── DO setpoint correction (Metcalf 5th Ed Eq 5-26) ──────────────
-        _T_aer   = self._get_eng("influent_temperature_celsius", 20.0)
-        _Cs_T    = 468.0 / (31.6 + _T_aer)
-        _Cs_proc = _beta_fact_do * _Cs_T
-        _do_set  = self._get_eng("do_setpoint_mg_l", 2.0)
-        _do_corr = ((_Cs_proc - 2.0) / max(_Cs_proc - _do_set, 0.1))
-        _do_corr = max(0.5, min(2.5, _do_corr))
-        sae     = sae_std * alpha * _do_corr
+        alpha   = 0.65   # de Kreuk 2007 (range 0.60–0.70)
+        sae_std = self._get_eng("standard_aeration_efficiency_kg_o2_kwh", 1.8)
+        sae     = sae_std * alpha
 
         # SND in granule provides partial denitrification oxygen credit (50–70%)
-        # SND denitrification credit: 65% for enabled SND (de Kreuk 2006; Pronk 2015)
-        # Range: 55–75% depending on granule diameter and cycle configuration
-        # Using 65% (mid-range) for concept-stage planning; 30% if SND disabled
-        snd_dn_frac = 0.65 if inputs.simultaneous_n_removal else 0.30
+        snd_dn_frac = 0.60 if inputs.simultaneous_n_removal else 0.30
         nh4_frac = self._get_eng("influent_nh4_mg_l", 35.0) / max(inf["tn_mg_l"], 1.0)
-        # O2 carbonaceous: M&E Eq 8-20 (BOD_rem - 1.42*Px_VSS)
-        o2_c     = max(0.0, bod_removed - 1.42 * vss_prod)       # carbonaceous (M&E Eq 8-20)
+        o2_c     = bod_removed * (1.0 - 1.42 * y_obs)   # carbonaceous (Metcalf Eq 7-57)
         o2_n     = 4.57 * tn_load * nh4_frac * 0.90 * T_factor  # nitrification (T-corrected)
-        o2_dn    = 2.86 * tn_removed * snd_dn_frac               # SND credit (60% for AGS)
+        o2_dn    = 2.86 * tn_removed * snd_dn_frac               # SND credit
         o2_kg    = max(0.0, o2_c + o2_n - o2_dn)
 
         # Cold temperature energy: lower nitrification O2 reduces aeration slightly,
@@ -366,7 +435,7 @@ class GranularSludgeTechnology(BaseTechnology):
 
         r.notes.add_assumption(
             f"alpha = {alpha} (AGS, de Kreuk 2007); "
-            f"SND denitrification fraction = {snd_dn_frac:.0%} (de Kreuk 2006; Pronk 2015); "
+            f"SND denitrification fraction = {snd_dn_frac:.0%}; "
             f"O2 demand = {o2_kg:.0f} kg/day "
             f"(carbonaceous {o2_c:.0f} + nit {o2_n:.0f} − SND credit {o2_dn:.0f})"
         )
@@ -408,52 +477,6 @@ class GranularSludgeTechnology(BaseTechnology):
             "cycle_time_hours":          inputs.cycle_time_hours,
         })
 
-        # ── 7b. Peak flow check (SBR-specific) ────────────────────────────
-        # At peak flow, each reactor receives more feed per fill event.
-        # Guideline: fill volume ≤ 50% reactor volume per cycle (van Dijk 2020).
-        # Staggered cycle: all n_reactors cycle simultaneously but offset by
-        # cycle_time/n_reactors. Feed per fill event = peak_flow / (n_reactors × cycles/day).
-        # Ref: van Dijk 2020; Pronk 2015; Royal HaskoningDHV Nereda design guidelines
-        peak_factor_ags  = self._get_eng("peak_flow_factor", 1.5)
-        peak_flow_m3d    = flow * peak_factor_ags
-        cycles_per_day   = 24.0 / max(inputs.cycle_time_hours, 1.0)
-        feed_per_fill    = peak_flow_m3d / max(n_reactors * cycles_per_day, 1.0)
-        max_fill_vol     = vol_per_reactor * 0.50   # 50% max fill guideline
-        fill_ratio       = feed_per_fill / max(max_fill_vol, 1.0)  # >1 = exceeds guideline
-
-        # Key biological parameters for report/comparison table
-        r.performance.additional["y_obs_kgvss_kgbod"]  = round(y_obs, 3)
-        r.performance.additional["sludge_yield_kgds_kgbod"] = round(
-            total_sludge / max(bod_removed, 1), 3)
-        r.performance.additional["aeration_pct_of_total"] = round(
-            aer_kwh / max(aer_kwh + dec_kwh + ancillary_kwh, 1) * 100, 1)
-        r.performance.additional["peak_flow_factor_ags"] = peak_factor_ags
-        r.performance.additional["peak_fill_ratio"]      = round(fill_ratio, 2)
-        r.performance.additional["peak_flow_m3d"]        = round(peak_flow_m3d, 0)
-        r.performance.additional["feed_per_fill_m3"]     = round(feed_per_fill, 0)
-
-        if fill_ratio > 1.0:
-            r.notes.warn(
-                f"⚠️ Peak flow {peak_factor_ags:.1f}× ({peak_flow_m3d:.0f} m³/d): "
-                f"feed per fill event = {feed_per_fill:.0f} m³ vs max allowable "
-                f"{max_fill_vol:.0f} m³ (50% × {vol_per_reactor:.0f} m³ reactor). "
-                f"Fill ratio = {fill_ratio:.1f}× guideline — increase FBT volume "
-                "or add a 4th SBR reactor for hydraulic resilience at peak flow. "
-                "Ref: Royal HaskoningDHV Nereda design guidelines."
-            )
-        elif fill_ratio > 0.75:
-            r.notes.add_assumption(
-                f"Peak flow {peak_factor_ags:.1f}× fill ratio {fill_ratio:.2f}× guideline "
-                f"({feed_per_fill:.0f} m³ feed vs {max_fill_vol:.0f} m³ max): "
-                "marginal — confirm FBT sizing with detailed hydraulic modelling."
-            )
-        else:
-            r.notes.add_assumption(
-                f"Peak flow {peak_factor_ags:.1f}× fill check ✅: "
-                f"{feed_per_fill:.0f} m³/fill event ≤ {max_fill_vol:.0f} m³ max "
-                f"(fill ratio {fill_ratio:.2f}× guideline — adequate)."
-            )
-
         # ── 8. Scope 1 emissions ───────────────────────────────────────────
         n2o_ef  = self._get_eng("n2o_emission_factor_g_n2o_per_g_n_removed", 0.016)
         n2o_gwp = self._get_eng("n2o_gwp", 273)
@@ -474,7 +497,7 @@ class GranularSludgeTechnology(BaseTechnology):
 
         # ── 9. Risk ───────────────────────────────────────────────────────
         r.risk.reliability_risk       = "Moderate"   # Granule stability at low T / shock load
-        r.risk.regulatory_risk        = "Moderate"   # Limited full-scale precedent in AU/NZ
+        r.risk.regulatory_risk        = "Low"
         r.risk.technology_maturity    = "Commercial"  # ~80 full-scale plants (2024)
         r.risk.operational_complexity = "Moderate"   # SBR cycle management, granule monitoring
         r.risk.site_constraint_risk   = "Low"
@@ -498,7 +521,7 @@ class GranularSludgeTechnology(BaseTechnology):
         if inputs.include_flow_balance_tank:
             r.capex_items.append(CostItem(
                 "Flow balance tank",
-                "equalisation_tank_per_m3",  # plain concrete EQ tank, no internals
+                "aeration_tank_per_m3",
                 fbt_vol_m3,
                 "m³",
                 notes=(
@@ -529,8 +552,7 @@ class GranularSludgeTechnology(BaseTechnology):
                 n_reactors,
                 "units",
                 unit_cost_override=150000.0,
-                contingency_factor=0.65,  # supply-and-install package; contractor margin in price
-                notes=f"{n_reactors} tipping-weir decanters @ $150k each (S&I inc. margin)",
+                notes=f"{n_reactors} tipping-weir decanters @ $150k each",
             ),
             CostItem(
                 "SBR automation + controls",
@@ -538,8 +560,7 @@ class GranularSludgeTechnology(BaseTechnology):
                 n_reactors,
                 "units",
                 unit_cost_override=200000.0,
-                contingency_factor=0.65,  # S&I package
-                notes="SBR cycle timers, DO/TSS sensors, SCADA per reactor @ $200k each (S&I)",
+                notes="SBR cycle timers, DO/TSS sensors, SCADA per reactor @ $200k each",
             ),
             CostItem(
                 "Granule wash + selection system",
@@ -547,8 +568,7 @@ class GranularSludgeTechnology(BaseTechnology):
                 1,
                 "system",
                 unit_cost_override=300000.0,
-                contingency_factor=0.65,  # proprietary supply; margin in vendor price
-                notes="Granule classifiers, wash troughs, drain return — plant-wide (S&I)",
+                notes="Granule classifiers, wash troughs, drain return — plant-wide",
             ),
             CostItem(
                 "Discharge pumps",

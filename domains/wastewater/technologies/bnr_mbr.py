@@ -247,19 +247,10 @@ class BNRMBRTechnology(BaseTechnology):
         # BNR zone: conventional aeration; membrane tank: scour aeration
         alpha   = 0.55
         sae_std = self._get_eng("standard_aeration_efficiency_kg_o2_kwh", 1.8)
-        _beta_fact_do = self._get_eng("beta_factor", 0.97)
-
-        # ── DO setpoint correction (Metcalf 5th Ed Eq 5-26) ──────────────
-        _T_aer   = self._get_eng("influent_temperature_celsius", 20.0)
-        _Cs_T    = 468.0 / (31.6 + _T_aer)
-        _Cs_proc = _beta_fact_do * _Cs_T
-        _do_set  = self._get_eng("do_setpoint_mg_l", 2.0)
-        _do_corr = ((_Cs_proc - 2.0) / max(_Cs_proc - _do_set, 0.1))
-        _do_corr = max(0.5, min(2.5, _do_corr))
-        sae     = sae_std * alpha * _do_corr
+        sae     = sae_std * alpha
 
         nh4_frac    = self._get_eng("influent_nh4_mg_l", 35.0) / max(inf["tn_mg_l"], 1.0)
-        o2_c        = max(0.0, bod_removed - 1.42 * vss_prod)    # carbonaceous (M&E Eq 8-20)
+        o2_c        = bod_removed * (1.0 - 1.42 * y_obs)   # carbonaceous (Metcalf Eq 7-57)
         o2_n        = 4.57 * tn_load * nh4_frac * 0.90
         no3_dn      = tn_removed * inputs.anoxic_fraction / 0.35
         o2_dn       = 2.86 * no3_dn

@@ -49,6 +49,8 @@ class ReportObject:
 
     # Structured data tables (for export)
     cost_table: Optional[Dict] = None
+    opex_breakdown_table: Optional[Dict] = None
+    specific_metrics_table: Optional[Dict] = None
     carbon_table: Optional[Dict] = None
     risk_table: Optional[Dict] = None
     comparison_table: Optional[List[Dict]] = None
@@ -65,7 +67,6 @@ class ReportObject:
     # Design data per scenario: {scenario_name: {tech_code: perf_dict, design_params: {...}}}
     scenario_design_data: Dict[str, Any] = field(default_factory=dict)
     preferred_scenario: Optional[str] = None
-    differentiation_summary: List[Dict] = field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -124,6 +125,20 @@ class ReportEngine:
                 title="Cost Summary",
                 content_type="table",
                 content=report.cost_table,
+            ))
+            # OPEX breakdown table — shows what drives OPEX delta between scenarios
+            report.opex_breakdown_table = self._build_opex_breakdown_table(scenarios)
+            report.sections.append(ReportSection(
+                title="OPEX Breakdown",
+                content_type="table",
+                content=report.opex_breakdown_table,
+            ))
+            # Specific metrics — m²/MLD, kgDS/ML, kgCO₂e/kL, tDS/yr
+            report.specific_metrics_table = self._build_specific_metrics_table(scenarios)
+            report.sections.append(ReportSection(
+                title="Specific Performance Metrics",
+                content_type="table",
+                content=report.specific_metrics_table,
             ))
             report.charts["capex_comparison"] = self._build_capex_chart_data(scenarios)
             report.charts["opex_breakdown"] = self._build_opex_chart_data(scenarios)
@@ -386,9 +401,6 @@ class ReportEngine:
                 "domain_inputs": s.domain_inputs or {},
             }
 
-        # Store differentiation summary for Word exporter
-        report.differentiation_summary = self._build_differentiation_summary(scenarios)
-
         return report
 
     # ── Section builders ──────────────────────────────────────────────────
@@ -614,6 +626,88 @@ class ReportEngine:
             })
         return {"headers": list(rows[0].keys()) if rows else [], "rows": rows}
 
+    def _build_opex_breakdown_table(self, scenarios: List[ScenarioModel]) -> Dict:
+        """Detailed OPEX breakdown table: energy / sludge / labour / maintenance / chemicals."""
+        # Canonical categories — order matters for display
+        CATEGORY_MAP = [
+            ("energy",       ["Electricity", "electricity", "Energy", "energy"]),
+            ("sludge",       ["Sludge", "sludge", "Biosolids", "biosolids"]),
+            ("labour",       ["labour", "Labor", "Operator"]),
+            ("maintenance",  ["maintenance", "Maintenance"]),
+            ("chemicals",    ["chemical", "Chemical", "chloride", "caustic", "polymer",
+                               "methanol", "alum", "ferric", "citric", "hypochlorite"]),
+            ("other",        []),  # catch-all
+        ]
+
+        def _categorise(key: str) -> str:
+            kl = key.lower()
+            for cat, keywords in CATEGORY_MAP:
+                if cat == "other":
+                    return "other"
+                if any(kw.lower() in kl for kw in keywords):
+                    return cat
+            return "other"
+
+        rows = []
+        for s in scenarios:
+            if not s.cost_result:
+                continue
+            cr = s.cost_result
+            totals: Dict[str, float] = {"energy": 0, "sludge": 0, "labour": 0,
+                                         "maintenance": 0, "chemicals": 0, "other": 0}
+            for k, v in cr.opex_breakdown.items():
+                totals[_categorise(k)] += v
+            opex = cr.opex_annual or 1  # avoid div/0
+            row = {"Scenario": s.scenario_name}
+            for cat in ["energy", "sludge", "labour", "maintenance", "chemicals", "other"]:
+                val = totals[cat]
+                pct = val / opex * 100
+                row[cat.capitalize()] = f"${val/1e3:.0f}k" if val > 0 else "—"
+                row[f"{cat.capitalize()} %"] = f"{pct:.0f}%" if val > 0 else "—"
+            row["Total OPEX"] = f"${opex/1e3:.0f}k/yr"
+            rows.append(row)
+        hdrs = ["Scenario", "Energy", "Energy %", "Sludge", "Sludge %",
+                "Labour", "Labour %", "Maintenance", "Maintenance %",
+                "Chemicals", "Chemicals %", "Total OPEX"]
+        return {"headers": hdrs, "rows": rows}
+
+    def _build_specific_metrics_table(self, scenarios: List[ScenarioModel]) -> Dict:
+        """Specific metrics table: m²/MLD, kgDS/ML, kgCO₂e/kL, tDS/yr."""
+        rows = []
+        for s in scenarios:
+            if not s.cost_result:
+                continue
+            cr  = s.cost_result
+            car = s.carbon_result
+            eng = (s.domain_specific_outputs or {}).get("engineering_summary", {})
+            flow_mld = eng.get("design_flow_mld") or 0
+            flow_kl_yr = flow_mld * 1000 * 365 if flow_mld else None
+
+            footprint = eng.get("footprint_m2") or 0
+            sludge_kgd = eng.get("total_sludge_kgds_day") or 0
+
+            specific_footprint = round(footprint / flow_mld, 0) if flow_mld else None
+            sludge_tds_yr      = round(sludge_kgd * 365 / 1000, 0) if sludge_kgd else None
+            sludge_kgds_ml     = round(sludge_kgd / flow_mld, 0) if flow_mld else None
+            carbon_intensity   = (
+                round(car.net_tco2e_yr * 1000 / flow_kl_yr, 3)
+                if car and flow_kl_yr else None
+            )
+
+            rows.append({
+                "Scenario":             s.scenario_name,
+                "Footprint (m²)":       f"{footprint:,.0f}" if footprint else "—",
+                "Specific Footprint (m²/MLD)": f"{specific_footprint:.0f}" if specific_footprint else "—",
+                "Sludge (kgDS/day)":    f"{sludge_kgd:,.0f}" if sludge_kgd else "—",
+                "Sludge (tDS/yr)":      f"{sludge_tds_yr:,.0f}" if sludge_tds_yr else "—",
+                "Specific Sludge (kgDS/ML)": f"{sludge_kgds_ml:.0f}" if sludge_kgds_ml else "—",
+                "Carbon Intensity (kgCO₂e/kL)": f"{carbon_intensity:.3f}" if carbon_intensity else "—",
+            })
+        hdrs = (["Scenario", "Footprint (m²)", "Specific Footprint (m²/MLD)",
+                  "Sludge (kgDS/day)", "Sludge (tDS/yr)", "Specific Sludge (kgDS/ML)",
+                  "Carbon Intensity (kgCO₂e/kL)"])
+        return {"headers": hdrs, "rows": rows}
+
     def _build_carbon_table(self, scenarios: List[ScenarioModel]) -> Dict:
         rows = []
         for s in scenarios:
@@ -697,32 +791,6 @@ class ReportEngine:
              lambda s: _eng(s, "reactor_volume_m3", "{:.0f}")),
             ("Process Footprint (m²)",
              lambda s: _eng(s, "footprint_m2", "{:.0f}")),
-            ("MLSS (mg/L)",
-             lambda s: (
-                 _eng(s, "mlss_granular_mg_l", "{:.0f}")
-                 if _eng(s, "mlss_granular_mg_l", fallback="") not in ("", "—")
-                 else _eng(s, "mlss_mg_l", "{:.0f}")
-             )),
-            ("Observed Yield (kgVSS/kgBOD)",
-             lambda s: _eng(s, "y_obs_kgvss_kgbod", "{:.3f}")),
-            ("Sludge Yield (kgDS/kgBOD)",
-             lambda s: _eng(s, "sludge_yield_kgds_kgbod", "{:.3f}")),
-            ("Aeration Energy (%)",
-             lambda s: (_eng(s, "aeration_pct_of_total", "{:.0f}") + "% aeration, "  
-                        + f"{100 - float(_eng(s, 'aeration_pct_of_total', fallback='0') or 0):.0f}% pumping/ancillary")
-                       if _eng(s, "aeration_pct_of_total", fallback="") not in ("", "—") else "—"),
-
-            # ── CAPEX structure ───────────────────────────────────────────
-            ("Civil CAPEX ($M)",
-             lambda s: (
-                 f"{sum(v for k, v in s.cost_result.capex_breakdown.items() if any(x in k.lower() for x in ['reactor', 'clarifier', 'tank', 'civil'])) / 1e6:.1f}"
-                 if s.cost_result and s.cost_result.capex_breakdown else "—"
-             )),
-            ("Mechanical/Specialist ($M)",
-             lambda s: (
-                 f"{sum(v for k, v in s.cost_result.capex_breakdown.items() if any(x in k.lower() for x in ['blower', 'pump', 'decanter', 'automation', 'granule', 'membrane', 'mabr'])) / 1e6:.1f}"
-                 if s.cost_result and s.cost_result.capex_breakdown else "—"
-             )),
 
             # ── Effluent quality ──────────────────────────────────────────
             ("Effluent TN (mg/L)",
@@ -735,18 +803,6 @@ class ReportEngine:
              lambda s: s.risk_result.overall_level if s.risk_result else "—"),
             ("Risk Score (/100)",
              lambda s: f"{s.risk_result.overall_score:.0f}" if s.risk_result else "—"),
-            ("Performance Robustness",
-             lambda s: (
-                 "High — established process, well-understood under variable conditions"
-                 if (s.treatment_pathway and s.treatment_pathway.technology_sequence and
-                     s.treatment_pathway.technology_sequence[0] == "bnr")
-                 else "Moderate — sensitive to temperature, load variability, and startup conditions"
-                 if (s.treatment_pathway and s.treatment_pathway.technology_sequence and
-                     s.treatment_pathway.technology_sequence[0] in ("granular_sludge", "mabr_bnr"))
-                 else "High" if (s.treatment_pathway and s.treatment_pathway.technology_sequence and
-                     s.treatment_pathway.technology_sequence[0] in ("bnr_mbr",))
-                 else "—"
-             )),
         ]
         rows = []
         for criterion_name, getter in criteria:
@@ -903,44 +959,6 @@ class ReportEngine:
         if not rows:
             rows = [{"Scenario": "—", "Technology": "—",
                      "Warning": "No engineering warnings raised for any scenario."}]
-        return rows
-
-    def _build_differentiation_summary(self, scenarios: list) -> list:
-        """
-        Build Technology Differentiation Summary — one row per scenario.
-        Documents process type, structural identity, advantage and penalty vs BNR.
-        """
-        from domains.wastewater.technology_signatures import get_signature
-        rows = []
-        for sc in scenarios:
-            tp = getattr(sc, "treatment_pathway", None)
-            tc = (tp.technology_sequence[0]
-                  if tp and getattr(tp, "technology_sequence", None) else None)
-            sig = get_signature(tc) if tc else None
-            if sig:
-                rows.append({
-                    "scenario":           sc.scenario_name,
-                    "process_type":       sig.process_type.replace("_", " ").title(),
-                    "structural_summary": sig.structural_summary,
-                    "advantage":          sig.advantage_vs_bnr,
-                    "penalty":            sig.penalty_vs_bnr,
-                    "has_clarifiers":     "Yes" if sig.has_secondary_clarifiers else "No",
-                    "has_ras":            "Yes" if sig.has_ras else "No",
-                    "has_mlr":            "Yes" if sig.has_mlr else "No",
-                    "uses_batch":         "Yes" if sig.uses_batch_cycles else "No",
-                    "typical_mlss":       f"{sig.typical_mlss_mg_l[0]:.0f}–{sig.typical_mlss_mg_l[1]:.0f}",
-                    "notes":              sig.notes[:120] if sig.notes else "",
-                })
-            else:
-                rows.append({
-                    "scenario":           sc.scenario_name,
-                    "process_type":       tc or "Unknown",
-                    "structural_summary": tc or "—",
-                    "advantage": "—", "penalty": "—",
-                    "has_clarifiers": "—", "has_ras": "—",
-                    "has_mlr": "—", "uses_batch": "—",
-                    "typical_mlss": "—", "notes": "",
-                })
         return rows
 
     def _build_limitations_text(self, scenarios: List[ScenarioModel]) -> str:

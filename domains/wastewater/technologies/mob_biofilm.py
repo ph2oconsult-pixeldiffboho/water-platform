@@ -291,7 +291,7 @@ class MOBTechnology(BaseTechnology):
 
         # ── 6. Oxygen demand and aeration energy ──────────────────────────
         # Carbonaceous O2 demand (Metcalf & Eddy eq. 8-47)
-        o2_carbonaceous = bod_load_kg_day * 1.42 * (1.0 - 1.42 * inputs.y_obs_kg_vss_kg_bod)
+        o2_carbonaceous = bod_load_kg_day * (1.0 - 1.42 * inputs.y_obs_kg_vss_kg_bod)   # carbonaceous (Metcalf Eq 7-57)
 
         # Nitrification O2: 4.57 kg O2 / kg NH4-N oxidised
         o2_nitrification = 4.57 * nh4_nitrified_kg_day

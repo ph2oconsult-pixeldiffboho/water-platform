@@ -64,21 +64,17 @@ def _tp(r, code):
 
 # ── T1: Oxygen demand ─────────────────────────────────────────────────────────
 
-def test_o2_within_5pct_of_manual():
+def test_o2_within_2pct_of_manual():
     """
-    Correct M&E Eq 8-20: O2_c = BOD_rem - 1.42*Px_VSS (Tchobanoglous 2014 Eq 7-60)
-    At BNRInputs defaults (BOD=250, TN=45, NH4=35, SRT=12d, 10 MLD):
-      y_obs = 0.60/(1+0.08*12) = 0.306, Px_VSS = 0.306*2400 = 735 kgVSS/d
-      O2_c = 2400 - 1.42*735 = 1357 kg/d
-      O2_n = 4.57 * 315 * 0.90 = 1294 kg/d (NH4=35 default)
-      O2_dn = 2.86 * 220 * 0.70 = 440 kg/d
-      O2_total ≈ 2096 kg/d
-    Ref: Metcalf 5th Ed Eq 8-20; WEF MOP 8 Section 10.4
+    Manual (y_obs=0.306 from SRT calc): O2_c=1357 + O2_n=1440 - O2_dn=701 = 2096 kg/d
+    Ref: Metcalf Eq. 7-57  O2_c = BOD_removed * (1 - 1.42*y_obs)
+    Note: prior value 2658 reflected a bug (extra 1.42x on O2_c); now corrected.
+    Ref: Metcalf Eq. 7-57
     """
     r = BNRTechnology(_std_assumptions()).calculate(10.0, BNRInputs())
     o2 = r.performance.additional.get("o2_demand_kg_day", 0)
-    chk("O2 demand within 5% of 2096 kg/d (M&E Eq 8-20 correct form)",
-        approx(o2, 2096, rel=0.05), f"got {o2:.0f}")
+    chk("O2 demand within 2% of 2096 kg/d",
+        approx(o2, 2096, rel=0.02), f"got {o2:.0f}")
 
 def test_o2_scales_linearly_with_flow():
     for flow1, flow2 in [(5, 10), (10, 20)]:
@@ -126,10 +122,8 @@ def test_ags_lower_sludge_than_bnr():
     slg_bnr = _eng(r_bnr)["total_sludge_kgds_day"]
     slg_ags = _eng(r_ags)["total_sludge_kgds_day"]
     ratio = slg_ags / slg_bnr
-    # Total sludge ratio includes inorganic TSS (fixed for both techs at high influent TSS)
-    # Biological yield IS ~7% lower for AGS; total ratio ~0.93-0.98
-    chk(f"AGS/BNR total sludge ratio {ratio:.2f} in [0.88, 1.02]",
-        0.88 <= ratio <= 1.02, f"bnr={slg_bnr:.0f} ags={slg_ags:.0f}")
+    chk(f"AGS/BNR sludge ratio {ratio:.2f} in [0.70, 0.95]",
+        0.70 <= ratio <= 0.95, f"bnr={slg_bnr:.0f} ags={slg_ags:.0f}")
 
 # ── T3: Aeration energy ───────────────────────────────────────────────────────
 
@@ -406,7 +400,7 @@ def main():
     print("=" * 60)
 
     print("\nT1: Oxygen demand")
-    test_o2_within_5pct_of_manual()
+    test_o2_within_2pct_of_manual()
     test_o2_scales_linearly_with_flow()
     test_o2_scales_with_bod_load()
 

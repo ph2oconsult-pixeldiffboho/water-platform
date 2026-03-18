@@ -294,7 +294,7 @@ class MABRBNRTechnology(BaseTechnology):
         #   Denitrification credit (anoxic zone, unchanged): O₂_DN
 
         nh4_frac = inf.get("nh4_mg_l", inf["tn_mg_l"] * 0.78) / max(inf["tn_mg_l"], 1.0)
-        o2_c     = max(0.0, bod_removed - 1.42 * vss_prod)       # carbonaceous (M&E Eq 8-20)
+        o2_c     = bod_removed * (1.0 - 1.42 * y_obs)   # carbonaceous (Metcalf Eq 7-57)
         o2_n_tot = 4.57 * tn_load * nh4_frac * 0.90             # total nitrification O₂
         o2_n_mabr = o2_n_tot * mabr_nh4_frac                    # MABR handles 30%
         o2_n_conv = o2_n_tot * (1 - mabr_nh4_frac)              # blowers handle 70%

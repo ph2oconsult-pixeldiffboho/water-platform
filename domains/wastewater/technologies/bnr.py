@@ -311,37 +311,19 @@ class BNRTechnology(BaseTechnology):
         })
 
         # ── 5. Oxygen demand ───────────────────────────────────────────────
-        # O2 carbonaceous: M&E Eq 8-20 — BOD_removed minus O2 equiv of cell synthesis
-        # o2_c = BOD_rem - 1.42 * Px_VSS  (Tchobanoglous 2014 Eq 7-60)
-        # Ref: Metcalf 5th Ed p.634; WEF MOP 8 Section 10.4
-        o2_c  = max(0.0, bod_removed - 1.42 * vss_prod)        # carbonaceous (M&E Eq 8-20)
+        o2_c  = bod_removed * (1.0 - 1.42 * y_obs)   # carbonaceous (Metcalf Eq 7-57)
         nh4_frac = self._get_eng("influent_nh4_mg_l", 35.0) / max(inf["tn_mg_l"], 1.0)
-        o2_n  = 4.57 * tn_load * nh4_frac * 0.90               # nitrification: 4.57 kg O2/kg NH4-N
-        no3_dn = tn_removed * 0.70                              # 70% TN via denitrification (A2O/UCT)
-        o2_dn = 2.86 * no3_dn                                   # DN O2 credit: 2.86 kg O2/kg NO3-N
+        o2_n  = 4.57 * tn_load * nh4_frac * 0.90             # nitrification (90%)
+        no3_dn = tn_removed * 0.70                            # 70% via denitrification
+        o2_dn = 2.86 * no3_dn                                 # credit
         o2_kg_day = max(0.0, o2_c + o2_n - o2_dn)
 
         r.performance.additional["o2_demand_kg_day"] = round(o2_kg_day, 0)
 
         # ── 6. Energy ──────────────────────────────────────────────────────
-        alpha      = self._get_eng("alpha_factor", 0.55)
-        _beta_fact = self._get_eng("beta_factor", 0.97)
-        sae_std    = self._get_eng("standard_aeration_efficiency_kg_o2_kwh", 1.8)
-
-        # ── DO setpoint correction (Metcalf 5th Ed Eq 5-26) ──────────────
-        # SAE is calibrated at DO_ref=2.0 mg/L. Higher DO setpoint reduces
-        # O2 transfer driving force and increases aeration energy.
-        # Correction = (Cs_process - DO_ref) / (Cs_process - DO_set)
-        # Where Cs_process = beta × Cs_T (saturated DO in process water)
-        # Cs_T = 468/(31.6+T) mg/L (empirical formula, sea level, freshwater)
-        _T_aer      = self._get_eng("influent_temperature_celsius", 20.0)
-        _Cs_T       = 468.0 / (31.6 + _T_aer)              # saturated DO at T
-        _Cs_proc    = _beta_fact * _Cs_T                    # process water saturation
-        _do_set     = self._get_eng("do_setpoint_mg_l", 2.0)  # user setpoint (default 2.0)
-        _DO_REF     = 2.0                                   # calibration reference
-        _do_corr    = ((_Cs_proc - _DO_REF) / max(_Cs_proc - _do_set, 0.1))
-        _do_corr    = max(0.5, min(2.5, _do_corr))          # clamp to sensible range
-        sae_proc = sae_std * alpha * _do_corr
+        alpha    = self._get_eng("alpha_factor", 0.55)
+        sae_std  = self._get_eng("standard_aeration_efficiency_kg_o2_kwh", 1.8)
+        sae_proc = sae_std * alpha
         aer_kwh  = o2_kg_day / sae_proc
         mix_kwh  = (v_an + v_ax) * 0.007 * 24.0  # 7 W/m³ mixing
         pump_eff = self._get_eng("pump_efficiency", 0.72)
@@ -376,9 +358,8 @@ class BNRTechnology(BaseTechnology):
         r.performance.additional["kwh_per_kg_nh4_removed"] = round(aer_kwh / nh4_removed, 1)
 
         r.notes.add_assumption(
-            f"alpha = {alpha}, DO_set = {_do_set} mg/L → DO correction {_do_corr:.3f}×, "
-            f"SAE_clean = {sae_std} kg O₂/kWh → SAE_process = {sae_proc:.2f} kg O₂/kWh "
-            f"(Metcalf Eq 5-26; Cs_T={_Cs_T:.2f}, Cs_proc={_Cs_proc:.2f} mg/L)"
+            f"alpha = {alpha} (municipal fine-bubble, Metcalf Table 5-8), "
+            f"SAE_clean = {sae_std} kg O₂/kWh → SAE_process = {sae_proc:.2f}"
         )
 
         # ── 7. Chemicals ───────────────────────────────────────────────────
@@ -606,13 +587,6 @@ class BNRTechnology(BaseTechnology):
             "sae_clean": sae_std, "sae_process": round(sae_proc, 2),
             "n2o_ef": n2o_ef, "temp_celsius": inputs.design_temperature_celsius,
         }
-        # Store key biological parameters in additional for report/comparison table
-        r.performance.additional["mlss_mg_l"]          = inputs.mlss_mg_l
-        r.performance.additional["y_obs_kgvss_kgbod"]  = round(y_obs, 3)
-        r.performance.additional["sludge_yield_kgds_kgbod"] = round(
-            total_sludge / max(bod_removed, 1), 3)
-        r.performance.additional["aeration_pct_of_total"] = round(
-            aer_kwh / max(aer_kwh + mix_kwh + ras_kwh + mlr_kwh + was_kwh + ancillary_kwh, 1) * 100, 1)
 
         # ── 14. Finalise (ALWAYS last) ────────────────────────────────────
         return r.finalise(
