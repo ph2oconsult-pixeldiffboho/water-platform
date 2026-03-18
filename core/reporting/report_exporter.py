@@ -708,6 +708,40 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
 
     # ── Decision Summary Box ───────────────────────────────────────────────
     ds = getattr(report, "decision_summary", None)
+    # Override decision_summary with scoring_result when available — scoring engine
+    # is the single source of truth for the recommendation per the platform spec.
+    _sr_box = getattr(report, "scoring_result", None)
+    if _sr_box and _sr_box.preferred and ds:
+        # Update preferred/runner-up from scoring engine
+        ds = dict(ds)  # copy to avoid mutating the original
+        ds["preferred"] = _sr_box.preferred.scenario_name
+        ds["runner_up"] = _sr_box.runner_up.scenario_name if _sr_box.runner_up else ds.get("runner_up")
+        # Update key driver to reflect scoring engine recommendation
+        sr_pref = _sr_box.preferred
+        sr_ru   = _sr_box.runner_up
+        if sr_ru and sr_pref.criterion_scores:
+            # Use LCC advantage as driver if it exists
+            lcc_pref = sr_pref.criterion_scores.get("lcc")
+            lcc_ru   = sr_ru.criterion_scores.get("lcc")
+            if lcc_pref and lcc_ru:
+                diff    = lcc_ru.raw_value - lcc_pref.raw_value  # positive = pref is cheaper
+                op_pref = sr_pref.criterion_scores.get("operational_risk")
+                op_ru   = sr_ru.criterion_scores.get("operational_risk")
+                risk_note = ""
+                if op_pref and op_ru:
+                    risk_diff = int(op_ru.raw_value - op_pref.raw_value)  # positive = pref has lower risk
+                    if abs(risk_diff) >= 3:
+                        risk_note = f", {abs(risk_diff)} points lower risk" if risk_diff > 0 else f", {abs(risk_diff)} points higher risk"
+                if diff > 0:
+                    ds["driver"] = (
+                        f"{sr_pref.scenario_name} saves ${diff:.0f}k/yr lifecycle cost "
+                        f"vs {sr_ru.scenario_name}{risk_note}"
+                    )
+                else:
+                    ds["driver"] = (
+                        f"{sr_pref.scenario_name} costs ${abs(diff):.0f}k/yr more than "
+                        f"{sr_ru.scenario_name} but scores higher on risk and maturity{risk_note}"
+                    )
     if ds and ds.get("preferred"):
         from reportlab.platypus import Table as _DST, TableStyle as _DSTS
         from reportlab.lib import colors as _rlc
