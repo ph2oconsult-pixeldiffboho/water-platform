@@ -698,15 +698,30 @@ class ReportEngine:
             ("Process Footprint (m²)",
              lambda s: _eng(s, "footprint_m2", "{:.0f}")),
             ("MLSS (mg/L)",
-             lambda s: _eng(s, "mlss_granular_mg_l", "{:.0f}")
-             if _eng(s, "mlss_granular_mg_l", "") not in ("", "—")
-             else _eng(s, "mlss_mg_l", "{:.0f}")),
+             lambda s: (
+                 _eng(s, "mlss_granular_mg_l", "{:.0f}")
+                 if _eng(s, "mlss_granular_mg_l", fallback="") not in ("", "—")
+                 else _eng(s, "mlss_mg_l", "{:.0f}")
+             )),
             ("Observed Yield (kgVSS/kgBOD)",
              lambda s: _eng(s, "y_obs_kgvss_kgbod", "{:.3f}")),
             ("Sludge Yield (kgDS/kgBOD)",
+             lambda s: _eng(s, "sludge_yield_kgds_kgbod", "{:.3f}")),
+            ("Aeration Energy (%)",
+             lambda s: (_eng(s, "aeration_pct_of_total", "{:.0f}") + "% aeration, "  
+                        + f"{100 - float(_eng(s, 'aeration_pct_of_total', fallback='0') or 0):.0f}% pumping/ancillary")
+                       if _eng(s, "aeration_pct_of_total", fallback="") not in ("", "—") else "—"),
+
+            # ── CAPEX structure ───────────────────────────────────────────
+            ("Civil CAPEX ($M)",
              lambda s: (
-                 f"{(s.domain_specific_outputs.get('engineering_summary',{}).get('total_sludge_kgds_day',0)) / max(((s.domain_inputs or {}).get('influent_bod_mg_l',250) - (s.domain_inputs or {}).get('effluent_bod_mg_l',10)) * (s.domain_inputs or {}).get('design_flow_mld',1) * 1000, 1):.2f}"
-                 if s.domain_specific_outputs and s.domain_inputs else "—"
+                 f"{sum(v for k, v in s.cost_result.capex_breakdown.items() if any(x in k.lower() for x in ['reactor', 'clarifier', 'tank', 'civil'])) / 1e6:.1f}"
+                 if s.cost_result and s.cost_result.capex_breakdown else "—"
+             )),
+            ("Mechanical/Specialist ($M)",
+             lambda s: (
+                 f"{sum(v for k, v in s.cost_result.capex_breakdown.items() if any(x in k.lower() for x in ['blower', 'pump', 'decanter', 'automation', 'granule', 'membrane', 'mabr'])) / 1e6:.1f}"
+                 if s.cost_result and s.cost_result.capex_breakdown else "—"
              )),
 
             # ── Effluent quality ──────────────────────────────────────────
@@ -720,6 +735,18 @@ class ReportEngine:
              lambda s: s.risk_result.overall_level if s.risk_result else "—"),
             ("Risk Score (/100)",
              lambda s: f"{s.risk_result.overall_score:.0f}" if s.risk_result else "—"),
+            ("Performance Robustness",
+             lambda s: (
+                 "High — established process, well-understood under variable conditions"
+                 if (s.treatment_pathway and s.treatment_pathway.technology_sequence and
+                     s.treatment_pathway.technology_sequence[0] == "bnr")
+                 else "Moderate — sensitive to temperature, load variability, and startup conditions"
+                 if (s.treatment_pathway and s.treatment_pathway.technology_sequence and
+                     s.treatment_pathway.technology_sequence[0] in ("granular_sludge", "mabr_bnr"))
+                 else "High" if (s.treatment_pathway and s.treatment_pathway.technology_sequence and
+                     s.treatment_pathway.technology_sequence[0] in ("bnr_mbr",))
+                 else "—"
+             )),
         ]
         rows = []
         for criterion_name, getter in criteria:

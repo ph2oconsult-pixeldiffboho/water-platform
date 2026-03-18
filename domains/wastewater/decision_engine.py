@@ -1246,35 +1246,43 @@ def _build_conditional_guidance(
 ) -> list:
     """
     Build 'if X then Y' conditional decision guidance.
-    profiles: Dict[str, TechnologyDecisionProfile] keyed by scenario_name
+    Extracts metrics directly from ScenarioModel cost/risk/domain results.
     """
-    if len(profiles) < 2:
+    valid = [s for s in scenarios if s.cost_result and s.risk_result]
+    if len(valid) < 2:
         return []
 
     guidance = []
 
-    # Extract metrics from profile dict
+    # Extract metrics directly from ScenarioModel (not from TechnologyDecisionProfile)
     metrics = {}
-    for scen_name, p in profiles.items():
-        if not hasattr(p, "capex_m"):
-            continue
-        metrics[scen_name] = {
-            "label":    getattr(p, "label", scen_name),
-            "capex":    getattr(p, "capex_m", 0),
-            "capex_m":  getattr(p, "capex_m", 0),
-            "opex":     getattr(p, "opex_k", 0),
-            "lcc":      getattr(p, "lcc_k", 0),
-            "energy":   getattr(p, "kwh_ml", 0),
-            "sludge":   getattr(p, "sludge", 0),
-            "footprint": getattr(p, "footprint_m2", 0),
-            "risk":     getattr(p, "risk_score", 0),
+    for sc in valid:
+        cr = sc.cost_result
+        rr = sc.risk_result
+        tp_all = (sc.domain_specific_outputs or {}).get("technology_performance", {})
+        eng    = (sc.domain_specific_outputs or {}).get("engineering_summary", {})
+        tp_code = (sc.treatment_pathway.technology_sequence[0]
+                   if sc.treatment_pathway and sc.treatment_pathway.technology_sequence else None)
+        perf = tp_all.get(tp_code, {}) if tp_code else {}
+        metrics[sc.scenario_name] = {
+            "label":     sc.scenario_name,
+            "capex":     cr.capex_total if cr else 0,
+            "capex_m":   cr.capex_total / 1e6 if cr else 0,
+            "opex":      cr.opex_annual / 1e3 if cr else 0,
+            "lcc":       cr.lifecycle_cost_annual / 1e3 if cr else 0,
+            "energy":    (eng.get("specific_energy_kwh_kl") or 0) * 1000,
+            "sludge":    perf.get("sludge_production_kgds_day") or 0,
+            "footprint": perf.get("footprint_m2") or 0,
+            "risk":      rr.overall_score if rr else 0,
         }
 
     if not metrics:
         return []
 
+    codes = list(metrics.keys())
+
     def winner(key, want_min=True):
-        vals = {c: metrics[c][key] for c in metrics if metrics[c].get(key, 0) > 0}
+        vals = {c: metrics[c][key] for c in codes if metrics[c].get(key, 0) > 0}
         if not vals: return None, None
         best = min(vals, key=vals.get) if want_min else max(vals, key=vals.get)
         return metrics[best]["label"], vals[best]

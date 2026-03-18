@@ -421,6 +421,12 @@ class GranularSludgeTechnology(BaseTechnology):
         max_fill_vol     = vol_per_reactor * 0.50   # 50% max fill guideline
         fill_ratio       = feed_per_fill / max(max_fill_vol, 1.0)  # >1 = exceeds guideline
 
+        # Key biological parameters for report/comparison table
+        r.performance.additional["y_obs_kgvss_kgbod"]  = round(y_obs, 3)
+        r.performance.additional["sludge_yield_kgds_kgbod"] = round(
+            total_sludge / max(bod_removed, 1), 3)
+        r.performance.additional["aeration_pct_of_total"] = round(
+            aer_kwh / max(aer_kwh + dec_kwh + ancillary_kwh, 1) * 100, 1)
         r.performance.additional["peak_flow_factor_ags"] = peak_factor_ags
         r.performance.additional["peak_fill_ratio"]      = round(fill_ratio, 2)
         r.performance.additional["peak_flow_m3d"]        = round(peak_flow_m3d, 0)

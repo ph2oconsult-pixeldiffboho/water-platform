@@ -606,6 +606,13 @@ class BNRTechnology(BaseTechnology):
             "sae_clean": sae_std, "sae_process": round(sae_proc, 2),
             "n2o_ef": n2o_ef, "temp_celsius": inputs.design_temperature_celsius,
         }
+        # Store key biological parameters in additional for report/comparison table
+        r.performance.additional["mlss_mg_l"]          = inputs.mlss_mg_l
+        r.performance.additional["y_obs_kgvss_kgbod"]  = round(y_obs, 3)
+        r.performance.additional["sludge_yield_kgds_kgbod"] = round(
+            total_sludge / max(bod_removed, 1), 3)
+        r.performance.additional["aeration_pct_of_total"] = round(
+            aer_kwh / max(aer_kwh + mix_kwh + ras_kwh + mlr_kwh + was_kwh + ancillary_kwh, 1) * 100, 1)
 
         # ── 14. Finalise (ALWAYS last) ────────────────────────────────────
         return r.finalise(
