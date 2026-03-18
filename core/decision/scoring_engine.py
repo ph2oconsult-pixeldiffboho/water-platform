@@ -116,12 +116,15 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
     },
 
     WeightProfile.LOW_CARBON: {
+        # Note: carbon intensity and implementation_risk are anti-correlated (r=-0.95).
+        # Lower-carbon technologies tend to be newer and harder to deliver.
+        # This profile intentionally accepts higher delivery risk in exchange for
+        # lower carbon — that tension is correct engineering policy.
         "lcc":                  0.15,
         "capex":                0.10,
         "footprint":            0.10,
         "carbon":               0.25,
-        "sludge":               0.05,
-        "headroom":             0.05,
+        "sludge":               0.10,   # restored from headroom redistribution
         "operational_risk":     0.10,
         "implementation_risk":  0.05,
         "regulatory":           0.05,
@@ -138,7 +141,6 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
         "footprint":            0.10,
         "carbon":               0.05,
         "sludge":               0.05,
-        "headroom":             0.00,   # budget profile: headroom is nice-to-have
         "operational_risk":     0.10,
         "implementation_risk":  0.10,
         "regulatory":           0.05,
@@ -239,6 +241,7 @@ class DecisionResult:
     tied_criteria:      List[str]                # criteria where spread < threshold
     correlated_pairs:   List[str] = field(default_factory=list)  # high-correlation warnings
     below_uncertainty:  List[str] = field(default_factory=list)  # criteria within ±40% noise
+    result_invariant:   bool = False   # True if same winner across all standard profiles
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -506,7 +509,10 @@ class ScoringEngine:
         # Close-decision threshold: 15% of winning score (not a fixed 5 points)
         # This scales with the magnitude of the score and reflects concept-stage uncertainty.
         # Minimum threshold of 2 points prevents any non-zero gap from declaring close.
-        close_threshold = max(2.0, preferred.total_score * 0.15) if preferred else 5.0
+        # Minimum 8 points regardless of winning score magnitude.
+        # Prevents very low scoring comparisons (e.g. 50 vs 43) from being
+        # labelled "not close" when the gap is a small fraction of the score.
+        close_threshold = max(8.0, preferred.total_score * 0.15) if preferred else 8.0
         gap = abs(preferred.total_score - runner_up.total_score) if (preferred and runner_up) else 0
         exact_tie = (gap == 0.0)   # gap = 0 means genuinely identical scores
         close = (gap <= close_threshold) if (preferred and runner_up) else False
@@ -619,10 +625,19 @@ class ScoringEngine:
             )
         elif runner_up:
             gap = preferred.total_score - runner_up.total_score
+            # Check if significant weight sits on below-uncertainty criteria
+            below_weight = sum(weights.get(c,0) for c in tied_criteria)
+            uncertainty_note = ""
+            if below_weight >= 0.25:
+                uncertainty_note = (
+                    f" Note: {below_weight*100:.0f}% of the score weight falls on criteria "
+                    "within concept-stage estimate uncertainty — treat the score margin as "
+                    "indicative, not definitive."
+                )
             recommendation = (
                 f"{pname} is the preferred option under the selected weight profile "
                 f"({preferred.total_score:.0f}/100, {gap:.0f} points ahead of "
-                f"{runner_up.scenario_name})."
+                f"{runner_up.scenario_name}).{uncertainty_note}"
             )
             # Trade-off: where does runner-up score materially better?
             # Store (criterion_key, label) tuples so raw value lookup works
@@ -640,22 +655,25 @@ class ScoringEngine:
                     ru_cs   = runner_up.criterion_scores.get(crit_key)
                     if pref_cs and ru_cs:
                         unit = pref_cs.raw_unit
-                        if pref_cs.lower_is_better:
-                            # Use enough decimals to show actual difference
-                            diff = abs(pref_cs.raw_value - ru_cs.raw_value)
-                            fmt = ".3f" if diff < 0.05 else ".2f" if diff < 0.5 else ".1f"
-                            trade_off_parts.append(
-                                f"{crit_label} "
-                                f"({pref_cs.raw_value:{fmt}} vs "
-                                f"{ru_cs.raw_value:{fmt}} {unit})"
-                            )
-                        else:
-                            trade_off_parts.append(
-                                f"{crit_label} ({pref_cs.raw_value:.0f} vs "
-                                f"{ru_cs.raw_value:.0f} {unit})"
-                            )
+                        # Only report trade-off if raw difference >= 5% of scale midpoint
+                    # Prevents reporting "Regulatory Risk (26.7 vs 24.0)" as a material trade-off
+                    raw_diff = abs(pref_cs.raw_value - ru_cs.raw_value)
+                    raw_mid  = (pref_cs.raw_value + ru_cs.raw_value) / 2 if (pref_cs.raw_value + ru_cs.raw_value) > 0 else 1
+                    if raw_diff / raw_mid < 0.05:
+                        trade_off_parts.append(f"{crit_label} (marginal difference — within estimate noise)")
+                    elif pref_cs.lower_is_better:
+                        diff = raw_diff
+                        fmt = ".3f" if diff < 0.05 else ".2f" if diff < 0.5 else ".1f"
+                        trade_off_parts.append(
+                            f"{crit_label} "
+                            f"({pref_cs.raw_value:{fmt}} vs "
+                            f"{ru_cs.raw_value:{fmt}} {unit})"
+                        )
                     else:
-                        trade_off_parts.append(crit_label)
+                        trade_off_parts.append(
+                            f"{crit_label} ({pref_cs.raw_value:.0f} vs "
+                            f"{ru_cs.raw_value:.0f} {unit})"
+                        )
                 trade_off = (
                     f"Selecting {pname} means accepting lower performance on: "
                     f"{', '.join(trade_off_parts)}. "
