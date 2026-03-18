@@ -50,6 +50,53 @@ class ReportExporter:
 # PDF HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Unicode → ReportLab XML markup ───────────────────────────────────────────
+_SUB_MAP = {'₀':'0','₁':'1','₂':'2','₃':'3','₄':'4',
+            '₅':'5','₆':'6','₇':'7','₈':'8','₉':'9'}
+_SUP_MAP = {'⁰':'0','¹':'1','²':'2','³':'3','⁴':'4',
+            '⁵':'5','⁶':'6','⁷':'7','⁸':'8','⁹':'9'}
+
+def rl_safe(text: str) -> str:
+    """
+    Convert Unicode subscript/superscript digits to ReportLab XML markup
+    so they render correctly with Helvetica in PDF output.
+    e.g. "CO2e" -> "CO<sub>2</sub>e"
+         "m2"   -> "m<super>2</super>"
+    Also escapes & < > for ReportLab XML safety (except existing tags).
+    """
+    if not text:
+        return text
+    i, out = 0, []
+    while i < len(text):
+        c = text[i]
+        if c in _SUB_MAP:
+            run = []
+            while i < len(text) and text[i] in _SUB_MAP:
+                run.append(_SUB_MAP[text[i]]); i += 1
+            out.append(f'<sub>{"".join(run)}</sub>')
+        elif c in _SUP_MAP:
+            run = []
+            while i < len(text) and text[i] in _SUP_MAP:
+                run.append(_SUP_MAP[text[i]]); i += 1
+            out.append(f'<super>{"".join(run)}</super>')
+        elif c == '²':   # U+00B2 superscript two
+            out.append('<super>2</super>'); i += 1
+        elif c == '³':   # U+00B3 superscript three
+            out.append('<super>3</super>'); i += 1
+        elif c == '°':
+            out.append('°'); i += 1
+        else:
+            out.append(c); i += 1
+    return ''.join(out)
+
+
+def P(text, style):
+    """Paragraph with rl_safe encoding applied."""
+    from reportlab.platypus import Paragraph as _P
+    return _P(rl_safe(str(text)), style)
+
+
+
 def _pdf_styles():
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
@@ -187,10 +234,11 @@ def _chart_capex(chart_data, width, height=140):
     bc.width, bc.height = chart_w, chart_h
     bc.data = [[v] for v in values]
     bc.categoryAxis.categoryNames = [""]
-    bc.valueAxis.valueMin = 0
+    bc.valueAxis.valueMin = round(min(values) * 0.85, 1) if min(values) > 0 else 0
     mx = max(values)
-    bc.valueAxis.valueMax = round(mx * 1.3 + 0.5)
-    bc.valueAxis.valueStep = round(mx * 1.3 / 5, 1) if mx else 2
+    bc.valueAxis.valueMax = round(mx * 1.15 + 0.1, 1)
+    step = round((bc.valueAxis.valueMax - bc.valueAxis.valueMin) / 4, 1)
+    bc.valueAxis.valueStep = max(step, 0.1)
     bc.valueAxis.labels.fontSize = 7
     bc.valueAxis.labels.fontName = "Helvetica"
     bc.categoryAxis.labels.fontSize = 7
@@ -296,14 +344,22 @@ def _render_dict_table(data: dict, styles, colours, W):
     if not hdrs or not rows:
         return None
     n = len(hdrs)
-    # First col wider (scenario name)
-    if n >= 2:
+
+    # ── OPEX breakdown table: many narrow columns — use smaller font + equal widths
+    is_opex = any("%" in str(h) for h in hdrs)
+    if is_opex and n > 6:
+        col_w = [W * 0.18] + [W * 0.82 / (n - 1)] * (n - 1)
+        cell_style = styles.get("caption") or styles["body"]
+    elif n >= 2:
         col_w = [W * 0.28] + [W * 0.72 / (n-1)] * (n-1)
+        cell_style = styles["body"]
     else:
         col_w = [W / n] * n
-    tbl_data = [[Paragraph(str(h), styles["h2"]) for h in hdrs]]
+        cell_style = styles["body"]
+
+    tbl_data = [[Paragraph(rl_safe(str(h)), styles["h2"]) for h in hdrs]]
     for r in rows:
-        tbl_data.append([Paragraph(str(r.get(h, "—")), styles["body"]) for h in hdrs])
+        tbl_data.append([Paragraph(rl_safe(str(r.get(h, "—"))), cell_style) for h in hdrs])
     t = Table(tbl_data, colWidths=col_w, repeatRows=1)
     t.setStyle(_pdf_tbl_style(colours))
     return t
@@ -320,9 +376,9 @@ def _render_list_table(data: list, styles, colours, W, first_col_wide=True):
         col_w = [W * 0.30] + [W * 0.70 / (n-1)] * (n-1)
     else:
         col_w = [W / n] * n
-    tbl_data = [[Paragraph(str(h), styles["h2"]) for h in hdrs]]
+    tbl_data = [[Paragraph(rl_safe(str(h)), styles["h2"]) for h in hdrs]]
     for r in data:
-        tbl_data.append([Paragraph(str(r.get(h, "—")), styles["body"]) for h in hdrs])
+        tbl_data.append([Paragraph(rl_safe(str(r.get(h, "—"))), styles["body"]) for h in hdrs])
     t = Table(tbl_data, colWidths=col_w, repeatRows=1)
     t.setStyle(_pdf_tbl_style(colours))
     return t
@@ -332,14 +388,14 @@ def _format_assumption_param(raw: str) -> str:
     """Convert raw assumption key to readable label."""
     label_map = {
         "electricity_per_kwh": "Electricity price ($/kWh)",
-        "carbon_price_per_tonne": "Carbon price ($/tCO₂e)",
+        "carbon_price_per_tonne": "Carbon price ($/tCO2e)",
         "discount_rate": "Discount rate",
         "analysis_period_years": "Analysis period (years)",
-        "grid_emission_factor": "Grid emission factor (kg CO₂e/kWh)",
+        "grid_emission_factor": "Grid emission factor (kg CO2e/kWh)",
         "aeration_tank_per_m3": "Aeration tank civil ($/m³)",
-        "secondary_clarifier_per_m2": "Secondary clarifier ($/m²)",
+        "secondary_clarifier_per_m2": "Secondary clarifier ($/m2)",
         "blower_per_kw": "Blower system ($/kW)",
-        "mbr_membrane_per_m2": "MBR membrane ($/m²)",
+        "mbr_membrane_per_m2": "MBR membrane ($/m2)",
         "sludge_disposal_per_tds": "Sludge disposal ($/t DS)",
         "methanol_per_kg": "Methanol ($/kg)",
         "ferric_chloride_per_kg": "Ferric chloride ($/kg)",
@@ -583,7 +639,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                        leftIndent=0, firstLineIndent=0, spaceBefore=4,
                        leading=14, textColor=colors.HexColor(f"#{GREY_HEX}")),
     ]
-    story.append(Paragraph("Contents", styles["title"]))
+    story.append(P("Contents", styles["title"]))
     story.append(_pdf_hr(colours))
     story.append(toc)
     story.append(PageBreak())
@@ -614,7 +670,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         f"A total of <b>{len(report.scenario_names)} treatment scenarios</b> were evaluated:",
         styles["body"]))
     for name in (report.scenario_names or []):
-        story.append(Paragraph(f"• {name}", styles["bullet"]))
+        story.append(P(f"• {name}", styles["bullet"]))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
         "Each scenario was evaluated on the following criteria:",
@@ -625,12 +681,12 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         "Lifecycle cost — CAPEX annualised at 7% over 30 years plus OPEX",
         "Specific energy consumption (kWh/ML treated)",
         "Carbon footprint — Scope 1 (process emissions) and Scope 2 (grid electricity)",
-        "Effluent quality — BOD, TSS, TN, NH₄, TP",
+        "Effluent quality — BOD, TSS, TN, NH4, TP",
         "Biosolids production and sludge yield",
         "Technology risk — maturity, implementation, operational complexity, regulatory",
     ]
     for c in criteria:
-        story.append(Paragraph(f"• {c}", styles["bullet"]))
+        story.append(P(f"• {c}", styles["bullet"]))
     story.append(Spacer(1, 8))
 
     # ── 3. Multi-Criteria Comparison ───────────────────────────────────────
@@ -643,7 +699,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         t = _render_list_table(report.comparison_table, styles, colours, W)
         if t:
             story.append(t)
-            story.append(Paragraph("Table 1: Multi-criteria comparison summary", styles["caption"]))
+            story.append(P("Table 1: Multi-criteria comparison summary", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 4. Process Design Summary ─────────────────────────────────────────
@@ -702,7 +758,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             perf      = tp_all.get(tech_code, {}) if tech_code else {}
 
             if tech_code:
-                story.append(Paragraph(f"Scenario: {scen_name}", styles["h2"]))
+                story.append(P(f"Scenario: {scen_name}", styles["h2"]))
 
                 # ── Design parameters table ──────────────────────────────
                 def _fmt(v, unit=""):
@@ -714,7 +770,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                 r_vol = perf.get("reactor_volume_m3")
                 if r_vol: design_rows.append(["Bioreactor volume", _fmt(r_vol, " m³")])
                 fp_m2 = perf.get("footprint_m2")
-                if fp_m2: design_rows.append(["Process footprint", _fmt(fp_m2, " m²")])
+                if fp_m2: design_rows.append(["Process footprint", _fmt(fp_m2, " m2")])
                 hrt = perf.get("hydraulic_retention_time_hr")
                 if hrt: design_rows.append(["HRT", f"{hrt:.1f} hr"])
                 mlss = perf.get("mlss_mg_l") or perf.get("mlss_granular_mg_l")
@@ -726,7 +782,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                 # Effluent
                 eff_vals = []
                 for k, lbl in [("effluent_bod_mg_l","BOD"), ("effluent_tss_mg_l","TSS"),
-                                ("effluent_tn_mg_l","TN"), ("effluent_nh4_mg_l","NH₄")]:
+                                ("effluent_tn_mg_l","TN"), ("effluent_nh4_mg_l","NH4")]:
                     v = perf.get(k)
                     if v is not None: eff_vals.append(f"{lbl} {v:.0f}")
                 if eff_vals: design_rows.append(["Effluent quality", "  ".join(eff_vals) + " mg/L"])
@@ -764,7 +820,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         t = _render_dict_table(report.cost_table, styles, colours, W)
         if t:
             story.append(t)
-            story.append(Paragraph("Table 3: Cost summary (AUD 2024, concept-level ±40%)", styles["caption"]))
+            story.append(P("Table 3: Cost summary (AUD 2024, concept-level ±40%)", styles["caption"]))
         story.append(Spacer(1, 4))
         story.append(Paragraph(
             "CAPEX estimates cover bioreactor civil works, mechanical and electrical equipment, "
@@ -773,13 +829,42 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             "reticulation, owner's costs, and escalation. A 20% design contingency and 12% "
             "contractor margin are included in the unit rates.",
             styles["body"]))
-        # CAPEX chart
+        # CAPEX + LCC side-by-side charts
+        chart_row = []
         if report.charts.get("capex_comparison"):
-            ch = _chart_capex(report.charts["capex_comparison"], W, height=150)
+            ch = _chart_capex(report.charts["capex_comparison"], W * 0.48, height=150)
             if ch:
+                chart_row.append(ch)
+        # LCC chart — build from cost_table data
+        lcc_data = {"x": [], "y": []}
+        if report.cost_table:
+            for row in report.cost_table.get("rows", []):
+                lcc_data["x"].append(row.get("Scenario", ""))
+                try:
+                    lcc_data["y"].append(float(str(row.get("Lifecycle Cost ($/yr)", "0")).replace(",", "")) / 1e3)
+                except (ValueError, TypeError):
+                    lcc_data["y"].append(0)
+        if lcc_data["x"] and any(v > 0 for v in lcc_data["y"]):
+            lcc_data["ylabel"] = "LCC (k$/yr)"
+            ch_lcc = _chart_capex(lcc_data, W * 0.48, height=150)
+            if ch_lcc:
+                chart_row.append(ch_lcc)
+        if chart_row:
+            from reportlab.platypus import Table as _T, TableStyle as _TS
+            if len(chart_row) == 2:
+                ct = _T([[chart_row[0], chart_row[1]]], colWidths=[W*0.49, W*0.49])
+                ct.setStyle(_TS([("VALIGN",(0,0),(-1,-1),"TOP"),
+                                  ("LEFTPADDING",(0,0),(-1,-1),0),
+                                  ("RIGHTPADDING",(0,0),(-1,-1),4)]))
                 story.append(Spacer(1, 4))
-                story.append(ch)
-                story.append(Paragraph("Figure A — CAPEX comparison by scenario ($M, AUD 2024)", styles["caption"]))
+                story.append(ct)
+                story.append(P(
+                    "Figure A — CAPEX ($M) and Lifecycle Cost (k$/yr) comparison by scenario (AUD 2024)",
+                    styles["caption"]))
+            else:
+                story.append(Spacer(1, 4))
+                story.append(chart_row[0])
+                story.append(P("Figure A — CAPEX comparison by scenario ($M, AUD 2024)", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 6a. OPEX Breakdown ────────────────────────────────────────────────
@@ -800,19 +885,28 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                 "Percentages shown as proportion of total annual OPEX.",
                 styles["caption"]))
         # OPEX stacked chart — build from opex_breakdown chart data
+        # Use shortened category labels so legend fits without truncation
         opex_cd = report.charts.get("opex_breakdown", {})
         if opex_cd and opex_cd.get("scenarios") and opex_cd.get("categories"):
+            _label_short = {
+                "Operator & maintenance labour": "Labour",
+                "Electricity — aeration":        "Electricity (aeration)",
+                "Electricity — mixing & decant": "Electricity (mix/decant)",
+                "Sludge disposal":               "Sludge disposal",
+            }
             cats = opex_cd["categories"]
+            short_cats = [_label_short.get(c, c[:20]) for c in cats]
             scen_data = {
-                scen: {cat: opex_cd["data"].get(cat, [0]*len(opex_cd["scenarios"]))[si]
-                       for cat in cats}
+                scen: {short_cats[i]: opex_cd["data"].get(cat, [0]*len(opex_cd["scenarios"]))[si]
+                       for i, cat in enumerate(cats)}
                 for si, scen in enumerate(opex_cd["scenarios"])
             }
-            ch = _chart_stacked_h(cats, scen_data, W, height=max(120, len(opex_cd["scenarios"]) * 55 + 40))
+            ch = _chart_stacked_h(short_cats, scen_data, W,
+                                   height=max(130, len(opex_cd["scenarios"]) * 60 + 50))
             if ch:
                 story.append(Spacer(1, 4))
                 story.append(ch)
-                story.append(Paragraph("Figure B — Annual OPEX breakdown by category (k$/yr)", styles["caption"]))
+                story.append(P("Figure B — Annual OPEX breakdown by category (k$/yr)", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 6b. Specific Performance Metrics ──────────────────────────────────
@@ -822,14 +916,14 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(Paragraph(
             "Table 3b presents normalised performance metrics to enable direct comparison "
             "across scenarios and benchmarking against industry references. "
-            "Specific footprint (m²/MLD) and specific sludge (kgDS/ML) are standard "
+            "Specific footprint (m2/MLD) and specific sludge (kgDS/ML) are standard "
             "planning metrics used in Australian utility capital planning.",
             styles["body"]))
         t = _render_dict_table(report.specific_metrics_table, styles, colours, W)
         if t:
             story.append(t)
             story.append(Paragraph(
-                "Table 3b: Specific performance metrics. Carbon intensity in kgCO₂e/kL "
+                "Table 3b: Specific performance metrics. Carbon intensity in kgCO2e/kL "
                 "enables direct comparison with water supply carbon benchmarks.",
                 styles["caption"]))
         story.append(Spacer(1, 8))
@@ -840,7 +934,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "Table 4 summarises the carbon emissions for each scenario. Scope 1 emissions "
-            "include N₂O from biological nitrogen removal and CH₄ from sludge handling. "
+            "include N2O from biological nitrogen removal and CH4 from sludge handling. "
             "Scope 2 emissions are calculated from grid electricity consumption using the "
             "applicable emission factor. Avoided emissions reflect CHP electricity generation "
             "where anaerobic digestion is included.",
@@ -848,19 +942,19 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         t = _render_dict_table(report.carbon_table, styles, colours, W)
         if t:
             story.append(t)
-            story.append(Paragraph("Table 4: Carbon and energy summary", styles["caption"]))
+            story.append(P("Table 4: Carbon and energy summary", styles["caption"]))
         # Carbon chart — Scope 1 vs Scope 2 stacked
         carbon_cd = report.charts.get("carbon_comparison", {})
         if carbon_cd and carbon_cd.get("scenarios"):
             scens = carbon_cd["scenarios"]
             scen_data = {
                 scen: {
-                    "Scope 1 (N₂O/CH₄)": carbon_cd["scope_1"][si],
+                    "Scope 1 (N2O/CH4)": carbon_cd["scope_1"][si],
                     "Scope 2 (Electricity)": carbon_cd["scope_2"][si],
                 }
                 for si, scen in enumerate(scens)
             }
-            labels = ["Scope 1 (N₂O/CH₄)", "Scope 2 (Electricity)"]
+            labels = ["Scope 1 (N2O/CH4)", "Scope 2 (Electricity)"]
             ch = _chart_stacked_h(labels, scen_data, W,
                                    height=max(120, len(scens) * 55 + 40),
                                    unit="tCO2e")
@@ -868,7 +962,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                 story.append(Spacer(1, 4))
                 story.append(ch)
                 story.append(Paragraph(
-                    "Figure C — Carbon footprint by scenario and scope (tCO₂e/yr)",
+                    "Figure C — Carbon footprint by scenario and scope (tCO2e/yr)",
                     styles["caption"]))
         story.append(Spacer(1, 8))
 
@@ -884,43 +978,102 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         t = _render_dict_table(report.risk_table, styles, colours, W)
         if t:
             story.append(t)
-            story.append(Paragraph("Table 5: Technology risk assessment", styles["caption"]))
+            story.append(P("Table 5: Technology risk assessment", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 7. Conclusions ─────────────────────────────────────────────────────
     story.append(H1("9. Conclusions and Recommendations"))
     story.append(_pdf_hr(colours))
+
+    # ── Identify compliance status from comparison table ──────────────────
+    non_compliant = []
+    compliant     = []
+    tn_vals       = {}
+    if report.comparison_table:
+        # Scan for scenarios where effluent TN doesn't meet 5.0 mg/L target
+        for row in report.comparison_table:
+            if row.get("Criterion") == "Effluent TN (mg/L)":
+                for scen in report.scenario_names:
+                    try:
+                        val = float(str(row.get(scen, "99")).replace("—","99"))
+                        tn_vals[scen] = val
+                    except (ValueError, TypeError):
+                        pass
+
+    # ── Non-compliance block ───────────────────────────────────────────────
+    if tn_vals:
+        for scen, val in tn_vals.items():
+            if val > 5.5:   # 10% tolerance on 5.0 mg/L target
+                non_compliant.append((scen, val))
+            else:
+                compliant.append(scen)
+
+        if non_compliant:
+            story.append(P(
+                "<b>⚠ COMPLIANCE NOTE — READ BEFORE PROCEEDING</b>",
+                styles["h2"]))
+            for scen, tn in non_compliant:
+                story.append(P(
+                    f"<b>{scen}</b> does <b>not meet the TN licence target</b> as modelled "
+                    f"(effluent TN = {tn:.1f} mg/L vs target 5.0 mg/L). "
+                    "This scenario is non-compliant as a standalone option and "
+                    "<b>must not be recommended for procurement without engineering intervention</b> "
+                    "(supplemental carbon dosing, SRT extension, or technology modification). "
+                    "See alternative pathways in Section 3.",
+                    styles["body"]))
+            story.append(Spacer(1, 4))
+
+    # ── Preferred option ──────────────────────────────────────────────────
     if report.preferred_scenario:
-        story.append(Paragraph(
-            f"Based on the multi-criteria assessment, the <b>{report.preferred_scenario}</b> "
-            f"scenario is identified as the preferred option, offering the best balance of "
-            f"lifecycle cost, energy performance, carbon footprint, and risk.",
+        story.append(P(
+            f"<b>Recommended option: {report.preferred_scenario}</b>",
+            styles["h2"]))
+        story.append(P(
+            f"Based on the multi-criteria assessment, <b>{report.preferred_scenario}</b> "
+            "is the preferred option on lifecycle cost. "
+            + (f"Note: {', '.join(s for s,_ in non_compliant)} is excluded from recommendation "
+               "due to compliance failure. " if non_compliant else ""),
+            styles["body"]))
+    elif compliant:
+        story.append(P(
+            f"<b>Compliant options: {', '.join(compliant)}</b>",
+            styles["h2"]))
+        story.append(P(
+            "All compliant scenarios have been evaluated on a consistent, first-principles basis. "
+            "Final selection should be based on site-specific investigation.",
             styles["body"]))
     else:
-        story.append(Paragraph(
-            "All scenarios have been evaluated on a consistent, first-principles basis. "
-            "The selection of a preferred option should be informed by:",
+        story.append(P(
+            "<b>No scenario achieves full compliance as modelled.</b> "
+            "Engineering interventions are required before any option can be recommended for procurement.",
             styles["body"]))
+
+    story.append(Spacer(1, 4))
+
+    # ── Selection guidance ────────────────────────────────────────────────
+    story.append(P("Final selection should consider:", styles["body"]))
     recs = [
-        "Site-specific constraints (footprint, existing infrastructure, upgrade pathway)",
-        "Effluent quality requirements and regulatory licence conditions",
-        "Utility priorities (energy, carbon, cost, risk)",
-        "Procurement strategy and local contractor capability",
-        "Detailed geotechnical and hydraulic assessment",
+        "Site-specific constraints: footprint, existing infrastructure, and staging requirements",
+        "Regulatory licence conditions: confirm effluent TN, TP, and pathogen limits with the relevant EPA",
+        "Utility priorities: weight energy, carbon, capital cost, and risk according to organisational strategy",
+        "Procurement strategy: D&C suitability, local contractor capability, and technology vendor engagement",
+        "Detailed geotechnical, hydraulic, and site investigation before design or cost confirmation",
     ]
     for rec in recs:
-        story.append(Paragraph(f"• {rec}", styles["bullet"]))
+        story.append(P(f"• {rec}", styles["bullet"]))
     story.append(Spacer(1, 4))
-    story.append(Paragraph(
-        "A detailed feasibility study with site-specific cost estimation (±15-20%) "
-        "is recommended before proceeding to detailed design or procurement.",
+    story.append(P(
+        "A detailed feasibility study with site-specific cost estimation (±15–20%) "
+        "is recommended before proceeding to detailed design or procurement. "
+        "All CAPEX and OPEX figures in this report are concept-level estimates (±40%) "
+        "suitable for comparative ranking only.",
         styles["body"]))
     story.append(Spacer(1, 8))
 
     # ── 8. Assumptions Appendix ────────────────────────────────────────────
     if report.assumptions_appendix:
         story.append(PageBreak())
-        story.append(Paragraph("Appendix A — Key Assumptions", styles["h1"]))
+        story.append(P("Appendix A — Key Assumptions", styles["h1"]))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
             "The following key assumptions were used in the analysis. User-entered "
@@ -1257,7 +1410,7 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
         "Lifecycle cost — CAPEX annualised at 7% over 30 years plus OPEX",
         "Specific energy consumption (kWh/ML treated)",
         "Carbon footprint — Scope 1 (process) and Scope 2 (grid electricity)",
-        "Effluent quality — BOD, TSS, TN, NH₄, TP",
+        "Effluent quality — BOD, TSS, TN, NH4, TP",
         "Biosolids production and sludge yield",
         "Technology risk — maturity, implementation, operational complexity, regulatory",
     ]
@@ -1295,14 +1448,14 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
 
             rows = [["Parameter", "Value"]]
             if perf.get("reactor_volume_m3"): rows.append(["Bioreactor volume", _fmt(perf["reactor_volume_m3"], " m³")])
-            if perf.get("footprint_m2"): rows.append(["Process footprint", _fmt(perf["footprint_m2"], " m²")])
+            if perf.get("footprint_m2"): rows.append(["Process footprint", _fmt(perf["footprint_m2"], " m2")])
             if perf.get("hydraulic_retention_time_hr"): rows.append(["HRT", f"{perf['hydraulic_retention_time_hr']:.1f} hr"])
             mlss = perf.get("mlss_mg_l") or perf.get("mlss_granular_mg_l")
             if mlss: rows.append(["MLSS", _fmt(mlss, " mg/L")])
             if perf.get("o2_demand_kg_day"): rows.append(["O₂ demand", _fmt(perf["o2_demand_kg_day"], " kg/day")])
             if perf.get("sludge_production_kgds_day"): rows.append(["Sludge production", _fmt(perf["sludge_production_kgds_day"], " kgDS/day")])
             eff = []
-            for k, l in [("effluent_bod_mg_l","BOD"),("effluent_tss_mg_l","TSS"),("effluent_tn_mg_l","TN"),("effluent_nh4_mg_l","NH₄")]:
+            for k, l in [("effluent_bod_mg_l","BOD"),("effluent_tss_mg_l","TSS"),("effluent_tn_mg_l","TN"),("effluent_nh4_mg_l","NH4")]:
                 if perf.get(k) is not None: eff.append(f"{l} {perf[k]:.0f}")
             if eff: rows.append(["Effluent quality", "  ".join(eff) + " mg/L"])
             kwh = sd.get("specific_energy_kwh_kl", 0)
@@ -1348,9 +1501,9 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
         _docx_hr(doc)
         _docx_body(doc,
             "Table 3b presents normalised performance metrics for benchmarking and "
-            "comparison. Specific footprint (m²/MLD) and specific sludge (kgDS/ML) "
+            "comparison. Specific footprint (m2/MLD) and specific sludge (kgDS/ML) "
             "are standard Australian utility capital planning metrics. "
-            "Carbon intensity (kgCO₂e/kL) enables comparison with water supply benchmarks.")
+            "Carbon intensity (kgCO2e/kL) enables comparison with water supply benchmarks.")
         _render_dict_table_docx(doc, report.specific_metrics_table)
         _docx_body(doc, "Table 3b: Specific performance metrics.", 7)
 
@@ -1359,8 +1512,8 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
         _docx_heading(doc, "6. Energy and Carbon Footprint")
         _docx_hr(doc)
         _docx_body(doc,
-            "Table 4 summarises carbon emissions. Scope 1 includes N₂O from biological "
-            "nitrogen removal and CH₄ from sludge handling. Scope 2 reflects grid electricity "
+            "Table 4 summarises carbon emissions. Scope 1 includes N2O from biological "
+            "nitrogen removal and CH4 from sludge handling. Scope 2 reflects grid electricity "
             "consumption. Avoided emissions reflect CHP electricity generation where applicable.")
         _render_dict_table_docx(doc, report.carbon_table)
         _docx_body(doc, "Table 4: Carbon and energy summary", 7)

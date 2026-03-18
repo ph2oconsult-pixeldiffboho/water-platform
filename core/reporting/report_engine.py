@@ -133,7 +133,7 @@ class ReportEngine:
                 content_type="table",
                 content=report.opex_breakdown_table,
             ))
-            # Specific metrics — m²/MLD, kgDS/ML, kgCO₂e/kL, tDS/yr
+            # Specific metrics — m2/MLD, kgDS/ML, kgCO2e/kL, tDS/yr
             report.specific_metrics_table = self._build_specific_metrics_table(scenarios)
             report.sections.append(ReportSection(
                 title="Specific Performance Metrics",
@@ -466,7 +466,7 @@ class ReportEngine:
                 )
             if preferred.carbon_result:
                 lines.append(
-                    f"- Net carbon: {preferred.carbon_result.net_tco2e_yr:.0f} tCO₂e/yr"
+                    f"- Net carbon: {preferred.carbon_result.net_tco2e_yr:.0f} tCO2e/yr"
                 )
             if preferred.risk_result:
                 lines.append(
@@ -659,20 +659,21 @@ class ReportEngine:
                 totals[_categorise(k)] += v
             opex = cr.opex_annual or 1  # avoid div/0
             row = {"Scenario": s.scenario_name}
-            for cat in ["energy", "sludge", "labour", "maintenance", "chemicals", "other"]:
+            # Combine value + % into single cell to avoid column splitting
+            for cat in ["energy", "sludge", "labour", "maintenance", "chemicals"]:
                 val = totals[cat]
                 pct = val / opex * 100
-                row[cat.capitalize()] = f"${val/1e3:.0f}k" if val > 0 else "—"
-                row[f"{cat.capitalize()} %"] = f"{pct:.0f}%" if val > 0 else "—"
+                if val > 0:
+                    row[cat.capitalize()] = f"${val/1e3:.0f}k ({pct:.0f}%)"
+                else:
+                    row[cat.capitalize()] = "—"
             row["Total OPEX"] = f"${opex/1e3:.0f}k/yr"
             rows.append(row)
-        hdrs = ["Scenario", "Energy", "Energy %", "Sludge", "Sludge %",
-                "Labour", "Labour %", "Maintenance", "Maintenance %",
-                "Chemicals", "Chemicals %", "Total OPEX"]
+        hdrs = ["Scenario", "Energy", "Sludge", "Labour", "Maintenance", "Chemicals", "Total OPEX"]
         return {"headers": hdrs, "rows": rows}
 
     def _build_specific_metrics_table(self, scenarios: List[ScenarioModel]) -> Dict:
-        """Specific metrics table: m²/MLD, kgDS/ML, kgCO₂e/kL, tDS/yr."""
+        """Specific metrics table: m2/MLD, kgDS/ML, kgCO2e/kL, tDS/yr."""
         rows = []
         for s in scenarios:
             if not s.cost_result:
@@ -680,15 +681,17 @@ class ReportEngine:
             cr  = s.cost_result
             car = s.carbon_result
             eng = (s.domain_specific_outputs or {}).get("engineering_summary", {})
+            tp  = (s.domain_specific_outputs or {}).get("technology_performance", {})
             flow_mld = eng.get("design_flow_mld") or 0
             flow_kl_yr = flow_mld * 1000 * 365 if flow_mld else None
 
-            footprint = eng.get("footprint_m2") or 0
+            # Footprint: sum across technologies (lives in technology_performance, not engineering_summary)
+            footprint = sum(v.get("footprint_m2", 0) or 0 for v in tp.values()) if tp else 0
             sludge_kgd = eng.get("total_sludge_kgds_day") or 0
 
-            specific_footprint = round(footprint / flow_mld, 0) if flow_mld else None
+            specific_footprint = round(footprint / flow_mld, 0) if flow_mld and footprint else None
             sludge_tds_yr      = round(sludge_kgd * 365 / 1000, 0) if sludge_kgd else None
-            sludge_kgds_ml     = round(sludge_kgd / flow_mld, 0) if flow_mld else None
+            sludge_kgds_ml     = round(sludge_kgd / flow_mld, 0) if flow_mld and sludge_kgd else None
             carbon_intensity   = (
                 round(car.net_tco2e_yr * 1000 / flow_kl_yr, 3)
                 if car and flow_kl_yr else None
@@ -696,16 +699,16 @@ class ReportEngine:
 
             rows.append({
                 "Scenario":             s.scenario_name,
-                "Footprint (m²)":       f"{footprint:,.0f}" if footprint else "—",
-                "Specific Footprint (m²/MLD)": f"{specific_footprint:.0f}" if specific_footprint else "—",
+                "Footprint (m2)":       f"{footprint:,.0f}" if footprint else "—",
+                "Specific Footprint (m2/MLD)": f"{specific_footprint:.0f}" if specific_footprint else "—",
                 "Sludge (kgDS/day)":    f"{sludge_kgd:,.0f}" if sludge_kgd else "—",
                 "Sludge (tDS/yr)":      f"{sludge_tds_yr:,.0f}" if sludge_tds_yr else "—",
                 "Specific Sludge (kgDS/ML)": f"{sludge_kgds_ml:.0f}" if sludge_kgds_ml else "—",
-                "Carbon Intensity (kgCO₂e/kL)": f"{carbon_intensity:.3f}" if carbon_intensity else "—",
+                "Carbon Intensity (kgCO2e/kL)": f"{carbon_intensity:.3f}" if carbon_intensity else "—",
             })
-        hdrs = (["Scenario", "Footprint (m²)", "Specific Footprint (m²/MLD)",
+        hdrs = (["Scenario", "Footprint (m2)", "Specific Footprint (m2/MLD)",
                   "Sludge (kgDS/day)", "Sludge (tDS/yr)", "Specific Sludge (kgDS/ML)",
-                  "Carbon Intensity (kgCO₂e/kL)"])
+                  "Carbon Intensity (kgCO2e/kL)"])
         return {"headers": hdrs, "rows": rows}
 
     def _build_carbon_table(self, scenarios: List[ScenarioModel]) -> Dict:
@@ -716,11 +719,11 @@ class ReportEngine:
             c = s.carbon_result
             rows.append({
                 "Scenario": s.scenario_name,
-                "Scope 1 (tCO₂e/yr)": f"{c.scope_1_tco2e_yr:.1f}",
-                "Scope 2 (tCO₂e/yr)": f"{c.scope_2_tco2e_yr:.1f}",
-                "Scope 3 (tCO₂e/yr)": f"{c.scope_3_tco2e_yr:.1f}",
-                "Avoided (tCO₂e/yr)": f"{c.avoided_tco2e_yr:.1f}",
-                "Net (tCO₂e/yr)": f"{c.net_tco2e_yr:.1f}",
+                "Scope 1 (tCO2e/yr)": f"{c.scope_1_tco2e_yr:.1f}",
+                "Scope 2 (tCO2e/yr)": f"{c.scope_2_tco2e_yr:.1f}",
+                "Scope 3 (tCO2e/yr)": f"{c.scope_3_tco2e_yr:.1f}",
+                "Avoided (tCO2e/yr)": f"{c.avoided_tco2e_yr:.1f}",
+                "Net (tCO2e/yr)": f"{c.net_tco2e_yr:.1f}",
                 "Carbon Cost ($/yr)": f"{c.carbon_cost_annual:,.0f}",
             })
         return {"headers": list(rows[0].keys()) if rows else [], "rows": rows}
@@ -776,20 +779,19 @@ class ReportEngine:
                        if s.domain_specific_outputs else "—"),
 
             # ── Carbon ────────────────────────────────────────────────────
-            ("Net Carbon (tCO₂e/yr)",
+            ("Net Carbon (tCO2e/yr)",
              lambda s: f"{s.carbon_result.net_tco2e_yr:.0f}" if s.carbon_result else "—"),
-            ("Scope 2 Electricity (tCO₂e/yr)",
+            ("Scope 2 Electricity (tCO2e/yr)",
              lambda s: f"{s.carbon_result.scope_2_tco2e_yr:.0f}" if s.carbon_result else "—"),
 
             # ── Sludge ────────────────────────────────────────────────────
             ("Sludge Production (kgDS/day)",
-             lambda s: f"{s.domain_specific_outputs.get('engineering_summary',{}).get('total_sludge_kgds_day',0):.0f}"
-                       if s.domain_specific_outputs else "—"),
+             lambda s: _eng(s, "sludge_production_kgds_day", "{:.0f}")),
 
             # ── Physical sizing ───────────────────────────────────────────
             ("Reactor Volume (m³)",
              lambda s: _eng(s, "reactor_volume_m3", "{:.0f}")),
-            ("Process Footprint (m²)",
+            ("Process Footprint (m2)",
              lambda s: _eng(s, "footprint_m2", "{:.0f}")),
 
             # ── Effluent quality ──────────────────────────────────────────
@@ -922,7 +924,7 @@ class ReportEngine:
                 "Peak Factor":      di.get("peak_flow_factor", "—"),
                 "BOD (mg/L)":       di.get("influent_bod_mg_l", "—"),
                 "TKN (mg/L)":       di.get("influent_tkn_mg_l", "—"),
-                "NH₄ (mg/L)":       di.get("influent_nh4_mg_l", "—"),
+                "NH4 (mg/L)":       di.get("influent_nh4_mg_l", "—"),
                 "TP (mg/L)":        di.get("influent_tp_mg_l", "—"),
                 "Temp (°C)":        di.get("influent_temperature_celsius", "—"),
                 "Eff. TN (mg/L)":   di.get("effluent_tn_mg_l", "—"),
@@ -992,10 +994,10 @@ class ReportEngine:
             "wet weather performance, startup periods, and upset conditions are not modelled.",
             "",
             "CARBON ESTIMATES",
-            "Net carbon estimates use the IPCC 2019 Tier 1 N₂O emission factor (0.016 kg N₂O/kg N "
+            "Net carbon estimates use the IPCC 2019 Tier 1 N2O emission factor (0.016 kg N2O/kg N "
             "removed). The actual factor varies ×3–10 between sites. Site-specific monitoring is "
             "strongly recommended before using carbon estimates for formal reporting. "
-            f"Grid emission factor: 0.79 kgCO₂e/kWh (AUS NEM 2024).",
+            f"Grid emission factor: 0.79 kgCO2e/kWh (AUS NEM 2024).",
             "",
             "RISK SCORES",
             "Risk scores are screening-level assessments based on technology maturity and "
