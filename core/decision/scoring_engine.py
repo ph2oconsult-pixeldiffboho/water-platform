@@ -154,7 +154,10 @@ CRITERION_LABELS: Dict[str, str] = {
     "footprint":           "Footprint",
     "carbon":              "Carbon Intensity",
     "sludge":              "Sludge Production",
-    "headroom":            "Effluent Headroom",
+    # "headroom" omitted from display: always 0.0 under current model
+    # (biological models target exactly the specified TN, no margin below).
+    # Extraction function kept for future use. Remove this comment when
+    # models return conservative effluent predictions.
     "operational_risk":    "Operational Risk",
     "implementation_risk": "Implementation Risk",
     "regulatory":          "Regulatory Risk",
@@ -178,7 +181,6 @@ CRITERION_LOWER_IS_BETTER: Dict[str, bool] = {
     "footprint":           True,
     "carbon":              True,
     "sludge":              True,
-    "headroom":            False,   # higher effluent headroom below target = better
     "operational_risk":    True,
     "implementation_risk": True,
     "regulatory":          True,    # lower regulatory risk score = better
@@ -572,6 +574,27 @@ class ScoringEngine:
             )
 
         pname = preferred.scenario_name
+        # Low-score disclosure: flag any eligible option scoring < 30/100
+        low_score_notes = []
+        for opt in eligible:
+            if opt.total_score < 30 and opt != preferred:
+                # Identify primary reason for low score
+                worst_crit = min(
+                    (cs for cs in opt.criterion_scores.values()
+                     if cs.weight > 0 and not cs.tied),
+                    key=lambda cs: cs.normalised,
+                    default=None
+                )
+                reason = (f"principally due to {worst_crit.label.lower()} "
+                          f"({worst_crit.raw_value:.0f} {worst_crit.raw_unit})"
+                          if worst_crit else "across multiple criteria")
+                low_score_notes.append(
+                    f"Note: {opt.scenario_name} scores {opt.total_score:.0f}/100 "
+                    f"under this profile, {reason}. "
+                    "This option is included for completeness but is not "
+                    "competitively ranked under these weights."
+                )
+
         # Structural note for binary comparisons
         binary_note = (
             " (Two-scenario comparison: criterion scores are binary 0/100 -- "
@@ -596,18 +619,30 @@ class ScoringEngine:
                     advantages.append((margin, cs))
             advantages.sort(key=lambda x: x[0], reverse=True)
             for margin, cs in advantages[:3]:
+                ru_cs = runner_up.criterion_scores[cs.criterion]
+                raw_diff = abs(cs.raw_value - ru_cs.raw_value)
                 if cs.lower_is_better:
+                    # Report raw difference, not normalised advantage
+                    # "100-point normalised advantage" is technically correct but
+                    # overstates the margin to a non-technical client.
+                    pct_diff = raw_diff / ru_cs.raw_value * 100 if ru_cs.raw_value > 0 else 0
+                    diff_str = (f"{raw_diff:.1f} {cs.raw_unit} lower"
+                                f" ({pct_diff:.0f}% better)")
                     rationale.append(
                         f"Lower {cs.label.lower()}: {cs.raw_value:.1f} {cs.raw_unit} "
-                        f"vs {runner_up.criterion_scores[cs.criterion].raw_value:.1f} {cs.raw_unit} "
-                        f"({margin:.0f}-point normalised advantage, weight {cs.weight*100:.0f}%)"
+                        f"vs {ru_cs.raw_value:.1f} {cs.raw_unit} "
+                        f"(difference: {diff_str}, weight {cs.weight*100:.0f}%)"
                     )
                 else:
+                    raw_diff_pts = cs.raw_value - ru_cs.raw_value
                     rationale.append(
                         f"Higher {cs.label.lower()}: {cs.raw_value:.0f}/100 "
-                        f"vs {runner_up.criterion_scores[cs.criterion].raw_value:.0f}/100 "
-                        f"({margin:.0f}-point normalised advantage, weight {cs.weight*100:.0f}%)"
+                        f"vs {ru_cs.raw_value:.0f}/100 "
+                        f"(difference: {abs(raw_diff_pts):.0f} points, weight {cs.weight*100:.0f}%)"
                     )
+
+        # Append low-score disclosure notes to rationale
+        rationale.extend(low_score_notes)
 
         # Note tied criteria
         active_tied = [CRITERION_LABELS.get(c, c) for c in tied_criteria if weights.get(c, 0) > 0]
