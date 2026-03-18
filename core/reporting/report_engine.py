@@ -458,9 +458,41 @@ class ReportEngine:
         if len(scored_scens) >= 2:
             try:
                 from core.decision.scoring_engine import ScoringEngine, WeightProfile
-                from apps.wastewater_app.pages.page_12_scoring import _classify_compliance
+
+                # Inline compliance classification — avoids Streamlit import dependency
+                def _classify_compliance_inline(scenario) -> str:
+                    dso  = getattr(scenario, "domain_specific_outputs", None) or {}
+                    tp   = dso.get("technology_performance", {})
+                    dinp = getattr(scenario, "domain_inputs", None) or {}
+                    tn_target  = dinp.get("effluent_tn_mg_l",  10.0)
+                    nh4_target = dinp.get("effluent_nh4_mg_l",  5.0)
+                    tp_target  = dinp.get("effluent_tp_mg_l",   1.0)
+                    bod_target = dinp.get("effluent_bod_mg_l", 20.0)
+                    tss_target = dinp.get("effluent_tss_mg_l", 20.0)
+                    hard_fail = marginal = False
+                    for tech_perf in tp.values():
+                        for key, target, margin in [
+                            ("effluent_tn_mg_l",  tn_target,  0.10),
+                            ("effluent_nh4_mg_l", nh4_target, 0.10),
+                            ("effluent_tp_mg_l",  tp_target,  0.10),
+                            ("effluent_bod_mg_l", bod_target, 0.10),
+                            ("effluent_tss_mg_l", tss_target, 0.10),
+                        ]:
+                            actual = tech_perf.get(key)
+                            if actual is None:
+                                continue
+                            if actual > target * (1 + margin):
+                                hard_fail = True
+                            elif actual > target * 1.02:
+                                marginal = True
+                    if hard_fail:
+                        return "Non-compliant"
+                    if marginal:
+                        return "Compliant with intervention"
+                    return "Compliant"
+
                 compliance_map = {
-                    s.scenario_name: _classify_compliance(s) for s in scored_scens
+                    s.scenario_name: _classify_compliance_inline(s) for s in scored_scens
                 }
                 engine = ScoringEngine()
                 report.scoring_result = engine.score(

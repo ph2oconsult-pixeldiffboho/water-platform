@@ -1321,16 +1321,17 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             score_rows.append(row)
 
         score_tbl = _ST(score_rows, colWidths=col_w_s, repeatRows=1)
+        from reportlab.lib import colors as _rlc2
         score_tbl.setStyle(_STS([
             ("BACKGROUND",    (0,0), (-1,0), colours["blue"]),
-            ("TEXTCOLOR",     (0,0), (-1,0), _pdf_styles()["body"].textColor.__class__("#FFFFFF")),
+            ("TEXTCOLOR",     (0,0), (-1,0), _rlc2.white),
             ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
             ("FONTSIZE",      (0,0), (-1,-1), 7),
             ("TOPPADDING",    (0,0), (-1,-1), 3),
             ("BOTTOMPADDING", (0,0), (-1,-1), 3),
             ("LEFTPADDING",   (0,0), (-1,-1), 4),
             ("GRID",          (0,0), (-1,-1), 0.25, colours["lt"]),
-            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colours["lt"], _pdf_styles()["body"].backColor]),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colours["lt"], _rlc2.white]),
         ]))
         story.append(score_tbl)
         story.append(P(
