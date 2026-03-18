@@ -61,6 +61,7 @@ class ReportObject:
 
     # Decision framework output (populated when wastewater domain scenarios are present)
     decision: Optional[Any] = None  # ScenarioDecision from decision_engine
+    decision_summary: Optional[Dict] = None  # Structured box: preferred, runner-up, driver, trade-off
 
     # Metadata
     scenario_names: List[str] = field(default_factory=list)
@@ -201,6 +202,48 @@ class ReportEngine:
                     ref_inputs = WastewaterInputs()
 
                 report.decision = evaluate_scenario(decision_scenarios, ref_inputs)
+
+                # ── Build decision_summary box ────────────────────────────
+                d = report.decision
+                if d and d.recommended_tech:
+                    # Find runner-up (next cheapest compliant scenario)
+                    runner_up = None
+                    runner_up_note = ""
+                    rec_name = d.recommended_label
+                    other_scens = [s for s in decision_scenarios
+                                   if s.scenario_name != rec_name and s.cost_result]
+                    if other_scens:
+                        runner_up_s = min(other_scens,
+                                          key=lambda s: s.cost_result.lifecycle_cost_annual)
+                        runner_up = runner_up_s.scenario_name
+                        # Runner-up note: when it's preferred
+                        rr = runner_up_s.risk_result
+                        runner_up_note = (
+                            "preferred where lowest operational risk or process familiarity "
+                            "is critical"
+                            if rr and rr.overall_level == "Low"
+                            else "preferred where higher compliance confidence is required"
+                        )
+
+                    # Key driver — first trade_off or why_recommended item
+                    driver = (d.trade_offs[0] if d.trade_offs
+                              else d.why_recommended[0] if d.why_recommended
+                              else d.selection_basis)
+
+                    # Key trade-off
+                    trade_off = (d.trade_offs[1] if len(d.trade_offs) > 1
+                                 else d.key_risks[0] if d.key_risks
+                                 else "Higher implementation complexity than conventional BNR")
+
+                    report.decision_summary = {
+                        "preferred":   rec_name,
+                        "runner_up":   runner_up,
+                        "runner_up_note": runner_up_note,
+                        "driver":      driver,
+                        "trade_off":   trade_off,
+                        "basis":       d.selection_basis,
+                        "confidence":  getattr(getattr(d, "confidence", None), "level", "Moderate"),
+                    }
 
                 # Add decision sections to report
                 d = report.decision
@@ -666,7 +709,7 @@ class ReportEngine:
                 if val > 0:
                     row[cat.capitalize()] = f"${val/1e3:.0f}k ({pct:.0f}%)"
                 else:
-                    row[cat.capitalize()] = "—"
+                    row[cat.capitalize()] = "$0k (0%)"
             row["Total OPEX"] = f"${opex/1e3:.0f}k/yr"
             rows.append(row)
         hdrs = ["Scenario", "Energy", "Sludge", "Labour", "Maintenance", "Chemicals", "Total OPEX"]

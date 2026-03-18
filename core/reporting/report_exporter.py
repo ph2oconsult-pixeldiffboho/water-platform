@@ -645,6 +645,82 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
     story.append(toc)
     story.append(PageBreak())
 
+    # ── Decision Summary Box ───────────────────────────────────────────────
+    ds = getattr(report, "decision_summary", None)
+    if ds and ds.get("preferred"):
+        from reportlab.platypus import Table as _DST, TableStyle as _DSTS
+        from reportlab.lib import colors as _rlc
+
+        rl_blue  = colours["blue"]
+        rl_lt    = colours["lt"]
+
+        # Header row
+        hdr = [Paragraph("<b>🔷  DECISION SUMMARY</b>", styles["h1"])]
+        ds_rows = [
+            [Paragraph("<b>Preferred option</b>",  styles["h2"]),
+             Paragraph(rl_safe(ds["preferred"]),    styles["body"])],
+        ]
+        if ds.get("runner_up"):
+            ds_rows.append([
+                Paragraph("<b>Runner-up</b>",           styles["h2"]),
+                Paragraph(rl_safe(ds["runner_up"]),     styles["body"]),
+            ])
+        ds_rows.append([
+            Paragraph("<b>Key driver</b>",              styles["h2"]),
+            Paragraph(rl_safe(ds["driver"]),            styles["body"]),
+        ])
+        ds_rows.append([
+            Paragraph("<b>Key trade-off</b>",           styles["h2"]),
+            Paragraph(rl_safe(ds["trade_off"]),         styles["body"]),
+        ])
+        ds_rows.append([
+            Paragraph("<b>Selection basis</b>",         styles["h2"]),
+            Paragraph(rl_safe(ds["basis"]),             styles["body"]),
+        ])
+        ds_rows.append([
+            Paragraph("<b>Confidence</b>",              styles["h2"]),
+            Paragraph(rl_safe(ds.get("confidence","Moderate")), styles["body"]),
+        ])
+        if ds.get("runner_up_note"):
+            ds_rows.append([
+                Paragraph("<b>Runner-up preferred when</b>", styles["h2"]),
+                Paragraph(rl_safe(ds["runner_up_note"]),     styles["body"]),
+            ])
+
+        col_w = [W * 0.28, W * 0.72]
+        ds_tbl = _DST(ds_rows, colWidths=col_w)
+        ds_tbl.setStyle(_DSTS([
+            ("FONTNAME",      (0,0), (-1,-1), "Helvetica"),
+            ("FONTSIZE",      (0,0), (-1,-1), 9),
+            ("TOPPADDING",    (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("LEFTPADDING",   (0,0), (-1,-1), 8),
+            ("RIGHTPADDING",  (0,0), (-1,-1), 8),
+            ("VALIGN",        (0,0), (-1,-1), "TOP"),
+            ("ROWBACKGROUNDS",(0,0), (-1,-1),
+             [_rlc.HexColor("#EBF3FB"), _rlc.white]),
+            ("BOX",           (0,0), (-1,-1), 1.5, rl_blue),
+            ("LINEBELOW",     (0,0), (-1,-1), 0.25, _rlc.HexColor("#CCCCCC")),
+            ("FONTNAME",      (0,0), (0,-1), "Helvetica-Bold"),
+            ("TEXTCOLOR",     (0,0), (0,-1), rl_blue),
+        ]))
+
+        # Blue header bar
+        hdr_tbl = _DST([[Paragraph(
+            "<b>🔷 DECISION SUMMARY — " + rl_safe(ds["preferred"]) + " RECOMMENDED</b>",
+            styles["h2"])]],
+            colWidths=[W])
+        hdr_tbl.setStyle(_DSTS([
+            ("BACKGROUND",    (0,0), (-1,-1), rl_blue),
+            ("TEXTCOLOR",     (0,0), (-1,-1), _rlc.white),
+            ("TOPPADDING",    (0,0), (-1,-1), 7),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+            ("LEFTPADDING",   (0,0), (-1,-1), 10),
+        ]))
+        story.append(hdr_tbl)
+        story.append(ds_tbl)
+        story.append(Spacer(1, 12))
+
     # ── 1. Introduction ────────────────────────────────────────────────────
     story.append(H1("1. Introduction"))
     story.append(_pdf_hr(colours))
@@ -771,6 +847,49 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(Spacer(1, 4))
         story.append(t2)
         story.append(P("Table 2: Process design summary", styles["caption"]))
+
+        # ── Engineering notes ──────────────────────────────────────────────
+        # O2 vs energy explanation — always include when both AGS and BNR present
+        has_ags = any("granular" in (design_data.get(n, {}).get("tech_sequence") or [""])[0]
+                      for n in scen_names)
+        has_bnr = any("bnr" == (design_data.get(n, {}).get("tech_sequence") or [""])[0]
+                      for n in scen_names)
+
+        if has_ags and has_bnr:
+            story.append(P(
+                "<b>Note — O₂ demand vs total energy:</b> Aerobic Granular Sludge (AGS/Nereda) "
+                "shows higher O₂ demand than conventional BNR despite lower total plant energy. "
+                "This is thermodynamically correct: AGS operates at lower sludge yield (y_obs ≈ 0.22 "
+                "vs BNR ≈ 0.33 kgVSS/kgBOD), meaning more substrate is fully oxidised rather than "
+                "incorporated into biomass — requiring more aeration oxygen per kg BOD removed. "
+                "AGS wins on total plant energy because it eliminates secondary clarifiers, RAS "
+                "recirculation, and MLR pumping, which together account for 30–40% of BNR plant energy.",
+                styles["disc"]))
+            story.append(Spacer(1, 4))
+
+        # TN caveat — when BNR achieves TN=5 at low C:N ratio, flag the assumption
+        for scen_name in scen_names:
+            sd = design_data.get(scen_name, {})
+            tech_code = (sd.get("tech_sequence") or [None])[0]
+            if tech_code != "bnr":
+                continue
+            perf = sd.get("tech_performance", {}).get(tech_code, {})
+            eff_tn = perf.get("effluent_tn_mg_l", 99)
+            domain_inp = sd.get("domain_inputs", {})
+            bod = domain_inp.get("influent_bod_mg_l", 250)
+            tkn = domain_inp.get("influent_tkn_mg_l", 45) or 1
+            cn = bod / tkn
+            if eff_tn <= 5.5 and cn < 8.0:
+                story.append(P(
+                    f"<b>Note — BNR effluent TN assumption:</b> Achieving TN ≤ {eff_tn:.0f} mg/L "
+                    f"in conventional BNR at BOD/TKN = {cn:.1f} requires adequate carbon for "
+                    "denitrification. At this C:N ratio, supplemental carbon (methanol or "
+                    "VFA from primary sludge fermentation), tight SRT control, and favourable "
+                    "temperature conditions are assumed. Without these, BNR effluent TN may be "
+                    "10–15 mg/L. Confirm carbon availability during site investigation.",
+                    styles["disc"]))
+                story.append(Spacer(1, 4))
+
     story.append(Spacer(1, 6))
 
     # ── PFD section ────────────────────────────────────────────────────────
