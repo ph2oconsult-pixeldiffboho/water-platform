@@ -484,7 +484,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
     story.append(Paragraph("4. Process Design Summary", styles["h1"]))
     story.append(_pdf_hr(colours))
     story.append(Paragraph(
-        "Table 5 presents the key process design parameters for each evaluated scenario, "
+        "Table 2 presents the key process design parameters for each evaluated scenario, "
         "derived from first-principles calculations using standard biological treatment "
         "design methods (Metcalf & Eddy 5th Edition).",
         styles["body"]))
@@ -526,7 +526,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         # Draw PFD for each scenario if tech code available
         design_data = getattr(report, "scenario_design_data", {})
 
-        for scen_name in (report.scenario_names or []):
+        for scen_idx, scen_name in enumerate(report.scenario_names or []):
             sd = design_data.get(scen_name, {})
             tech_seq = sd.get("tech_sequence", [])
             tp_all   = sd.get("tech_performance", {})
@@ -578,7 +578,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                 pfd = get_pfd(tech_code, perf, width=pfd_w, height=pfd_h)
                 story.append(pfd)
                 story.append(Paragraph(
-                    f"Figure — Schematic PFD: {scen_name}. "
+                    f"Figure {scen_idx + 1} — Schematic PFD: {scen_name}. "
                     "Streams: ── Process flow  - - - Recycle (orange)  → Effluent (green)  → Sludge (red). Schematic only.",
                     styles["caption"]))
                 story.append(Spacer(1, 10))
@@ -589,16 +589,16 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
     # ── Re-number remaining sections ────────────────────────────────────────
     # ── 6. Capital Cost ─────────────────────────────────────────────────────
     if report.cost_table:
-        story.append(Paragraph("4. Capital and Lifecycle Cost Assessment", styles["h1"]))
+        story.append(Paragraph("6. Capital and Lifecycle Cost Assessment", styles["h1"]))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
-            "Table 2 summarises the capital cost, operating cost, and lifecycle cost for each "
+            "Table 3 summarises the capital cost, operating cost, and lifecycle cost for each "
             "scenario. All costs are in AUD 2024 and are concept-level estimates (±40%).",
             styles["body"]))
         t = _render_dict_table(report.cost_table, styles, colours, W)
         if t:
             story.append(t)
-            story.append(Paragraph("Table 2: Cost summary (AUD 2024, concept-level ±40%)", styles["caption"]))
+            story.append(Paragraph("Table 3: Cost summary (AUD 2024, concept-level ±40%)", styles["caption"]))
         story.append(Spacer(1, 4))
         story.append(Paragraph(
             "CAPEX estimates cover bioreactor civil works, mechanical and electrical equipment, "
@@ -609,12 +609,12 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             styles["body"]))
         story.append(Spacer(1, 8))
 
-    # ── 4b. OPEX Breakdown ────────────────────────────────────────────────
+    # ── 6a. OPEX Breakdown ────────────────────────────────────────────────
     if getattr(report, "opex_breakdown_table", None):
-        story.append(Paragraph("4b. OPEX Cost Drivers", styles["h1"]))
+        story.append(Paragraph("6a. OPEX Cost Drivers", styles["h1"]))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
-            "Table 2b breaks down annual operating cost by category. This identifies the primary "
+            "Table 3a breaks down annual operating cost by category. This identifies the primary "
             "cost drivers and explains the OPEX differential between scenarios. "
             "Energy and sludge disposal are typically the two largest OPEX components for "
             "biological treatment processes.",
@@ -623,17 +623,17 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         if t:
             story.append(t)
             story.append(Paragraph(
-                "Table 2b: OPEX breakdown by category (AUD 2024/yr). "
+                "Table 3a: OPEX breakdown by category (AUD 2024/yr). "
                 "Percentages shown as proportion of total annual OPEX.",
                 styles["caption"]))
         story.append(Spacer(1, 8))
 
-    # ── 4c. Specific Performance Metrics ──────────────────────────────────
+    # ── 6b. Specific Performance Metrics ──────────────────────────────────
     if getattr(report, "specific_metrics_table", None):
-        story.append(Paragraph("4c. Specific Performance Metrics", styles["h1"]))
+        story.append(Paragraph("6b. Specific Performance Metrics", styles["h1"]))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
-            "Table 2c presents normalised performance metrics to enable direct comparison "
+            "Table 3b presents normalised performance metrics to enable direct comparison "
             "across scenarios and benchmarking against industry references. "
             "Specific footprint (m²/MLD) and specific sludge (kgDS/ML) are standard "
             "planning metrics used in Australian utility capital planning.",
@@ -642,7 +642,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         if t:
             story.append(t)
             story.append(Paragraph(
-                "Table 2c: Specific performance metrics. Carbon intensity in kgCO₂e/kL "
+                "Table 3b: Specific performance metrics. Carbon intensity in kgCO₂e/kL "
                 "enables direct comparison with water supply carbon benchmarks.",
                 styles["caption"]))
         story.append(Spacer(1, 8))
@@ -652,7 +652,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(Paragraph("7. Energy and Carbon Footprint", styles["h1"]))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
-            "Table 3 summarises the carbon emissions for each scenario. Scope 1 emissions "
+            "Table 4 summarises the carbon emissions for each scenario. Scope 1 emissions "
             "include N₂O from biological nitrogen removal and CH₄ from sludge handling. "
             "Scope 2 emissions are calculated from grid electricity consumption using the "
             "applicable emission factor. Avoided emissions reflect CHP electricity generation "
@@ -661,7 +661,7 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         t = _render_dict_table(report.carbon_table, styles, colours, W)
         if t:
             story.append(t)
-            story.append(Paragraph("Table 3: Carbon and energy summary", styles["caption"]))
+            story.append(Paragraph("Table 4: Carbon and energy summary", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 8. Risk Assessment ─────────────────────────────────────────────────
@@ -669,14 +669,14 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(Paragraph("8. Risk Assessment", styles["h1"]))
         story.append(_pdf_hr(colours))
         story.append(Paragraph(
-            "Table 4 presents the technology risk assessment across technical, implementation, "
+            "Table 5 presents the technology risk assessment across technical, implementation, "
             "operational, and regulatory dimensions. Risk scores are indicative and based on "
             "technology maturity, reference plant availability, and operational complexity.",
             styles["body"]))
         t = _render_dict_table(report.risk_table, styles, colours, W)
         if t:
             story.append(t)
-            story.append(Paragraph("Table 4: Technology risk assessment", styles["caption"]))
+            story.append(Paragraph("Table 5: Technology risk assessment", styles["caption"]))
         story.append(Spacer(1, 8))
 
     # ── 7. Conclusions ─────────────────────────────────────────────────────
@@ -1116,61 +1116,61 @@ def _docx_comprehensive(report: ReportObject) -> bytes:
         _docx_heading(doc, "5. Capital and Lifecycle Cost Assessment")
         _docx_hr(doc)
         _docx_body(doc,
-            "Table 2 summarises capital cost, operating cost, and lifecycle cost. "
+            "Table 3 summarises capital cost, operating cost, and lifecycle cost. "
             "All costs are AUD 2024, concept-level (±40%).")
         _render_dict_table_docx(doc, report.cost_table)
-        _docx_body(doc, "Table 2: Cost summary (AUD 2024, ±40%)", 7)
+        _docx_body(doc, "Table 3: Cost summary (AUD 2024, ±40%)", 7)
         _docx_body(doc,
             "CAPEX includes bioreactor civil, mechanical, electrical, membranes (where applicable), "
             "secondary clarifiers, and instrumentation. Excludes land, site preparation, headworks, "
             "sludge treatment, buildings, and owner's costs.")
 
-    # 5b. OPEX Breakdown
+    # 5a. OPEX Breakdown
     if getattr(report, "opex_breakdown_table", None):
-        _docx_heading(doc, "5b. OPEX Cost Drivers")
+        _docx_heading(doc, "5a. OPEX Cost Drivers")
         _docx_hr(doc)
         _docx_body(doc,
-            "Table 2b breaks down annual operating cost by category to identify the primary "
+            "Table 3a breaks down annual operating cost by category to identify the primary "
             "drivers of the OPEX differential between scenarios. Energy and sludge disposal "
             "are typically the two largest components for biological treatment processes.")
         _render_dict_table_docx(doc, report.opex_breakdown_table)
         _docx_body(doc,
-            "Table 2b: OPEX breakdown by category (AUD 2024/yr). "
+            "Table 3a: OPEX breakdown by category (AUD 2024/yr). "
             "Percentages shown as proportion of total annual OPEX.", 7)
 
-    # 5c. Specific Performance Metrics
+    # 5b. Specific Performance Metrics
     if getattr(report, "specific_metrics_table", None):
-        _docx_heading(doc, "5c. Specific Performance Metrics")
+        _docx_heading(doc, "5b. Specific Performance Metrics")
         _docx_hr(doc)
         _docx_body(doc,
-            "Table 2c presents normalised performance metrics for benchmarking and "
+            "Table 3b presents normalised performance metrics for benchmarking and "
             "comparison. Specific footprint (m²/MLD) and specific sludge (kgDS/ML) "
             "are standard Australian utility capital planning metrics. "
             "Carbon intensity (kgCO₂e/kL) enables comparison with water supply benchmarks.")
         _render_dict_table_docx(doc, report.specific_metrics_table)
-        _docx_body(doc, "Table 2c: Specific performance metrics.", 7)
+        _docx_body(doc, "Table 3b: Specific performance metrics.", 7)
 
     # 6. Energy & Carbon
     if report.carbon_table:
         _docx_heading(doc, "6. Energy and Carbon Footprint")
         _docx_hr(doc)
         _docx_body(doc,
-            "Table 3 summarises carbon emissions. Scope 1 includes N₂O from biological "
+            "Table 4 summarises carbon emissions. Scope 1 includes N₂O from biological "
             "nitrogen removal and CH₄ from sludge handling. Scope 2 reflects grid electricity "
             "consumption. Avoided emissions reflect CHP electricity generation where applicable.")
         _render_dict_table_docx(doc, report.carbon_table)
-        _docx_body(doc, "Table 3: Carbon and energy summary", 7)
+        _docx_body(doc, "Table 4: Carbon and energy summary", 7)
 
     # 7. Risk
     if report.risk_table:
         _docx_heading(doc, "7. Risk Assessment")
         _docx_hr(doc)
         _docx_body(doc,
-            "Table 4 presents technology risk across technical, implementation, operational, "
+            "Table 5 presents technology risk across technical, implementation, operational, "
             "and regulatory dimensions. Scores are indicative based on technology maturity "
             "and reference plant availability.")
         _render_dict_table_docx(doc, report.risk_table)
-        _docx_body(doc, "Table 4: Technology risk assessment", 7)
+        _docx_body(doc, "Table 5: Technology risk assessment", 7)
 
     # 8. Decision Framework (if decision engine ran)
     dec = getattr(report, "decision", None)
