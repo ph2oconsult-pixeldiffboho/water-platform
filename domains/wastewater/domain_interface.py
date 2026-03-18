@@ -479,10 +479,24 @@ def _check_effluent_compliance(
         tech_result.notes.warn(w)
 
     # Add compliance flag to performance_outputs
-    if compliance_issues or achievability_warnings:
+    # IMPORTANT: distinguish hard fails (actual > target) from soft warnings (target is ambitious).
+    # Hard fails mean the technology cannot meet the target as modelled.
+    # Soft warnings mean the target is stricter than the typical technology minimum,
+    # but the model still achieves it — these should NOT prevent recommendation.
+    if compliance_issues:
+        # Hard fail: model output exceeds target
         tech_result.performance_outputs["compliance_flag"] = "Review Required"
-        tech_result.performance_outputs["compliance_issues"] = "; ".join(
-            compliance_issues + [w.replace("⚠ ", "") for w in achievability_warnings]
-        )
+        tech_result.performance_outputs["compliance_issues"] = "; ".join(compliance_issues)
+    elif achievability_warnings:
+        # Soft warning only: achieves target but it's tighter than typical
+        tech_result.performance_outputs["compliance_flag"] = "Meets Targets"
+        tech_result.performance_outputs["compliance_issues"] = ""
     else:
         tech_result.performance_outputs["compliance_flag"] = "Meets Targets"
+        tech_result.performance_outputs["compliance_issues"] = ""
+
+    # Store achievability warnings separately (for report notes, not compliance gate)
+    if achievability_warnings:
+        tech_result.performance_outputs["achievability_warnings"] = "; ".join(
+            [w.replace("⚠ ", "") for w in achievability_warnings]
+        )

@@ -219,11 +219,37 @@ class ReportEngine:
                          s.treatment_pathway.technology_sequence[0] == rec_tech),
                         d.recommended_label
                     )
+                    # Runner-up: prefer compliant/CWI options over non-compliant
+                    # Build compliance classification for decision scenarios
+                    _dec_compliance = {}
+                    for _ds in decision_scenarios:
+                        _ds_tp = (_ds.domain_specific_outputs or {}).get("technology_performance",{})
+                        _ds_di = getattr(_ds, "domain_inputs", None) or {}
+                        _tn_t  = _ds_di.get("effluent_tn_mg_l", 10.0)
+                        _tp_t  = _ds_di.get("effluent_tp_mg_l",  1.0)
+                        _hard_fail = any(
+                            v > tgt * 1.10
+                            for _tc_data in _ds_tp.values()
+                            for (key, tgt) in [("effluent_tn_mg_l",_tn_t),("effluent_tp_mg_l",_tp_t)]
+                            for v in [_tc_data.get(key, 0) or 0]
+                            if _tc_data.get(key) is not None
+                        )
+                        _dec_compliance[_ds.scenario_name] = "non-compliant" if _hard_fail else "compliant"
+                    
                     other_scens = [s for s in decision_scenarios
                                    if s.scenario_name != rec_scenario_name and s.cost_result]
-                    if other_scens:
+                    # Prefer compliant runner-ups over non-compliant
+                    compliant_others = [s for s in other_scens
+                                        if _dec_compliance.get(s.scenario_name) != "non-compliant"]
+                    if compliant_others:
+                        runner_up_s = min(compliant_others,
+                                          key=lambda s: s.cost_result.lifecycle_cost_annual)
+                    elif other_scens:
                         runner_up_s = min(other_scens,
                                           key=lambda s: s.cost_result.lifecycle_cost_annual)
+                    else:
+                        runner_up_s = None
+                    if runner_up_s:
                         runner_up = runner_up_s.scenario_name
                         # Runner-up note: when it's preferred
                         rr = runner_up_s.risk_result
@@ -233,6 +259,9 @@ class ReportEngine:
                             if rr and rr.overall_level == "Low"
                             else "preferred where higher compliance confidence is required"
                         )
+                    else:
+                        runner_up = None
+                        runner_up_note = ""
 
                     # Key driver — first trade_off or why_recommended item
                     driver = (d.trade_offs[0] if d.trade_offs

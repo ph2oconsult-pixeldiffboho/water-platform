@@ -469,9 +469,53 @@ def _pdf_executive(report: ReportObject) -> bytes:
         "ifas_mbbr": "IFAS carrier media retrofit",
         "anmbr": "Anaerobic MBR",
     }
+    # Build a lookup from scenario_name -> tech_code via comparison_table data
+    # The comparison_table has scenario names as column headers but not tech codes.
+    # Use the report's decision object or scenario objects if available.
+    _scenario_tech_map = {}
+    _scenario_chars = {
+        "bnr":             ("BNR (Activated Sludge)",        "Conventional BNR + secondary clarifiers"),
+        "granular_sludge": ("Aerobic Granular Sludge",       "SBR-based granular sludge, no clarifiers"),
+        "mabr_bnr":        ("MABR + BNR",                    "Membrane-aerated biofilm in BNR aerobic zone"),
+        "bnr_mbr":         ("BNR + MBR Hybrid",              "BNR basins with membrane separation"),
+        "ifas_mbbr":       ("IFAS / MBBR",                   "Integrated fixed-film activated sludge"),
+        "anmbr":           ("Anaerobic MBR",                 "Anaerobic membrane bioreactor"),
+        "mob":             ("MOB Biofilm",                    "Microorganism biofilm reactor"),
+        "sidestream_pna":  ("Sidestream PN/A",               "Partial nitritation / anammox sidestream"),
+    }
+    # Try to get tech codes from scenario_names via decision data
+    _dec = getattr(report, "decision", None)
+    if _dec:
+        _all_techs = list(getattr(_dec, "all_scenarios", {}).keys())
+    else:
+        _all_techs = []
+
     for name in (report.scenario_names or []):
-        # Try to infer tech from comparison table
-        scen_rows.append([name, "—", "—"])
+        # Try to match name to a tech code
+        tech_code = None
+        tech_label = "—"
+        key_char   = "—"
+        # Check decision engine knowledge base
+        for tc, (tl, kc) in _scenario_chars.items():
+            if name.lower() in tl.lower() or tl.lower() in name.lower():
+                tech_code  = tc
+                tech_label = tl
+                key_char   = kc
+                break
+        # Fallback: match by known name patterns
+        if not tech_code:
+            nl = name.lower()
+            if "nereda" in nl or "granular" in nl or "ags" in nl:
+                tech_label = "Aerobic Granular Sludge"; key_char = "SBR-based granular sludge, no clarifiers"
+            elif "mabr" in nl:
+                tech_label = "MABR + BNR"; key_char = "Membrane-aerated biofilm in BNR aerobic zone"
+            elif "mbr" in nl and "bnr" in nl:
+                tech_label = "BNR + MBR Hybrid"; key_char = "BNR basins with membrane separation"
+            elif "mbbr" in nl or "ifas" in nl:
+                tech_label = "IFAS / MBBR"; key_char = "Integrated fixed-film activated sludge"
+            elif "bnr" in nl or "base" in nl:
+                tech_label = "BNR (Activated Sludge)"; key_char = "Conventional BNR + secondary clarifiers"
+        scen_rows.append([name, tech_label, key_char])
     if len(scen_rows) > 1:
         t = Table(scen_rows, colWidths=[W*0.35, W*0.35, W*0.30], repeatRows=1)
         t.setStyle(_pdf_tbl_style(colours))
@@ -513,18 +557,35 @@ def _pdf_executive(report: ReportObject) -> bytes:
     story.append(Spacer(1, 8))
     story.append(Paragraph("Conclusions", styles["h1"]))
     story.append(_pdf_hr(colours))
-    if report.preferred_scenario:
+    # Prefer scoring_result preferred over is_preferred flag (scoring runs after exec summary build)
+    _sr = getattr(report, "scoring_result", None)
+    _exec_preferred = (
+        _sr.preferred.scenario_name if _sr and _sr.preferred
+        else report.preferred_scenario
+    )
+    if _exec_preferred:
         story.append(Paragraph(
-            f"Based on the multi-criteria assessment, the <b>{report.preferred_scenario}</b> "
-            f"scenario is identified as the preferred option. Detailed engineering assessment "
+            f"Based on the multi-criteria assessment, <b>{_exec_preferred}</b> "
+            f"is the preferred option. Detailed engineering assessment "
             f"is recommended before proceeding to procurement.",
             styles["body"]))
     else:
-        story.append(Paragraph(
-            "All scenarios have been evaluated on a consistent basis. No preferred scenario "
-            "has been nominated at this stage. Selection should be based on site-specific "
-            "constraints, effluent standards, and stakeholder priorities.",
-            styles["body"]))
+        # Check decision engine result
+        _dec2 = getattr(report, "decision", None)
+        _dec_preferred = getattr(_dec2, "recommended_label", None) if _dec2 else None
+        if _dec_preferred:
+            story.append(Paragraph(
+                f"Based on the multi-criteria assessment, <b>{_dec_preferred}</b> "
+                f"is the preferred option under the compliance and cost framework. "
+                f"Detailed engineering assessment is recommended before procurement.",
+                styles["body"]))
+        else:
+            story.append(Paragraph(
+                "All scenarios have been evaluated on a consistent basis. "
+                "No single preferred option could be nominated — selection should "
+                "be based on site-specific constraints, effluent standards, and "
+                "stakeholder priorities.",
+                styles["body"]))
 
     # ── Disclaimer ─────────────────────────────────────────────────────────
     story.append(Spacer(1, 12))
