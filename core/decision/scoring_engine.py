@@ -6,30 +6,59 @@ Weighted multi-criteria decision scoring for technology options.
 Design principles
 -----------------
 - Compliance gate first: non-compliant options are excluded before scoring
-- Normalised 0–100 per criterion (lower-is-better inverted)
+- Normalised 0-100 per criterion using absolute benchmarks OR minimum-spread dampening
+  to avoid binary 0/100 from marginal differences between 2 scenarios
 - Transparent: every score shows its raw value, normalised value, and weight
-- Close-decision guardrail: within 5 points → "close decision" narrative
+- Close-decision guardrail: within 15% of winning score -> "close decision" narrative
 - Weight profiles: Balanced / Low-risk / Low-carbon / Budget-constrained / Custom
 
-Architecture
-------------
-ScoringEngine.score(scenarios, weight_profile) -> List[ScoredOption]
-  - filters compliant options
-  - normalises each criterion across the field
-  - applies weights
-  - produces ranked ScoredOption list with rationale
+Key design decisions
+--------------------
+1. LCC is the primary cost criterion. CAPEX is a supplementary upfront-cost signal,
+   not a co-equal cost criterion. To avoid double-counting, CAPEX weight is capped
+   and the LCC/CAPEX pair carries explicit correlation discount in the narrative.
+2. "Robustness" is replaced by "Technology Maturity" — an independent criterion
+   based on TRL and reference plant count, not derived from risk sub-scores.
+3. Normalisation uses a minimum spread of 20% of the midpoint value to prevent
+   marginal differences (within ±40% estimate uncertainty) from generating 0/100 splits.
+4. Rationale bullets are ranked by ADVANTAGE MARGIN (how much better the preferred
+   option is) not by weighted score contribution.
 
 References
 ----------
 - WEF Decision Support Tools for Wastewater Treatment (2018)
 - WSAA Capital Planning Decision Framework (2021)
-- Australian Water Association Technology Assessment Guidelines
+- ISO 15686-5 Life Cycle Costing
+- Metcalf & Eddy 5th Edition Chapter 8 (technology selection)
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TECHNOLOGY MATURITY — reference plant database (TRL proxy)
+# Higher = more mature. Used for "maturity" criterion.
+# Source: technology vendor data, WSAA benchmarking, literature surveys.
+# ─────────────────────────────────────────────────────────────────────────────
+TECH_MATURITY: Dict[str, float] = {
+    "bnr":             90,   # conventional BNR: 50+ years, thousands of plants
+    "granular_sludge": 65,   # Nereda: 100+ plants globally, 15+ years commercial
+    "mbr":             80,   # MBR: 30+ years, widespread in AU
+    "bnr_mbr":         75,   # BNR+MBR combination: well established
+    "ifas_mbbr":       70,   # IFAS/MBBR: 20+ years, growing AU presence
+    "mabr_bnr":        45,   # MABR: pilot/early commercial, <10 full-scale AU
+    "anmbr":           35,   # AnMBR: demonstration/early commercial
+    "sidestream_pna":  50,   # PNA/ANAMMOX: established for sidestream
+    "mob":             40,   # MOB Biofilm: early commercial
+    "ad_chp":          85,   # Anaerobic digestion + CHP: very mature
+    "thermal_biosolids": 70, # Thermal drying: mature
+    "cpr":             80,   # Chemical P removal: very mature
+    "tertiary_filt":   85,   # Tertiary filtration: very mature
+    "adv_reuse":       65,   # Advanced reuse: growing, well characterised
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -44,78 +73,72 @@ class WeightProfile(Enum):
     CUSTOM         = "Custom"
 
 
-# Default weight sets (must sum to 1.0)
+# Default weight sets — must sum to 1.0
+# Design notes:
+#   lcc + capex: deliberately not summing to >35% to avoid cost domination
+#   risk criteria: operational + implementation + regulatory = max 30%
+#   maturity replaces old "robustness" to eliminate circular derivation from risk
 WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
 
     WeightProfile.BALANCED: {
-        "lcc":                  0.20,
-        "capex":                0.15,
-        "specific_cost":       0.0,
-        "specific_energy":     0.0,
+        "lcc":                  0.20,   # primary cost signal
+        "capex":                0.10,   # upfront budget signal (not co-equal with LCC)
         "footprint":            0.10,
         "carbon":               0.10,
         "sludge":               0.10,
         "operational_risk":     0.15,
         "implementation_risk":  0.10,
         "regulatory":           0.05,
-        "robustness":           0.05,
+        "maturity":             0.10,   # technology maturity / TRL
     },
 
     WeightProfile.LOW_RISK: {
         "lcc":                  0.15,
-        "capex":                0.10,
-        "specific_cost":       0.0,
-        "specific_energy":     0.0,
+        "capex":                0.05,
         "footprint":            0.05,
         "carbon":               0.05,
-        "sludge":               0.10,
+        "sludge":               0.05,
         "operational_risk":     0.20,
-        "implementation_risk":  0.15,
+        "implementation_risk":  0.20,
         "regulatory":           0.10,
-        "robustness":           0.10,
+        "maturity":             0.15,
     },
 
     WeightProfile.LOW_CARBON: {
         "lcc":                  0.15,
         "capex":                0.10,
-        "specific_cost":       0.0,
-        "specific_energy":     0.0,
         "footprint":            0.10,
-        "carbon":               0.20,
+        "carbon":               0.25,
         "sludge":               0.10,
         "operational_risk":     0.10,
         "implementation_risk":  0.05,
-        "regulatory":           0.10,
-        "robustness":           0.10,
+        "regulatory":           0.05,
+        "maturity":             0.10,
     },
 
     WeightProfile.BUDGET: {
         "lcc":                  0.20,
         "capex":                0.25,
-        "specific_cost":       0.0,
-        "specific_energy":     0.0,
         "footprint":            0.10,
         "carbon":               0.05,
         "sludge":               0.05,
         "operational_risk":     0.10,
         "implementation_risk":  0.10,
         "regulatory":           0.05,
-        "robustness":           0.10,
+        "maturity":             0.10,
     },
 }
 
 CRITERION_LABELS: Dict[str, str] = {
     "lcc":                 "Lifecycle Cost",
     "capex":               "CAPEX",
-    "specific_cost":       "Specific Cost ($/kL)",
-    "specific_energy":     "Specific Energy",
     "footprint":           "Footprint",
     "carbon":              "Carbon Intensity",
     "sludge":              "Sludge Production",
     "operational_risk":    "Operational Risk",
     "implementation_risk": "Implementation Risk",
-    "regulatory":          "Regulatory Confidence",
-    "robustness":          "Performance Robustness",
+    "regulatory":          "Regulatory Risk",
+    "maturity":            "Technology Maturity",
 }
 
 # Direction: True = lower raw value is better (inverted to score)
@@ -123,16 +146,22 @@ CRITERION_LABELS: Dict[str, str] = {
 CRITERION_LOWER_IS_BETTER: Dict[str, bool] = {
     "lcc":                 True,
     "capex":               True,
-    "specific_cost":       True,
-    "specific_energy":     True,
     "footprint":           True,
     "carbon":              True,
     "sludge":              True,
     "operational_risk":    True,
     "implementation_risk": True,
-    "regulatory":          False,   # higher regulatory confidence = better
-    "robustness":          False,   # higher robustness = better
+    "regulatory":          True,    # lower regulatory risk score = better
+    "maturity":            False,   # higher maturity = better
 }
+
+# Minimum spread fraction — prevents marginal differences from generating 0/100 splits.
+# If the range between best and worst is < MIN_SPREAD_FRACTION × midpoint value,
+# all options are treated as tied on this criterion (score 100/100 each).
+# Set at 0.15 = 15% relative difference minimum before scoring discriminates.
+# This approximately matches the ±40% → ±15% relative uncertainty at concept stage
+# after cancellation of correlated errors between the same-methodology scenarios.
+MIN_SPREAD_FRACTION = 0.15
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -146,10 +175,11 @@ class CriterionScore:
     label:           str
     raw_value:       float           # actual engineering value (e.g. $M, kgCO2e)
     raw_unit:        str             # display unit
-    normalised:      float           # 0–100, higher is always better
-    weight:          float           # 0.0–1.0
-    weighted_score:  float           # normalised × weight × 100
+    normalised:      float           # 0-100, higher is always better
+    weight:          float           # 0.0-1.0
+    weighted_score:  float           # normalised x weight x 100
     lower_is_better: bool
+    tied:            bool = False    # True if spread < MIN_SPREAD_FRACTION (no discrimination)
 
 
 @dataclass
@@ -158,7 +188,7 @@ class ScoredOption:
     scenario_name:      str
     compliance_status:  str          # "Compliant" | "Compliant with intervention" | "Non-compliant"
     is_eligible:        bool         # False if non-compliant
-    total_score:        float        # 0–100 weighted sum
+    total_score:        float        # 0-100 weighted sum
     criterion_scores:   Dict[str, CriterionScore] = field(default_factory=dict)
     rank:               int = 0
     excluded_reason:    str = ""     # set if is_eligible=False
@@ -173,17 +203,19 @@ class DecisionResult:
     preferred:          Optional[ScoredOption]
     runner_up:          Optional[ScoredOption]
     excluded:           List[ScoredOption]
-    close_decision:     bool                     # True if top-2 within 5 points
+    close_decision:     bool                     # True if gap < 15% of winning score
+    close_decision_threshold: float              # the gap threshold used
     recommendation:     str                      # primary recommendation sentence
     trade_off:          str                      # what the client accepts
-    rationale:          List[str]                # bullet reasons preferred won
+    rationale:          List[str]                # bullet reasons preferred won (by margin)
+    tied_criteria:      List[str]                # criteria where spread < threshold
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # RAW VALUE EXTRACTION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_raw(scenario: Any, criterion: str) -> tuple[float, str]:
+def _extract_raw(scenario: Any, criterion: str) -> Tuple[float, str]:
     """
     Extract a raw numeric value and unit from a ScenarioModel.
     Returns (value, unit_string).
@@ -195,7 +227,7 @@ def _extract_raw(scenario: Any, criterion: str) -> tuple[float, str]:
     eng = dso.get("engineering_summary", {})
     tp  = dso.get("technology_performance", {})
 
-    flow_mld = eng.get("design_flow_mld") or 1.0
+    flow_mld   = eng.get("design_flow_mld") or 1.0
     flow_kl_yr = flow_mld * 1000 * 365
 
     if criterion == "lcc":
@@ -207,28 +239,16 @@ def _extract_raw(scenario: Any, criterion: str) -> tuple[float, str]:
         return v, "$M"
 
     if criterion == "footprint":
-        # Sum footprint across technologies
         fp = sum(v.get("footprint_m2", 0) or 0 for v in tp.values()) if tp else 0
-        v = fp / flow_mld if flow_mld else 0
-        return v, "m²/MLD"
+        return fp / flow_mld if flow_mld else 0, "m2/MLD"
 
     if criterion == "carbon":
         v = (car.net_tco2e_yr * 1000 / flow_kl_yr) if car and flow_kl_yr else 0
         return v, "kgCO2e/kL"
 
-    if criterion == "specific_cost":
-        lcc = cr.lifecycle_cost_annual if cr else 0
-        v = lcc / (flow_kl_yr) if flow_kl_yr else 0
-        return v, "$/kL"
-
-    if criterion == "specific_energy":
-        kwh_kl = eng.get("specific_energy_kwh_kl", 0) or 0
-        return kwh_kl * 1000, "kWh/ML"
-
     if criterion == "sludge":
         sludge = eng.get("total_sludge_kgds_day") or 0
-        v = sludge / flow_mld if flow_mld else 0
-        return v, "kgDS/ML"
+        return sludge / flow_mld if flow_mld else 0, "kgDS/ML"
 
     if criterion == "operational_risk":
         v = rr.operational_score if rr else 50
@@ -239,13 +259,19 @@ def _extract_raw(scenario: Any, criterion: str) -> tuple[float, str]:
         return v, "/100"
 
     if criterion == "regulatory":
-        # Invert risk score — lower risk = higher regulatory confidence
-        v = 100 - (rr.regulatory_score if rr else 50)
+        # regulatory_score is a risk score — lower = better
+        v = rr.regulatory_score if rr else 50
         return v, "/100"
 
-    if criterion == "robustness":
-        # Performance robustness: inverse of overall risk score
-        v = 100 - (rr.overall_score if rr else 50)
+    if criterion == "maturity":
+        # Technology maturity — look up from primary tech code in pathway
+        tp_keys = list(tp.keys()) if tp else []
+        if not tp_keys:
+            # fallback: check treatment_pathway
+            pathway = getattr(scenario, "treatment_pathway", None)
+            tp_keys = (pathway.technology_sequence if pathway else [])
+        tc = tp_keys[0] if tp_keys else ""
+        v = TECH_MATURITY.get(tc, 50)
         return v, "/100"
 
     return 0.0, ""
@@ -267,33 +293,21 @@ class ScoringEngine:
 
     def score(
         self,
-        scenarios: List[Any],
-        weight_profile: WeightProfile = WeightProfile.BALANCED,
-        custom_weights: Optional[Dict[str, float]] = None,
-        compliance_map: Optional[Dict[str, str]] = None,
+        scenarios:       List[Any],
+        weight_profile:  WeightProfile = WeightProfile.BALANCED,
+        custom_weights:  Optional[Dict[str, float]] = None,
+        compliance_map:  Optional[Dict[str, str]]   = None,
     ) -> DecisionResult:
-        """
-        Score a list of ScenarioModel objects.
-
-        Parameters
-        ----------
-        scenarios       : list of ScenarioModel (must have cost_result, carbon_result, risk_result)
-        weight_profile  : which WeightProfile to use
-        custom_weights  : if WeightProfile.CUSTOM, provide weights dict (must sum to ~1.0)
-        compliance_map  : {scenario_name: "Compliant"|"Compliant with intervention"|"Non-compliant"}
-                          if not provided, all scenarios with cost_result are assumed Compliant
-        """
         weights = (
             custom_weights
             if weight_profile == WeightProfile.CUSTOM and custom_weights
             else WEIGHT_PROFILES.get(weight_profile, WEIGHT_PROFILES[WeightProfile.BALANCED])
         )
 
-        # ── Step 1: Classify compliance ──────────────────────────────────────
         compliance = compliance_map or {}
 
-        # ── Step 2: Collect raw values per criterion ──────────────────────────
-        raw: Dict[str, Dict[str, float]] = {c: {} for c in weights}
+        # ── Step 1: Collect raw values ────────────────────────────────────
+        raw:   Dict[str, Dict[str, float]] = {c: {} for c in weights}
         units: Dict[str, str] = {}
 
         for s in scenarios:
@@ -305,29 +319,40 @@ class ScoringEngine:
                 raw[criterion][name] = val
                 units[criterion] = unit
 
-        # ── Step 3: Normalise each criterion 0–100 ───────────────────────────
+        # ── Step 2: Normalise 0-100 with minimum-spread dampening ─────────
         normalised: Dict[str, Dict[str, float]] = {}
+        tied_criteria: List[str] = []
+
         for criterion, values in raw.items():
             if not values:
                 normalised[criterion] = {}
                 continue
-            lo  = min(values.values())
-            hi  = max(values.values())
-            rng = hi - lo
+            lo      = min(values.values())
+            hi      = max(values.values())
+            rng     = hi - lo
+            midpt   = (lo + hi) / 2 if (lo + hi) > 0 else 1.0
+            # Minimum meaningful spread: 15% of midpoint value
+            # Below this threshold the difference is within concept-stage noise
+            min_spread = MIN_SPREAD_FRACTION * midpt
             lower_better = CRITERION_LOWER_IS_BETTER.get(criterion, True)
             norm = {}
-            for name, v in values.items():
-                if rng < 1e-9:
-                    norm[name] = 100.0   # all equal → all score 100
-                elif lower_better:
-                    norm[name] = 100.0 * (1 - (v - lo) / rng)   # invert: lower=100
-                else:
-                    norm[name] = 100.0 * (v - lo) / rng          # higher=100
+
+            if rng < max(1e-9, min_spread):
+                # Spread too small — treat as tied, all score 100
+                for name in values:
+                    norm[name] = 100.0
+                if len(values) > 1:
+                    tied_criteria.append(criterion)
+            else:
+                for name, v in values.items():
+                    if lower_better:
+                        norm[name] = 100.0 * (1 - (v - lo) / rng)
+                    else:
+                        norm[name] = 100.0 * (v - lo) / rng
             normalised[criterion] = norm
 
-        # ── Step 4: Build ScoredOptions ──────────────────────────────────────
-        eligible   = []
-        ineligible = []
+        # ── Step 3: Build ScoredOptions ───────────────────────────────────
+        eligible, ineligible = [], []
 
         for s in scenarios:
             if not getattr(s, "cost_result", None):
@@ -353,6 +378,7 @@ class ScoringEngine:
                     weight=w,
                     weighted_score=round(ws, 1),
                     lower_is_better=CRITERION_LOWER_IS_BETTER.get(criterion, True),
+                    tied=criterion in tied_criteria,
                 )
 
             opt = ScoredOption(
@@ -363,27 +389,27 @@ class ScoringEngine:
                 criterion_scores=crit_scores,
                 excluded_reason="" if is_ok else f"Excluded: {status}",
             )
+            (eligible if is_ok else ineligible).append(opt)
 
-            if is_ok:
-                eligible.append(opt)
-            else:
-                ineligible.append(opt)
-
-        # ── Step 5: Rank eligible options ─────────────────────────────────────
+        # ── Step 4: Rank eligible ─────────────────────────────────────────
         eligible.sort(key=lambda o: o.total_score, reverse=True)
         for i, opt in enumerate(eligible):
             opt.rank = i + 1
 
-        preferred  = eligible[0] if eligible else None
-        runner_up  = eligible[1] if len(eligible) > 1 else None
-        close      = (
-            abs(preferred.total_score - runner_up.total_score) <= 5.0
+        preferred = eligible[0] if eligible else None
+        runner_up = eligible[1] if len(eligible) > 1 else None
+
+        # Close-decision threshold: 15% of winning score (not a fixed 5 points)
+        # This scales with the magnitude of the score and reflects concept-stage uncertainty.
+        close_threshold = (preferred.total_score * 0.15) if preferred else 5.0
+        close = (
+            abs(preferred.total_score - runner_up.total_score) <= close_threshold
             if preferred and runner_up else False
         )
 
-        # ── Step 6: Recommendation narrative ──────────────────────────────────
+        # ── Step 5: Build narrative ───────────────────────────────────────
         recommendation, trade_off, rationale = self._build_narrative(
-            preferred, runner_up, eligible, close, weights
+            preferred, runner_up, eligible, close, weights, tied_criteria
         )
 
         return DecisionResult(
@@ -394,21 +420,24 @@ class ScoringEngine:
             runner_up=runner_up,
             excluded=ineligible,
             close_decision=close,
+            close_decision_threshold=round(close_threshold, 1),
             recommendation=recommendation,
             trade_off=trade_off,
             rationale=rationale,
+            tied_criteria=tied_criteria,
         )
 
-    # ── Narrative builder ────────────────────────────────────────────────────
+    # ── Narrative builder ────────────────────────────────────────────────
 
     def _build_narrative(
         self,
-        preferred:  Optional[ScoredOption],
-        runner_up:  Optional[ScoredOption],
-        eligible:   List[ScoredOption],
-        close:      bool,
-        weights:    Dict[str, float],
-    ) -> tuple[str, str, List[str]]:
+        preferred:      Optional[ScoredOption],
+        runner_up:      Optional[ScoredOption],
+        eligible:       List[ScoredOption],
+        close:          bool,
+        weights:        Dict[str, float],
+        tied_criteria:  List[str],
+    ) -> Tuple[str, str, List[str]]:
 
         if not preferred:
             return (
@@ -419,69 +448,97 @@ class ScoringEngine:
 
         pname = preferred.scenario_name
 
-        # What did the preferred option win on?
+        # ── Rationale: rank by MARGIN over runner-up, not by weighted score ──
+        # This prevents a minor cost advantage from appearing as the "main reason"
         rationale = []
-        # Find criteria where preferred scores highest in the weighted contribution
-        sorted_criteria = sorted(
-            preferred.criterion_scores.values(),
-            key=lambda c: c.weighted_score, reverse=True
-        )
-        for cs in sorted_criteria[:3]:   # top 3 contributing criteria
-            if cs.weighted_score > 3.0:
+        if runner_up:
+            advantages = []
+            for crit, cs in preferred.criterion_scores.items():
+                if crit in tied_criteria:
+                    continue
+                ru_cs = runner_up.criterion_scores.get(crit)
+                if ru_cs is None:
+                    continue
+                margin = cs.normalised - ru_cs.normalised  # positive = preferred is better
+                if margin > 15:   # only report where advantage is material (>15 normalised pts)
+                    advantages.append((margin, cs))
+            advantages.sort(key=lambda x: x[0], reverse=True)
+            for margin, cs in advantages[:3]:
                 if cs.lower_is_better:
                     rationale.append(
-                        f"Lowest {cs.label.lower()} "
-                        f"({cs.raw_value:.1f} {cs.raw_unit}) — "
-                        f"score {cs.normalised:.0f}/100 (weight {cs.weight*100:.0f}%)"
+                        f"Lower {cs.label.lower()}: {cs.raw_value:.1f} {cs.raw_unit} "
+                        f"vs {runner_up.criterion_scores[cs.criterion].raw_value:.1f} {cs.raw_unit} "
+                        f"({margin:.0f}-point normalised advantage, weight {cs.weight*100:.0f}%)"
                     )
                 else:
                     rationale.append(
-                        f"Highest {cs.label.lower()} "
-                        f"({cs.raw_value:.0f}/100) — "
-                        f"score {cs.normalised:.0f}/100 (weight {cs.weight*100:.0f}%)"
+                        f"Higher {cs.label.lower()}: {cs.raw_value:.0f}/100 "
+                        f"vs {runner_up.criterion_scores[cs.criterion].raw_value:.0f}/100 "
+                        f"({margin:.0f}-point normalised advantage, weight {cs.weight*100:.0f}%)"
                     )
 
+        # Note tied criteria
+        active_tied = [CRITERION_LABELS.get(c, c) for c in tied_criteria if weights.get(c, 0) > 0]
+        if active_tied:
+            rationale.append(
+                f"Note: the following criteria scored identically (difference within "
+                f"concept-stage noise, <{int(MIN_SPREAD_FRACTION*100)}% relative spread): "
+                f"{', '.join(active_tied)}"
+            )
+
+        # ── Main recommendation sentence ─────────────────────────────────
         if close and runner_up:
+            gap = preferred.total_score - runner_up.total_score
             recommendation = (
                 f"Close decision: {pname} is marginally preferred "
-                f"({preferred.total_score:.0f} vs {runner_up.total_score:.0f} points). "
-                f"Final selection depends on utility risk appetite and site-specific conditions."
+                f"({preferred.total_score:.0f} vs {runner_up.total_score:.0f} points, "
+                f"gap {gap:.1f} — within close-decision threshold of "
+                f"{self._fmt_threshold(preferred)}). "
+                "Final selection depends on utility risk appetite and site-specific conditions. "
+                "Do not lock in technology based on score alone."
             )
             trade_off = (
-                f"{runner_up.scenario_name} remains a viable alternative — "
-                f"the score difference is within concept-stage uncertainty. "
-                f"Recommend parallel concept design validation before technology lock-in."
+                f"{runner_up.scenario_name} is a valid alternative — "
+                "the score difference does not justify excluding it at concept stage. "
+                "Recommend parallel design development before final technology selection."
             )
         elif runner_up:
             gap = preferred.total_score - runner_up.total_score
             recommendation = (
-                f"{pname} is the preferred option "
-                f"({preferred.total_score:.0f}/100 weighted score, "
-                f"{gap:.0f} points ahead of {runner_up.scenario_name})."
+                f"{pname} is the preferred option under the selected weight profile "
+                f"({preferred.total_score:.0f}/100, {gap:.0f} points ahead of "
+                f"{runner_up.scenario_name})."
             )
-            # Trade-off: where does the runner-up score better?
-            runner_advantages = [
-                cs.label
-                for crit, cs in runner_up.criterion_scores.items()
-                if cs.normalised > preferred.criterion_scores.get(crit, cs).normalised + 10
-            ]
+            # Trade-off: where does runner-up score materially better?
+            runner_advantages = []
+            for crit, cs in runner_up.criterion_scores.items():
+                if crit in tied_criteria:
+                    continue
+                pref_cs = preferred.criterion_scores.get(crit)
+                if pref_cs and cs.normalised > pref_cs.normalised + 15:
+                    runner_advantages.append(cs.label)
             if runner_advantages:
                 trade_off = (
                     f"Selecting {pname} means accepting lower performance on: "
                     f"{', '.join(runner_advantages[:3])}. "
-                    f"{runner_up.scenario_name} scores higher on these criteria."
+                    f"{runner_up.scenario_name} scores materially higher on these criteria "
+                    f"and should be preferred if they are prioritised by the utility."
                 )
             else:
                 trade_off = (
-                    f"{pname} outperforms on all major criteria under the selected weight profile. "
-                    f"Consider sensitivity testing with alternative weight profiles."
+                    f"{pname} outperforms on all active criteria under the selected weight profile. "
+                    "Sensitivity test with alternative profiles is recommended before finalising."
                 )
         else:
             recommendation = (
-                f"{pname} is the only compliant option and is recommended by default."
+                f"{pname} is the only compliant option and is recommended by default. "
+                "No genuine comparison is available — add alternative scenarios before finalising."
             )
             trade_off = "No alternative compliant option available for comparison."
 
         return recommendation, trade_off, rationale
 
-
+    @staticmethod
+    def _fmt_threshold(preferred: ScoredOption) -> str:
+        t = preferred.total_score * 0.15
+        return f"{t:.1f} points"

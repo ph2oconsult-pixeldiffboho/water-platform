@@ -78,7 +78,7 @@ def run_scoring_qa(result: Any, compliance_map: Dict[str, str]) -> ScoringQAResu
                     f"Q3 FAIL — Criterion '{crit}' missing for scenario "
                     f"'{opt.scenario_name}'. All criteria must be populated."
                 )
-            elif cs.raw_value == 0.0 and crit not in ("regulatory", "robustness"):
+            elif cs.raw_value == 0.0 and crit not in ("regulatory", "maturity"):
                 # Zero raw values are suspicious for cost/energy/carbon criteria
                 pass  # Don't fail — zero could be valid (e.g., no sludge)
 
