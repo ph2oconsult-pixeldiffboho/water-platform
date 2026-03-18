@@ -94,3 +94,69 @@ def run(decision: Any, scenarios: List[Any]) -> QAResult:
               rec="Add CAPEX, OPEX, delivery, and regulatory trade-offs for both pathways")
 
     return QAResult(findings=findings)
+
+
+def run_guidance_check(decision) -> "QAResult":
+    """
+    D5 — Conditional decision guidance exists.
+    The decision section must tell the reader WHEN to choose each option,
+    not just list trade-offs. Avoids the neutral cop-out.
+    """
+    from core.qa.qa_model import QAResult, QAFinding, Severity
+    findings = []
+
+    if decision is None:
+        return QAResult()
+
+    conclusion = getattr(decision, "conclusion", "") or ""
+    trade_offs = " ".join(getattr(decision, "trade_offs", []) or [])
+    rec_approach = getattr(decision, "recommended_approach", []) or []
+    rec_text = " ".join(rec_approach)
+
+    # Check for conditional language ("if", "when", "where", "→")
+    conditional_words = ["if ", "when ", "where ", "prefer", "→", "lowest capex",
+                         "lowest opex", "lowest risk", "footprint"]
+    has_conditional = any(w in (conclusion + trade_offs + rec_text).lower()
+                          for w in conditional_words)
+
+    # Check for neutral cop-out phrases
+    cop_out_phrases = [
+        "depends on site-specific factors",
+        "subject to further investigation",
+        "requires further assessment",
+        "cannot be determined at this stage",
+    ]
+    has_cop_out = any(p in (conclusion + trade_offs).lower() for p in cop_out_phrases)
+
+    if not has_conditional:
+        findings.append(QAFinding(
+            code="D5", category="Decision", severity=Severity.WARN,
+            message=(
+                "Decision framework lacks conditional guidance. "
+                "The report should state which option is preferred "
+                "under specific conditions (e.g. 'if footprint is constrained → AGS; "
+                "if lowest delivery risk → BNR')."
+            ),
+            recommendation="Add 'if X then Y' conditional statements to the recommendation "
+                           "section so the reader can apply the analysis to their specific context."
+        ))
+
+    if has_cop_out:
+        findings.append(QAFinding(
+            code="D5", category="Decision", severity=Severity.WARN,
+            message=(
+                "Decision framework contains neutral cop-out language. "
+                "Replace 'depends on site-specific factors' with specific "
+                "conditional guidance tied to measurable criteria."
+            ),
+            recommendation="Replace vague language with: 'Choose X if [criterion]; "
+                           "Choose Y if [criterion]'"
+        ))
+
+    if has_conditional and not has_cop_out:
+        findings.append(QAFinding(
+            code="D5", category="Decision", severity=Severity.INFO,
+            message="Decision framework includes conditional guidance ✅"
+        ))
+
+    return QAResult(findings=findings)

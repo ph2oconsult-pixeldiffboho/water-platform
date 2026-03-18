@@ -103,3 +103,95 @@ def run(scenario, tech_code: str = None) -> QAResult:
               rec="Check electricity, sludge disposal, and labour cost items")
 
     return QAResult(findings=findings)
+
+
+def run_directional(scenarios: list) -> "QAResult":
+    """
+    E4: Energy breakdown explained when >15% difference between scenarios.
+    E5: Higher load must produce higher O2 and energy (directional sanity).
+    Cross-scenario checks — call with a list of ScenarioModel objects.
+    """
+    from core.qa.qa_model import QAResult, QAFinding, Severity
+
+    findings = []
+
+    def f(code, sev, msg, scenario=None, metric=None, expected=None, actual=None, rec=None):
+        findings.append(QAFinding(
+            code=code, category="Energy", severity=sev, message=msg,
+            scenario=scenario, metric=metric, expected=expected, actual=actual,
+            recommendation=rec,
+        ))
+
+    # Build per-scenario data
+    data = []
+    for sc in scenarios:
+        tp_all = (sc.domain_specific_outputs or {}).get("technology_performance", {})
+        eng    = (sc.domain_specific_outputs or {}).get("engineering_summary", {})
+        tp_code = (sc.treatment_pathway.technology_sequence[0]
+                   if sc.treatment_pathway and sc.treatment_pathway.technology_sequence else None)
+        tp = tp_all.get(tp_code, {}) if tp_code else {}
+        di = sc.domain_inputs or {}
+        data.append({
+            "name":       sc.scenario_name,
+            "kwh_ml":     (eng.get("specific_energy_kwh_kl") or 0) * 1000,
+            "o2":         tp.get("o2_demand_kg_day") or 0,
+            "aer_kwh":    tp.get("aeration_energy_kwh_day") or 0,
+            "total_kwh":  tp.get("net_energy_kwh_day") or 0,
+            "bod_load":   ((di.get("influent_bod_mg_l") or 0) * (di.get("design_flow_mld") or 1)),
+            "pumping_note": any(
+                "RAS" in (n or "") or "MLR" in (n or "") or "decant" in (n or "")
+                for n in tp.get("_notes", {}).get("assumptions", [])
+            ),
+        })
+
+    # E4: if two scenarios differ >15% in total energy, aeration breakdown must be present
+    for i, a in enumerate(data):
+        for b in data[i+1:]:
+            if a["kwh_ml"] > 0 and b["kwh_ml"] > 0:
+                delta = abs(a["kwh_ml"] - b["kwh_ml"]) / max(a["kwh_ml"], b["kwh_ml"])
+                if delta > 0.15:
+                    # Check if aeration breakdown exists for both
+                    a_has_breakdown = a["aer_kwh"] > 0
+                    b_has_breakdown = b["aer_kwh"] > 0
+                    if not (a_has_breakdown and b_has_breakdown):
+                        f("E4", Severity.WARN,
+                          f"Energy difference {delta*100:.0f}% between "
+                          f"{a['name']} ({a['kwh_ml']:.0f} kWh/ML) and "
+                          f"{b['name']} ({b['kwh_ml']:.0f} kWh/ML) "
+                          "but aeration vs pumping breakdown is not available.",
+                          metric="specific_energy_kwh_kl",
+                          rec="Ensure aeration_energy_kwh_day is populated in technology outputs")
+                    else:
+                        # Breakdown exists — check pumping difference explains energy diff
+                        pump_a = a["total_kwh"] - a["aer_kwh"]
+                        pump_b = b["total_kwh"] - b["aer_kwh"]
+                        if not (a["pumping_note"] or b["pumping_note"]):
+                            f("E4", Severity.INFO,
+                              f"{a['name']} vs {b['name']}: "
+                              f"aeration {a['aer_kwh']:.0f} vs {b['aer_kwh']:.0f} kWh/d, "
+                              f"ancillary/pumping {pump_a:.0f} vs {pump_b:.0f} kWh/d. "
+                              "Energy difference explained by recycle pumping savings "
+                              "(no RAS/MLR in SBR process).",
+                              metric="aeration_energy_kwh_day")
+
+    # E5: directional — higher BOD load must not give lower energy
+    if len(data) >= 2:
+        sorted_by_load = sorted([d for d in data if d["bod_load"] > 0],
+                                  key=lambda x: x["bod_load"])
+        for i in range(len(sorted_by_load) - 1):
+            lo = sorted_by_load[i]
+            hi = sorted_by_load[i+1]
+            load_diff = (hi["bod_load"] - lo["bod_load"]) / max(lo["bod_load"], 1)
+            if load_diff > 0.20:  # >20% load difference
+                if hi["kwh_ml"] < lo["kwh_ml"] * 0.90:  # energy drops >10% despite 20% more load
+                    f("E5", Severity.WARN,
+                      f"Directional check: {hi['name']} has {load_diff*100:.0f}% higher BOD load "
+                      f"than {lo['name']} but {(lo['kwh_ml']-hi['kwh_ml'])/lo['kwh_ml']*100:.0f}% "
+                      "lower energy. Verify energy calculation.",
+                      metric="specific_energy_kwh_kl",
+                      expected="Higher load → higher or equal energy",
+                      actual=f"{lo['name']}={lo['kwh_ml']:.0f}  {hi['name']}={hi['kwh_ml']:.0f} kWh/ML",
+                      rec="Check if different process type (SBR vs CAS) explains difference; "
+                          "if same technology, investigate")
+
+    return QAResult(findings=findings)

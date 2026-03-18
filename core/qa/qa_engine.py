@@ -23,6 +23,7 @@ from core.qa.rules import (
     decision_rules,
     report_rules,
     differentiation_rules,
+    peak_flow_rules,
 )
 
 
@@ -59,6 +60,7 @@ def validate_scenario(
     result = result.merge(compliance_rules.run(scenario, tech_code))
     result = result.merge(cost_rules.run(scenario))
     result = result.merge(carbon_rules.run(scenario, tech_code))
+    result = result.merge(peak_flow_rules.run(scenario, tech_code))
     return result
 
 
@@ -79,15 +81,20 @@ def validate_project(
                      if tp and getattr(tp, "technology_sequence", None) else None)
         result = result.merge(validate_scenario(sc, tech_code))
 
-    # Technology differentiation checks (T1-T4)
+    # Technology differentiation checks (T1-T4) + T5 separation rule
     result = result.merge(differentiation_rules.run(scenarios))
+    result = result.merge(differentiation_rules.run_separation(scenarios))
 
     # Decision logic checks
     if decision:
         result = result.merge(decision_rules.run(decision, scenarios))
+        result = result.merge(decision_rules.run_guidance_check(decision))
 
-    # Cross-scenario energy directionality
+    # Cross-scenario energy directionality + E4/E5
     result = result.merge(_cross_scenario_checks(scenarios))
+    result = result.merge(mass_energy_rules.run_directional(scenarios))
+    # K5: CAPEX vs footprint
+    result = result.merge(cost_rules.run_cross_scenario(scenarios))
 
     return result
 

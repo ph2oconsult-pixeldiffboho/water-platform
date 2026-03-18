@@ -86,3 +86,70 @@ def run(scenario) -> QAResult:
                   "or $/t applied to kg values")
 
     return QAResult(findings=findings)
+
+
+def run_cross_scenario(scenarios: list) -> "QAResult":
+    """
+    K5 — CAPEX vs footprint logic (cross-scenario).
+    A smaller-footprint technology should not have significantly higher
+    civil CAPEX without an explicit reason (specialist equipment, membranes, etc.).
+    """
+    from core.qa.qa_model import QAResult, QAFinding, Severity
+    findings = []
+
+    data = []
+    for sc in scenarios:
+        cr = sc.cost_result
+        tp = sc.treatment_pathway
+        tc = tp.technology_sequence[0] if tp and tp.technology_sequence else None
+        perf = (sc.domain_specific_outputs or {}).get("technology_performance", {}).get(tc or "", {})
+        from domains.wastewater.technology_signatures import get_signature
+        sig = get_signature(tc) if tc else None
+        data.append({
+            "name":        sc.scenario_name,
+            "capex":       cr.capex_total if cr else 0,
+            "footprint":   perf.get("footprint_m2") or 0,
+            "has_membranes": tc in ("bnr_mbr", "adv_reuse") if tc else False,
+            "has_specialist": tc in ("mabr_bnr", "granular_sludge") if tc else False,
+        })
+
+    for i, a in enumerate(data):
+        for b in data[i+1:]:
+            if a["footprint"] > 0 and b["footprint"] > 0 and a["capex"] > 0 and b["capex"] > 0:
+                # B has smaller footprint but higher capex
+                if b["footprint"] < a["footprint"] * 0.85:   # B footprint ≥15% smaller
+                    if b["capex"] > a["capex"] * 1.20:        # B capex >20% higher
+                        # This is ACCEPTABLE if B has membranes or specialist equipment
+                        if b["has_membranes"] or b["has_specialist"]:
+                            findings.append(QAFinding(
+                                code="K5", category="Cost", severity=Severity.INFO,
+                                message=(
+                                    f"{b['name']}: smaller footprint ({b['footprint']:.0f} m²) "
+                                    f"but higher CAPEX (${b['capex']/1e6:.1f}M vs "
+                                    f"${a['capex']/1e6:.1f}M for {a['name']}). "
+                                    "Expected: specialist equipment (membranes / proprietary systems) "
+                                    "offset civil savings."
+                                ),
+                                recommendation="Confirm CAPEX breakdown shows specialist "
+                                               "equipment as the driver of higher cost."
+                            ))
+                        else:
+                            findings.append(QAFinding(
+                                code="K5", category="Cost", severity=Severity.WARN,
+                                message=(
+                                    f"{b['name']}: footprint {b['footprint']:.0f} m² "
+                                    f"vs {a['name']} {a['footprint']:.0f} m² "
+                                    f"(−{(a['footprint']-b['footprint'])/a['footprint']*100:.0f}%) "
+                                    f"but CAPEX is ${b['capex']/1e6:.1f}M vs "
+                                    f"${a['capex']/1e6:.1f}M "
+                                    f"(+{(b['capex']-a['capex'])/a['capex']*100:.0f}%). "
+                                    "Smaller footprint should not produce higher civil CAPEX "
+                                    "without specialist equipment justification."
+                                ),
+                                metric="capex_total",
+                                expected="CAPEX decreases with footprint unless specialist equipment",
+                                actual=f"CAPEX higher despite smaller footprint",
+                                recommendation="Review CAPEX item unit rates — check no double-counting"
+                            ))
+
+    return QAResult(findings=findings)

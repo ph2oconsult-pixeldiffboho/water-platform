@@ -8,4 +8,5 @@ from core.qa.rules import (
     decision_rules,
     report_rules,
     differentiation_rules,
+    peak_flow_rules,
 )

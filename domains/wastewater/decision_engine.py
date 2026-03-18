@@ -206,6 +206,8 @@ class ScenarioDecision:
     profiles:           Dict[str, TechnologyDecisionProfile]
     strategic_insight:  str = ""   # process intensification vs robustness framing
     recommended_approach: List[str] = field(default_factory=list)  # parallel eval steps
+    conditional_guidance: List[str] = field(default_factory=list)  # if X then Y decision logic
+    fit_for_purpose_flags: List[str] = field(default_factory=list) # site condition flags
 
 
 # ── Technology knowledge base ─────────────────────────────────────────────────
@@ -1237,6 +1239,187 @@ def _build_client_framing(
     )
 
 
+
+def _build_conditional_guidance(
+    profiles: dict,
+    scenarios: list,
+) -> list:
+    """
+    Build 'if X then Y' conditional decision guidance.
+    profiles: Dict[str, TechnologyDecisionProfile] keyed by scenario_name
+    """
+    if len(profiles) < 2:
+        return []
+
+    guidance = []
+
+    # Extract metrics from profile dict
+    metrics = {}
+    for scen_name, p in profiles.items():
+        if not hasattr(p, "capex_m"):
+            continue
+        metrics[scen_name] = {
+            "label":    getattr(p, "label", scen_name),
+            "capex":    getattr(p, "capex_m", 0),
+            "capex_m":  getattr(p, "capex_m", 0),
+            "opex":     getattr(p, "opex_k", 0),
+            "lcc":      getattr(p, "lcc_k", 0),
+            "energy":   getattr(p, "kwh_ml", 0),
+            "sludge":   getattr(p, "sludge", 0),
+            "footprint": getattr(p, "footprint_m2", 0),
+            "risk":     getattr(p, "risk_score", 0),
+        }
+
+    if not metrics:
+        return []
+
+    def winner(key, want_min=True):
+        vals = {c: metrics[c][key] for c in metrics if metrics[c].get(key, 0) > 0}
+        if not vals: return None, None
+        best = min(vals, key=vals.get) if want_min else max(vals, key=vals.get)
+        return metrics[best]["label"], vals[best]
+
+    low_capex_label, low_capex_val     = winner("capex_m", True)
+    low_opex_label, low_opex_val       = winner("opex", True)
+    low_lcc_label, low_lcc_val         = winner("lcc", True)
+    low_risk_label, _                  = winner("risk", True)
+    low_energy_label, _                = winner("energy", True)
+    small_fp_label, _                  = winner("footprint", True)
+    low_sludge_label, _                = winner("sludge", True)
+
+    # Build guidance statements
+    if low_capex_label:
+        guidance.append(
+            f"→ Lowest capital cost: **{low_capex_label}** "
+            f"(${low_capex_val:.1f}M) — preferred where capital budget is the "
+            "primary constraint or upgrade is funded from reserves."
+        )
+    if low_opex_label:
+        guidance.append(
+            f"→ Lowest operating cost: **{low_opex_label}** "
+            f"(${low_opex_val:.0f}k/yr) — preferred for sites with high electricity "
+            "prices, limited operational budget, or long asset life focus."
+        )
+    if low_lcc_label and low_lcc_label != low_capex_label:
+        guidance.append(
+            f"→ Lowest lifecycle cost: **{low_lcc_label}** "
+            f"(${low_lcc_val:.0f}k/yr annualised) — preferred when total cost of "
+            "ownership over 30 years is the primary selection criterion."
+        )
+    if low_risk_label:
+        guidance.append(
+            f"→ Lowest delivery and operational risk: **{low_risk_label}** — "
+            "preferred where programme certainty, operational simplicity, or "
+            "regulatory track record is the primary concern."
+        )
+    if small_fp_label:
+        guidance.append(
+            f"→ Smallest process footprint: **{small_fp_label}** — "
+            "preferred where available land is constrained, retrofit within "
+            "existing structures is required, or urban development encroaches."
+        )
+    if low_energy_label:
+        guidance.append(
+            f"→ Lowest energy consumption: **{low_energy_label}** — "
+            "preferred for sites with high electricity cost exposure, "
+            "net-zero carbon targets, or demand-charge billing."
+        )
+    if low_sludge_label:
+        guidance.append(
+            f"→ Lowest sludge production: **{low_sludge_label}** — "
+            "preferred where biosolids disposal cost is high, "
+            "beneficial reuse land is limited, or thermal processing is not available."
+        )
+
+    # Dominant option (wins ≥ 3 dimensions)
+    dimension_winners = [
+        low_capex_label, low_opex_label, low_lcc_label,
+        low_risk_label, low_energy_label, small_fp_label, low_sludge_label
+    ]
+    win_counts = {}
+    for w in dimension_winners:
+        if w:
+            win_counts[w] = win_counts.get(w, 0) + 1
+
+    dominant = [label for label, cnt in win_counts.items() if cnt >= 3]
+    if dominant:
+        guidance.append(
+            f"→ Overall preferred option: **{dominant[0]}** — "
+            f"wins {win_counts[dominant[0]]} of {len([w for w in dimension_winners if w])} "
+            "comparison dimensions at this site. "
+            "Recommend as the basis for detailed feasibility."
+        )
+    elif len(win_counts) > 1:
+        guidance.append(
+            "→ No single option dominates all dimensions. "
+            "Select based on the site-specific priority above. "
+            "A structured multi-criteria weighting is recommended for the detailed feasibility stage."
+        )
+
+    return guidance
+
+
+def _build_fit_for_purpose_flags(domain_inputs: dict) -> list:
+    """
+    Generate fit-for-purpose advisory flags based on site inputs.
+    Flags unusual conditions that should influence technology selection.
+    """
+    if not domain_inputs:
+        return []
+    flags = []
+    T = domain_inputs.get("influent_temperature_celsius") or 20.0
+    eff_tn = domain_inputs.get("effluent_tn_mg_l") or 10.0
+    eff_nh4 = domain_inputs.get("effluent_nh4_mg_l") or 1.0
+    eff_tss = domain_inputs.get("effluent_tss_mg_l") or 10.0
+    flow = domain_inputs.get("design_flow_mld") or 10.0
+    cod_tkn = ((domain_inputs.get("influent_cod_mg_l") or 0) /
+               max(domain_inputs.get("influent_tkn_mg_l") or 1, 1))
+
+    if T < 12.0:
+        flags.append(
+            f"❄️ Cold climate ({T:.0f}°C): MABR or IFAS strongly preferred for "
+            "reliable NH₄ compliance. Nereda cold-temperature granule stability "
+            "requires careful monitoring."
+        )
+    elif T < 15.0:
+        flags.append(
+            f"⚠️ Cool climate ({T:.0f}°C): conventional BNR nitrification is "
+            "marginal. Verify SRT adequacy."
+        )
+    if eff_nh4 < 2.0:
+        flags.append(
+            f"🎯 Tight NH₄ target ({eff_nh4:.1f} mg/L): biofilm-augmented options "
+            "(MABR, IFAS) provide insurance for reliable compliance."
+        )
+    if eff_tn < 5.0:
+        flags.append(
+            f"🎯 Tight TN target ({eff_tn:.1f} mg/L): supplemental carbon "
+            "likely required. Evaluate methanol dosing cost."
+        )
+    if eff_tss < 5.0:
+        flags.append(
+            f"💧 Reuse-grade effluent (TSS {eff_tss:.1f} mg/L): MBR is the "
+            "lowest-risk path to consistent solids barrier."
+        )
+    if cod_tkn > 0 and cod_tkn < 6.0:
+        flags.append(
+            f"⚠️ Carbon-limited site (COD:TKN = {cod_tkn:.1f}): denitrification "
+            "capacity constrained. BNR with supplemental carbon or IFAS preferred."
+        )
+    if flow < 3.0:
+        flags.append(
+            f"📐 Small plant ({flow:.1f} MLD): labour cost dominates OPEX. "
+            "Technology energy savings are relatively smaller at this scale."
+        )
+    elif flow > 30.0:
+        flags.append(
+            f"📐 Large plant ({flow:.0f} MLD): energy and sludge disposal costs "
+            "become dominant. AGS or MABR energy savings materially affect "
+            "lifecycle cost at this scale."
+        )
+    return flags
+
+
 def evaluate_scenario(
     scenarios: list,
     inputs: Any = None,
@@ -1664,4 +1847,11 @@ def evaluate_scenario(
         profiles=profiles,
         strategic_insight=strategic_insight,
         recommended_approach=recommended_approach,
+        conditional_guidance=_build_conditional_guidance(profiles, scenarios),
+        fit_for_purpose_flags=_build_fit_for_purpose_flags(
+            # Use inputs param if provided, else first scenario domain_inputs
+            ({k: getattr(inputs, k) for k in inputs.__dataclass_fields__
+              if not k.startswith('_')} if inputs and hasattr(inputs, '__dataclass_fields__')
+             else (valid[0].domain_inputs or {} if valid else {}))
+        ),
     )

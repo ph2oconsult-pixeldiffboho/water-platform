@@ -189,3 +189,75 @@ def run(scenarios: List[Any]) -> QAResult:
               rec=f"Check MLSS assumption for {sig.name} — default should be {lo:.0f}–{hi:.0f} mg/L")
 
     return QAResult(findings=findings)
+
+
+def run_separation(scenarios: list) -> "QAResult":
+    """
+    T5 — Scenario separation rule (checklist item 10).
+    If ALL of CAPEX, OPEX, energy, sludge, and footprint are within 5%
+    of each other across all scenarios → FAIL (not a real comparison).
+    """
+    from core.qa.qa_model import QAResult, QAFinding, Severity
+
+    findings = []
+    if len(scenarios) < 2:
+        return QAResult()
+
+    metrics = []
+    for sc in scenarios:
+        tp_all = (sc.domain_specific_outputs or {}).get("technology_performance", {})
+        eng    = (sc.domain_specific_outputs or {}).get("engineering_summary", {})
+        tp = sc.treatment_pathway
+        tc = tp.technology_sequence[0] if tp and tp.technology_sequence else None
+        perf = tp_all.get(tc, {}) if tc else {}
+        cr = sc.cost_result
+        metrics.append({
+            "name":      sc.scenario_name,
+            "capex":     cr.capex_total if cr else 0,
+            "opex":      cr.opex_annual if cr else 0,
+            "energy":    (eng.get("specific_energy_kwh_kl") or 0) * 1000,
+            "sludge":    perf.get("sludge_production_kgds_day") or 0,
+            "footprint": perf.get("footprint_m2") or 0,
+        })
+
+    # Check if ALL key metrics are within 5% across ALL pairs
+    keys = ["capex", "opex", "energy", "sludge", "footprint"]
+    key_max_deltas = {}
+    for key in keys:
+        vals = [m[key] for m in metrics if m[key] > 0]
+        if len(vals) >= 2:
+            max_delta = (max(vals) - min(vals)) / max(max(vals), 1)
+            key_max_deltas[key] = max_delta
+
+    # If ALL metrics <5% different → FAIL
+    all_too_similar = all(d < 0.05 for d in key_max_deltas.values()) and len(key_max_deltas) >= 3
+
+    if all_too_similar:
+        findings.append(QAFinding(
+            code="T5", category="Differentiation", severity=Severity.FAIL,
+            message=(
+                "All scenarios produce nearly identical outputs — this is not a meaningful "
+                "comparison. CAPEX, OPEX, energy, sludge and footprint all differ by less "
+                "than 5%.\n"
+                "Deltas: " + ", ".join(f"{k}={v*100:.1f}%" for k, v in key_max_deltas.items()),
+            ),
+            metric="all",
+            expected="At least one metric differs by >10% between scenarios",
+            actual="All metrics within 5%",
+            recommendation="Verify technology modules are producing distinct outputs. "
+                           "Check MLSS, Yobs, clarifier sizing, and recycle assumptions."
+        ))
+    else:
+        # Informational — show which metrics are well-differentiated
+        well_diff = [k for k, v in key_max_deltas.items() if v > 0.10]
+        if well_diff:
+            findings.append(QAFinding(
+                code="T5", category="Differentiation", severity=Severity.INFO,
+                message=(
+                    f"Scenario separation check ✅ — meaningful differences in: "
+                    f"{', '.join(well_diff)}. "
+                    "Deltas: " + ", ".join(f"{k}={v*100:.0f}%" for k, v in key_max_deltas.items())
+                ),
+            ))
+
+    return QAResult(findings=findings)
