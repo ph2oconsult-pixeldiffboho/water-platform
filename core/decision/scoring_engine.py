@@ -81,6 +81,17 @@ class WeightProfile(Enum):
 WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
 
     WeightProfile.BALANCED: {
+        # Weighting rationale:
+        # - maturity (10%) and implementation_risk (10%) are partially correlated
+        #   (more mature = easier to implement) but not identical: MABR and IFAS share
+        #   implementation_risk=25 while their maturity differs (45 vs 70). The overlap
+        #   is intentional — both perspectives matter: "is this tech proven?" (maturity)
+        #   and "how hard is this project to deliver?" (implementation_risk). Combined
+        #   weight of 20% reflects that delivery risk is a key utility concern.
+        # - LCC (20%) + CAPEX (10%) = 30% cost. CAPEX is kept as a separate signal
+        #   because utilities face real budget gates even when LCC favours a higher-
+        #   CAPEX option. The two criteria are not identical: LCC rewards low OPEX
+        #   technologies; CAPEX rewards low upfront cost regardless of OPEX.
         "lcc":                  0.20,   # primary cost signal
         "capex":                0.10,   # upfront budget signal (not co-equal with LCC)
         "footprint":            0.10,
@@ -117,8 +128,12 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
     },
 
     WeightProfile.BUDGET: {
-        "lcc":                  0.20,
-        "capex":                0.25,
+        # Rationale: even for budget-constrained utilities, LCC is the correct
+        # ratepayer cost signal. CAPEX capped at 15% to prevent a single upfront
+        # cost signal dominating at the expense of operational and risk performance.
+        # The additional weight goes to LCC (which already contains annualised CAPEX).
+        "lcc":                  0.30,   # increased: LCC is the right budget metric
+        "capex":                0.15,   # capped from 0.25 — CAPEX is in LCC already
         "footprint":            0.10,
         "carbon":               0.05,
         "sludge":               0.05,
@@ -140,6 +155,15 @@ CRITERION_LABELS: Dict[str, str] = {
     "regulatory":          "Regulatory Risk",
     "maturity":            "Technology Maturity",
 }
+
+# "Compliant with intervention" score cap.
+# A scenario that requires engineering intervention to meet targets
+# receives a maximum score of CWI_SCORE_CAP (0-100).
+# Rationale: the intervention cost and risk are not fully captured in the raw
+# engineering outputs (e.g. methanol dosing cost may be absent if TN target
+# was relaxed to make the technology appear compliant). The cap ensures the
+# option remains visible but cannot rank first purely on pre-intervention costs.
+CWI_SCORE_CAP = 75.0   # CWI options cannot score above this
 
 # Direction: True = lower raw value is better (inverted to score)
 #            False = higher raw value is better
@@ -247,8 +271,13 @@ def _extract_raw(scenario: Any, criterion: str) -> Tuple[float, str]:
         return v, "kgCO2e/kL"
 
     if criterion == "sludge":
+        # Use tDS/yr — total annual volume matters for disposal contracts, site
+        # storage and biosolids management planning. kgDS/ML is already captured
+        # implicitly in OPEX (sludge disposal = $/tDS × tDS/yr).
+        # tDS/yr is the independent signal: site area, truck movements, pathogen class.
         sludge = eng.get("total_sludge_kgds_day") or 0
-        return sludge / flow_mld if flow_mld else 0, "kgDS/ML"
+        tds_yr = sludge * 365.0 / 1000.0
+        return tds_yr, "tDS/yr"
 
     if criterion == "operational_risk":
         v = rr.operational_score if rr else 50
@@ -381,6 +410,11 @@ class ScoringEngine:
                     tied=criterion in tied_criteria,
                 )
 
+            # Apply CWI score cap — intervention required means raw costs
+            # do not reflect full compliance cost; cap prevents misleading ranking
+            if status == "Compliant with intervention" and total > CWI_SCORE_CAP:
+                total = CWI_SCORE_CAP
+
             opt = ScoredOption(
                 scenario_name=name,
                 compliance_status=status,
@@ -510,17 +544,36 @@ class ScoringEngine:
                 f"{runner_up.scenario_name})."
             )
             # Trade-off: where does runner-up score materially better?
+            # Store (criterion_key, label) tuples so raw value lookup works
             runner_advantages = []
             for crit, cs in runner_up.criterion_scores.items():
                 if crit in tied_criteria:
                     continue
                 pref_cs = preferred.criterion_scores.get(crit)
                 if pref_cs and cs.normalised > pref_cs.normalised + 15:
-                    runner_advantages.append(cs.label)
+                    runner_advantages.append((crit, cs.label))
             if runner_advantages:
+                trade_off_parts = []
+                for crit_key, crit_label in runner_advantages[:3]:
+                    pref_cs = preferred.criterion_scores.get(crit_key)
+                    ru_cs   = runner_up.criterion_scores.get(crit_key)
+                    if pref_cs and ru_cs:
+                        unit = pref_cs.raw_unit
+                        if pref_cs.lower_is_better:
+                            trade_off_parts.append(
+                                f"{crit_label} ({pref_cs.raw_value:.1f} vs "
+                                f"{ru_cs.raw_value:.1f} {unit})"
+                            )
+                        else:
+                            trade_off_parts.append(
+                                f"{crit_label} ({pref_cs.raw_value:.0f} vs "
+                                f"{ru_cs.raw_value:.0f} {unit})"
+                            )
+                    else:
+                        trade_off_parts.append(crit_label)
                 trade_off = (
                     f"Selecting {pname} means accepting lower performance on: "
-                    f"{', '.join(runner_advantages[:3])}. "
+                    f"{', '.join(trade_off_parts)}. "
                     f"{runner_up.scenario_name} scores materially higher on these criteria "
                     f"and should be preferred if they are prioritised by the utility."
                 )
