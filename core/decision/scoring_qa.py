@@ -138,6 +138,22 @@ def run_scoring_qa(result: Any, compliance_map: Dict[str, str]) -> ScoringQAResu
             "Consider adding alternative scenarios before finalising."
         )
 
+    # ── W5b: Correlation warnings from engine ────────────────────────────
+    for pair_msg in getattr(result, "correlated_pairs", []):
+        qa.warn(f"W5b — {pair_msg}")
+
+    # ── W5c: Below-uncertainty criteria ──────────────────────────────────
+    below = getattr(result, "below_uncertainty", [])
+    if below:
+        from core.decision.scoring_engine import CRITERION_LABELS
+        below_labels = [CRITERION_LABELS.get(c,c) for c in below]
+        qa.warn(
+            f"W5c — The following criteria have spread < ±40% estimate uncertainty "
+            f"and may not meaningfully discriminate between options: "
+            f"{', '.join(below_labels)}. "
+            "Treat their contribution to the score with caution."
+        )
+
     # ── W5: All excluded ─────────────────────────────────────────────────
     if len(eligible) == 0 and result.excluded:
         qa.warn(

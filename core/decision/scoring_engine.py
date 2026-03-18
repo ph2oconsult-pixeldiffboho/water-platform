@@ -237,6 +237,8 @@ class DecisionResult:
     trade_off:          str                      # what the client accepts
     rationale:          List[str]                # bullet reasons preferred won (by margin)
     tied_criteria:      List[str]                # criteria where spread < threshold
+    correlated_pairs:   List[str] = field(default_factory=list)  # high-correlation warnings
+    below_uncertainty:  List[str] = field(default_factory=list)  # criteria within ±40% noise
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -280,23 +282,21 @@ def _extract_raw(scenario: Any, criterion: str) -> Tuple[float, str]:
         return tds_yr, "tDS/yr"
 
     if criterion == "headroom":
-        # Effluent headroom: average margin below TN and TP targets.
-        # Higher headroom = more buffer against influent variability, seasonal
-        # effects, and future licence tightening. Range 0-100%.
-        # Calculated as mean of (target-actual)/target for TN and TP.
+        # Effluent TN headroom: margin below TN target only.
+        # TN is the operationally critical parameter — it reflects biological
+        # process stability under load variation, temperature, and influent fluctuation.
+        # TP headroom via chemical dosing is a procurement signal, not a robustness signal.
+        # Higher TN headroom = more buffer before licence exceedance.
+        # Range 0-100%. A process achieving TN=5 against TN=10 target scores 50%.
         dinp = getattr(scenario, "domain_inputs", None) or {}
-        tn_target  = dinp.get("effluent_tn_mg_l", 10.0) or 10.0
-        tp_target  = dinp.get("effluent_tp_mg_l",  1.0) or 1.0
+        tn_target = dinp.get("effluent_tn_mg_l", 10.0) or 10.0
         margins = []
         for tech_perf in tp.values():
             tn_actual = tech_perf.get("effluent_tn_mg_l")
-            tp_actual = tech_perf.get("effluent_tp_mg_l")
             if tn_actual is not None and tn_actual < tn_target:
                 margins.append((tn_target - tn_actual) / tn_target * 100)
-            if tp_actual is not None and tp_actual < tp_target:
-                margins.append((tp_target - tp_actual) / tp_target * 100)
-        v = sum(margins) / len(margins) if margins else 0.0
-        return round(v, 1), "% margin"
+        v = margins[0] if margins else 0.0
+        return round(v, 1), "% TN margin"
 
     if criterion == "operational_risk":
         v = rr.operational_score if rr else 50
@@ -399,6 +399,43 @@ class ScoringEngine:
                         norm[name] = 100.0 * (v - lo) / rng
             normalised[criterion] = norm
 
+        # ── Step 2b: Detect correlation and uncertainty issues ──────────
+        # High correlation (r > 0.85): two criteria measuring the same property
+        # Below-uncertainty: spread < 40% of midpoint (within ±40% estimate noise)
+        correlated_pairs: List[str] = []
+        below_uncertainty: List[str] = []
+
+        crit_keys_list = [c for c in weights if raw.get(c)]
+        for i, c1 in enumerate(crit_keys_list):
+            vals1 = list(raw[c1].values())
+            if len(vals1) < 2: continue
+            m1 = sum(vals1)/len(vals1)
+            # Below-uncertainty check: spread < 40% of midpoint
+            lo1, hi1 = min(vals1), max(vals1)
+            mid1 = (lo1+hi1)/2 if (lo1+hi1) > 0 else 1
+            if mid1 > 0 and (hi1-lo1)/mid1 < 0.40 and c1 not in below_uncertainty:
+                below_uncertainty.append(c1)
+            # Correlation check
+            for j, c2 in enumerate(crit_keys_list):
+                if j <= i: continue
+                vals2 = list(raw[c2].values())
+                if len(vals2) < 2: continue
+                m2 = sum(vals2)/len(vals2)
+                num = sum((vals1[k]-m1)*(vals2[k]-m2) for k in range(len(vals1)))
+                d1  = sum((v-m1)**2 for v in vals1)
+                d2  = sum((v-m2)**2 for v in vals2)
+                r_val = num/(d1*d2)**0.5 if d1*d2 > 0 else 0
+                if abs(r_val) > 0.85:
+                    w1 = weights.get(c1,0)
+                    w2 = weights.get(c2,0)
+                    label1 = CRITERION_LABELS.get(c1, c1)
+                    label2 = CRITERION_LABELS.get(c2, c2)
+                    correlated_pairs.append(
+                        f"{label1} × {label2}: r={r_val:+.2f}, "
+                        f"combined weight={(w1+w2)*100:.0f}% — "
+                        "these criteria may measure the same underlying property"
+                    )
+
         # ── Step 3: Build ScoredOptions ───────────────────────────────────
         eligible, ineligible = [], []
 
@@ -492,6 +529,8 @@ class ScoringEngine:
             trade_off=trade_off,
             rationale=rationale,
             tied_criteria=tied_criteria,
+            correlated_pairs=correlated_pairs,
+            below_uncertainty=below_uncertainty,
         )
 
     # ── Narrative builder ────────────────────────────────────────────────
@@ -602,9 +641,13 @@ class ScoringEngine:
                     if pref_cs and ru_cs:
                         unit = pref_cs.raw_unit
                         if pref_cs.lower_is_better:
+                            # Use enough decimals to show actual difference
+                            diff = abs(pref_cs.raw_value - ru_cs.raw_value)
+                            fmt = ".3f" if diff < 0.05 else ".2f" if diff < 0.5 else ".1f"
                             trade_off_parts.append(
-                                f"{crit_label} ({pref_cs.raw_value:.1f} vs "
-                                f"{ru_cs.raw_value:.1f} {unit})"
+                                f"{crit_label} "
+                                f"({pref_cs.raw_value:{fmt}} vs "
+                                f"{ru_cs.raw_value:{fmt}} {unit})"
                             )
                         else:
                             trade_off_parts.append(
