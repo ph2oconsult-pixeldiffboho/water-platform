@@ -533,6 +533,21 @@ class TechnologyResult:
         })
         self.performance_outputs.update(self.performance.additional)
 
+        # ── kWh per kg NH4 removed — total plant energy basis ────────────
+        # Computed here in finalise() so ALL technologies get a consistent
+        # metric using total plant kWh (not aeration-only).
+        # Ref: WEF Energy Conservation in Water and Wastewater Facilities (2010)
+        # Benchmark range: BNR ~7–12, MBR ~12–18, AGS ~7–10 kWh/kg NH4
+        _eff_nh4  = self.performance.effluent_nh4_mg_l or 0.0
+        _inf_nh4  = influent_nh4_mg_l
+        _flow_m3d = design_flow_mld * 1000.0
+        _nh4_removed_kg_d = max(0.001, _flow_m3d * (_inf_nh4 - _eff_nh4) / 1000.0)
+        _total_kwh = self.energy.total_consumption_kwh_day
+        if _total_kwh > 0 and _nh4_removed_kg_d > 0.001:
+            self.performance_outputs["kwh_per_kg_nh4_removed"] = round(
+                _total_kwh / _nh4_removed_kg_d, 1
+            )
+
         # Merge notes.assumptions into calculation_notes (backward compat)
         for msg in self.notes.assumptions + self.notes.limitations + self.notes.warnings:
             if msg not in self.calculation_notes:
