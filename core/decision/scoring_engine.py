@@ -242,6 +242,7 @@ class DecisionResult:
     correlated_pairs:   List[str] = field(default_factory=list)  # high-correlation warnings
     below_uncertainty:  List[str] = field(default_factory=list)  # criteria within ±40% noise
     result_invariant:   bool = False   # True if same winner across all standard profiles
+    binary_comparison:  bool = False   # True if only 2 scenarios — scores are 0/100 binary
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -402,44 +403,49 @@ class ScoringEngine:
                         norm[name] = 100.0 * (v - lo) / rng
             normalised[criterion] = norm
 
-        # ── Step 2b: Detect correlation and uncertainty issues ──────────
-        # High correlation (r > 0.85): two criteria measuring the same property
-        # Below-uncertainty: spread < 40% of midpoint (within ±40% estimate noise)
+        # ── Step 2b: Detect correlation and uncertainty issues ──────────────
+        # IMPORTANT: correlation detection requires >= 3 scenarios.
+        # With exactly 2 scenarios, any two criteria correlate at r=+/-1.0
+        # by mathematical necessity (two points always fit a line).
+        # Generating 36 warnings for a standard 2-option comparison produces noise
+        # that drowns the signal — suppress and use a single structural note instead.
         correlated_pairs: List[str] = []
         below_uncertainty: List[str] = []
+        n_eligible_scenarios = sum(1 for s in scenarios
+                                   if getattr(s, "cost_result", None))
+        binary_comparison = (n_eligible_scenarios == 2)
 
-        crit_keys_list = [c for c in weights if raw.get(c)]
-        for i, c1 in enumerate(crit_keys_list):
-            vals1 = list(raw[c1].values())
-            if len(vals1) < 2: continue
-            m1 = sum(vals1)/len(vals1)
-            # Below-uncertainty check: spread < 40% of midpoint
-            lo1, hi1 = min(vals1), max(vals1)
-            mid1 = (lo1+hi1)/2 if (lo1+hi1) > 0 else 1
-            if mid1 > 0 and (hi1-lo1)/mid1 < 0.40 and c1 not in below_uncertainty:
-                below_uncertainty.append(c1)
-            # Correlation check
-            for j, c2 in enumerate(crit_keys_list):
-                if j <= i: continue
-                vals2 = list(raw[c2].values())
-                if len(vals2) < 2: continue
-                m2 = sum(vals2)/len(vals2)
-                num = sum((vals1[k]-m1)*(vals2[k]-m2) for k in range(len(vals1)))
-                d1  = sum((v-m1)**2 for v in vals1)
-                d2  = sum((v-m2)**2 for v in vals2)
-                r_val = num/(d1*d2)**0.5 if d1*d2 > 0 else 0
-                if abs(r_val) > 0.85:
-                    w1 = weights.get(c1,0)
-                    w2 = weights.get(c2,0)
-                    label1 = CRITERION_LABELS.get(c1, c1)
-                    label2 = CRITERION_LABELS.get(c2, c2)
-                    correlated_pairs.append(
-                        f"{label1} × {label2}: r={r_val:+.2f}, "
-                        f"combined weight={(w1+w2)*100:.0f}% — "
-                        "these criteria may measure the same underlying property"
-                    )
+        if n_eligible_scenarios >= 3:
+            crit_keys_list = [c for c in weights if raw.get(c)]
+            for i, c1 in enumerate(crit_keys_list):
+                vals1 = list(raw[c1].values())
+                if len(vals1) < 3: continue
+                m1 = sum(vals1)/len(vals1)
+                lo1, hi1 = min(vals1), max(vals1)
+                mid1 = (lo1+hi1)/2 if (lo1+hi1) > 0 else 1
+                if mid1 > 0 and (hi1-lo1)/mid1 < 0.40 and c1 not in below_uncertainty:
+                    below_uncertainty.append(c1)
+                for j, c2 in enumerate(crit_keys_list):
+                    if j <= i: continue
+                    vals2 = list(raw[c2].values())
+                    if len(vals2) < 3: continue
+                    m2 = sum(vals2)/len(vals2)
+                    num = sum((vals1[k]-m1)*(vals2[k]-m2) for k in range(len(vals1)))
+                    d1  = sum((v-m1)**2 for v in vals1)
+                    d2  = sum((v-m2)**2 for v in vals2)
+                    r_val = num/(d1*d2)**0.5 if d1*d2 > 0 else 0
+                    if abs(r_val) > 0.85:
+                        w1 = weights.get(c1, 0)
+                        w2 = weights.get(c2, 0)
+                        label1 = CRITERION_LABELS.get(c1, c1)
+                        label2 = CRITERION_LABELS.get(c2, c2)
+                        correlated_pairs.append(
+                            f"{label1} x {label2}: r={r_val:+.2f}, "
+                            f"combined weight={(w1+w2)*100:.0f}% - "
+                            "these criteria may measure the same underlying property"
+                        )
 
-        # ── Step 3: Build ScoredOptions ───────────────────────────────────
+                # ── Step 3: Build ScoredOptions ───────────────────────────────────
         eligible, ineligible = [], []
 
         for s in scenarios:
@@ -519,7 +525,8 @@ class ScoringEngine:
 
         # ── Step 5: Build narrative ───────────────────────────────────────
         recommendation, trade_off, rationale = self._build_narrative(
-            preferred, runner_up, eligible, close, weights, tied_criteria
+            preferred, runner_up, eligible, close, weights, tied_criteria,
+            binary_comparison=binary_comparison
         )
 
         return DecisionResult(
@@ -537,6 +544,7 @@ class ScoringEngine:
             tied_criteria=tied_criteria,
             correlated_pairs=correlated_pairs,
             below_uncertainty=below_uncertainty,
+            binary_comparison=binary_comparison,
         )
 
     # ── Narrative builder ────────────────────────────────────────────────
@@ -549,6 +557,7 @@ class ScoringEngine:
         close:          bool,
         weights:        Dict[str, float],
         tied_criteria:  List[str],
+        binary_comparison: bool = False,
     ) -> Tuple[str, str, List[str]]:
 
         if not preferred:
@@ -559,6 +568,13 @@ class ScoringEngine:
             )
 
         pname = preferred.scenario_name
+        # Structural note for binary comparisons
+        binary_note = (
+            " (Two-scenario comparison: criterion scores are binary 0/100 -- "
+            "results show which option wins each criterion, not by how much. "
+            "Scores would differ if additional scenarios were included.)"
+            if binary_comparison else ""
+        )
 
         # ── Rationale: rank by MARGIN over runner-up, not by weighted score ──
         # This prevents a minor cost advantage from appearing as the "main reason"
@@ -628,16 +644,24 @@ class ScoringEngine:
             # Check if significant weight sits on below-uncertainty criteria
             below_weight = sum(weights.get(c,0) for c in tied_criteria)
             uncertainty_note = ""
-            if below_weight >= 0.25:
+            if below_weight >= 0.60:
+                uncertainty_note = (
+                    f" CAUTION: {below_weight*100:.0f}% of the score weight falls on criteria "
+                    "within concept-stage estimate uncertainty. The score margin cannot "
+                    "reliably discriminate between these options under current inputs. "
+                    "Consider site investigation or additional scenario differentiation "
+                    "before using this score to select a technology."
+                )
+            elif below_weight >= 0.25:
                 uncertainty_note = (
                     f" Note: {below_weight*100:.0f}% of the score weight falls on criteria "
-                    "within concept-stage estimate uncertainty — treat the score margin as "
+                    "within concept-stage estimate uncertainty -- treat the score margin as "
                     "indicative, not definitive."
                 )
             recommendation = (
                 f"{pname} is the preferred option under the selected weight profile "
                 f"({preferred.total_score:.0f}/100, {gap:.0f} points ahead of "
-                f"{runner_up.scenario_name}).{uncertainty_note}"
+                f"{runner_up.scenario_name}).{uncertainty_note}{binary_note}"
             )
             # Trade-off: where does runner-up score materially better?
             # Store (criterion_key, label) tuples so raw value lookup works
