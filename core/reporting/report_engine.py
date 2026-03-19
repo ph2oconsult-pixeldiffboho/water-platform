@@ -525,6 +525,39 @@ class ReportEngine:
                     weight_profile=WeightProfile.BALANCED,
                     compliance_map=compliance_map,
                 )
+                # Update decision_summary driver from scoring_result —
+                # ensures ALL output formats (PDF, DOCX, page 3 box) use correct text
+                sr_result = report.scoring_result
+                ds_box    = report.decision_summary
+                if sr_result and sr_result.preferred and sr_result.runner_up and ds_box:
+                    pref = sr_result.preferred
+                    ru   = sr_result.runner_up
+                    lcc_p = pref.criterion_scores.get("lcc")
+                    lcc_r = ru.criterion_scores.get("lcc")
+                    op_p  = pref.criterion_scores.get("operational_risk")
+                    op_r  = ru.criterion_scores.get("operational_risk")
+                    risk_note = ""
+                    if op_p and op_r:
+                        risk_diff = int(op_r.raw_value - op_p.raw_value)
+                        if abs(risk_diff) >= 3:
+                            risk_note = (f", {abs(risk_diff)} points lower risk"
+                                         if risk_diff > 0
+                                         else f", {abs(risk_diff)} points higher risk")
+                    if lcc_p and lcc_r:
+                        diff = lcc_r.raw_value - lcc_p.raw_value
+                        if diff > 0:
+                            ds_box["driver"] = (
+                                f"{pref.scenario_name} saves ${diff:.0f}k/yr lifecycle cost "
+                                f"vs {ru.scenario_name}{risk_note}"
+                            )
+                        else:
+                            ds_box["driver"] = (
+                                f"{pref.scenario_name} costs ${abs(diff):.0f}k/yr more than "
+                                f"{ru.scenario_name} but scores higher on risk and maturity{risk_note}"
+                            )
+                    # Also update preferred/runner_up in decision_summary
+                    ds_box["preferred"] = pref.scenario_name
+                    ds_box["runner_up"] = ru.scenario_name
             except Exception:
                 pass  # scoring is non-critical — report generates without it
 
