@@ -1291,6 +1291,57 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                     f"At \u00b140% estimate accuracy this saving ({_saving9:,}k/yr) "
                     "is material and should be the primary driver of technology selection."
                 ), styles["body"]))
+                # Issue 1+2: explain non-compliant exclusion and intervention comparison
+                _ivs_s9b = getattr(report, "intervention_results", None) or []
+                _dec_s9b = getattr(report, "decision", None)
+                _nv_s9b  = list(getattr(_dec_s9b, "non_viable", None) or [])
+                _nv_opts_s9b = [o for o in (_sr9.scored_options if _sr9 else [])
+                                if not o.is_eligible and o.criterion_scores.get("lcc")]
+                if _nv_opts_s9b and _lcc_p9:
+                    _cheapest_nv9 = min(_nv_opts_s9b,
+                                        key=lambda o: o.criterion_scores["lcc"].raw_value)
+                    _cnv_lcc9 = _cheapest_nv9.criterion_scores["lcc"].raw_value
+                    if _cnv_lcc9 < _lcc_p9.raw_value:
+                        _cnv_iv9 = next(
+                            (iv for iv in _ivs_s9b if iv.base_scenario_name == _cheapest_nv9.scenario_name),
+                            None)
+                        story.append(Spacer(1, 3))
+                        if (_cnv_iv9 and _cnv_iv9.modified_scenario
+                                and _cnv_iv9.modified_scenario.cost_result):
+                            _cnv_lcc_iv9 = _cnv_iv9.modified_scenario.cost_result.lifecycle_cost_annual / 1e3
+                            _cnv_lcc_base9 = round(_cnv_lcc9)
+                            _pref_lcc_v9   = round(_lcc_p9.raw_value)
+                            if _pref_lcc_v9 <= _cnv_lcc_iv9:
+                                story.append(P(rl_safe(
+                                    f"Although {_cheapest_nv9.scenario_name} shows a marginally "
+                                    f"lower base lifecycle cost (${_cnv_lcc_base9:,}k/yr vs "
+                                    f"${_pref_lcc_v9:,}k/yr), it is non-compliant as modelled "
+                                    "and requires engineering intervention. "
+                                    f"Once intervention costs are included "
+                                    f"(+${_cnv_iv9.opex_delta_k_yr:.0f}k/yr for chemical dosing), "
+                                    f"{_cheapest_nv9.scenario_name} with intervention "
+                                    f"costs ${_cnv_lcc_iv9:.0f}k/yr — more expensive than "
+                                    f"{_p9.scenario_name} (${_pref_lcc_v9:,}k/yr). "
+                                    f"{_p9.scenario_name} is preferred on both compliance and lifecycle cost."
+                                ), styles["body"]))
+                            else:
+                                _extra9 = round(_cnv_lcc_iv9 - _pref_lcc_v9)
+                                story.append(P(rl_safe(
+                                    f"Although {_cheapest_nv9.scenario_name} shows a lower base "
+                                    f"lifecycle cost, it is non-compliant as modelled. "
+                                    f"With intervention it costs ${_cnv_lcc_iv9:.0f}k/yr "
+                                    f"(${_extra9:,}k/yr less than {_p9.scenario_name}). "
+                                    "Consider {_cheapest_nv9.scenario_name} + intervention as "
+                                    "an alternative if further investigation confirms the intervention cost."
+                                ), styles["body"]))
+                        else:
+                            story.append(P(rl_safe(
+                                f"Although {_cheapest_nv9.scenario_name} shows a lower base "
+                                "lifecycle cost, it is non-compliant as modelled and is "
+                                "excluded from the compliant cost comparison."
+                            ), styles["body"]))
+
+
             else:
                 story.append(P(rl_safe(
                     f"<b>{_p9.scenario_name}</b> is the recommended option under the "

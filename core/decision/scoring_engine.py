@@ -420,8 +420,8 @@ class ScoringEngine:
             for name in list(normalised["implementation_risk"].keys()):
                 mat_score = normalised["maturity"].get(name, 0)
                 if mat_score >= 50:   # materially mature technology
-                    floor = 20 + (mat_score - 50) * 0.4   # scales from 20 at mat=50 to 36 at mat=90
-                    floor = min(floor, 40.0)               # never exceed 40 as a floor
+                    floor = 20 + (mat_score - 50) * 1.0   # scales from 20 at mat=50 to 40 at mat=70 (NEREDA→30, MBBR→29)
+                    floor = min(floor, 42.0)               # never exceed 42 as a floor — leaves room for normalised spread
                     normalised["implementation_risk"][name] = max(
                         normalised["implementation_risk"][name], floor
                     )

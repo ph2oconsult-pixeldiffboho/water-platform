@@ -19,6 +19,12 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z6", "19 Mar 2026", [
+        "Section 9: explains why cheaper non-compliant option (Base Case) is excluded",
+        "Section 9: shows Base Case + intervention ($1,258k/yr) costs more than NEREDA ($1,211k/yr)",
+        "Driver: risk note now reads '4 points higher risk, driven by implementation complexity and operator familiarity'",
+        "NEREDA implementation score: 24 → 30 (floor multiplier raised to 1.0)",
+    ]),
     ("v24Z5", "19 Mar 2026", [
         "Section 9 rewritten: two-tier compliance structure (base / with intervention)",
         "Economic advantage stated clearly: 'NEREDA reduces lifecycle cost by $747k/yr'",

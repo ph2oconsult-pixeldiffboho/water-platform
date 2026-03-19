@@ -591,21 +591,27 @@ class ReportEngine:
                                          else f", {abs(risk_diff)} points higher risk")
                     if lcc_p and lcc_r:
                         diff = lcc_r.raw_value - lcc_p.raw_value
+                        # Enrich risk note with "why" for higher-risk preferred options
+                        risk_why = ""
+                        if op_p and op_r and int(op_r.raw_value - op_p.raw_value) < -3:
+                            # Preferred has HIGHER risk than runner-up — explain why it's still preferred
+                            risk_why = " (driven by implementation complexity and operator familiarity)"
+                        enriched_risk_note = risk_note + risk_why if risk_note else risk_why
                         if diff > 100:   # material — state with confidence
                             ds_box["driver"] = (
                                 f"Clear economic advantage: {pref.scenario_name} reduces "
                                 f"lifecycle cost by ${diff:.0f}k/yr vs {ru.scenario_name} "
-                                f"(next-best compliant option){risk_note}"
+                                f"(next-best compliant option){enriched_risk_note}"
                             )
                         elif diff > 0:
                             ds_box["driver"] = (
                                 f"{pref.scenario_name} saves ${diff:.0f}k/yr lifecycle cost "
-                                f"vs {ru.scenario_name}{risk_note}"
+                                f"vs {ru.scenario_name}{enriched_risk_note}"
                             )
                         else:
                             ds_box["driver"] = (
                                 f"{pref.scenario_name} costs ${abs(diff):.0f}k/yr more than "
-                                f"{ru.scenario_name} but scores higher on risk and maturity{risk_note}"
+                                f"{ru.scenario_name} but scores higher on risk and maturity{enriched_risk_note}"
                             )
                     ds_box["preferred"] = pref.scenario_name
                     ds_box["runner_up"] = ru.scenario_name
