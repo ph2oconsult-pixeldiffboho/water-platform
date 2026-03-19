@@ -71,6 +71,7 @@ class WeightProfile(Enum):
     LOW_CARBON     = "Low-carbon / future-focused"
     BUDGET         = "Budget-constrained utility"
     CUSTOM         = "Custom"
+    BROWNFIELD     = "Brownfield upgrade"
 
 
 # Default weight sets — must sum to 1.0
@@ -146,6 +147,35 @@ WEIGHT_PROFILES: Dict[WeightProfile, Dict[str, float]] = {
         "regulatory":           0.05,
         "maturity":             0.10,
     },
+
+    WeightProfile.BROWNFIELD: {
+        # Brownfield weighting rationale:
+        # - LCC (25%) is still the primary cost signal — annualised capital and
+        #   operating cost over 30 years remains the right ratepayer metric even for
+        #   upgrades. CAPEX is excluded from the brownfield profile because the retrofit
+        #   CAPEX delta is already captured inside LCC; a separate CAPEX signal would
+        #   double-count the premium for the more expensive options.
+        # - Performance (20%) — compliance delivery is the fundamental objective.
+        #   Represented by the existing operational_risk criterion (which encodes
+        #   process reliability and effluent risk) because brownfield performance
+        #   is as much about reliability as headroom.
+        # - Disruption (20%) — the dominant brownfield-specific risk. A cheaper upgrade
+        #   that takes the plant offline for 20+ days may be the wrong choice for a utility
+        #   serving a live catchment. Given equal weight to LCC to force the decision to
+        #   reflect the real operational constraint.
+        # - Constructability (15%) — complexity and staging feasibility. Complements
+        #   disruption: a retrofit can be short but technically complex.
+        # - Asset Reuse (10%) — proportion of existing infrastructure retained. Rewards
+        #   low-capital interventions that leverage sunk cost.
+        # - Delivery Risk (10%) — integration and construction risk combined.
+        #   Note: weights sum to 100%.
+        "lcc":                  0.25,
+        "operational_risk":     0.20,
+        "bf_disruption":        0.20,
+        "bf_constructability":  0.15,
+        "bf_asset_reuse":       0.10,
+        "bf_delivery_risk":     0.10,
+    },
 }
 
 CRITERION_LABELS: Dict[str, str] = {
@@ -162,6 +192,11 @@ CRITERION_LABELS: Dict[str, str] = {
     "implementation_risk": "Implementation Risk",
     "regulatory":          "Regulatory Risk",
     "maturity":            "Technology Maturity",
+    # Brownfield-only criteria (ignored by non-brownfield weight profiles)
+    "bf_disruption":       "Disruption",
+    "bf_constructability": "Constructability",
+    "bf_asset_reuse":      "Asset Reuse",
+    "bf_delivery_risk":    "Delivery Risk",
 }
 
 # "Compliant with intervention" score cap.
@@ -185,6 +220,11 @@ CRITERION_LOWER_IS_BETTER: Dict[str, bool] = {
     "implementation_risk": True,
     "regulatory":          True,    # lower regulatory risk score = better
     "maturity":            False,   # higher maturity = better
+    # Brownfield criteria — all higher = better (raw scores are already 0–100 positive)
+    "bf_disruption":       False,   # high disruption score = low disruption impact
+    "bf_constructability": False,   # high constructability score = simpler retrofit
+    "bf_asset_reuse":      False,   # high reuse score = more infrastructure retained
+    "bf_delivery_risk":    False,   # high delivery risk score = lower risk
 }
 
 # Minimum spread fraction — prevents marginal differences from generating 0/100 splits.
@@ -258,10 +298,17 @@ class DecisionResult:
 # RAW VALUE EXTRACTION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_raw(scenario: Any, criterion: str) -> Tuple[float, str]:
+def _extract_raw(
+    scenario:  Any,
+    criterion: str,
+    bf_map:    Optional[Dict[str, Any]] = None,
+) -> Tuple[float, str]:
     """
     Extract a raw numeric value and unit from a ScenarioModel.
     Returns (value, unit_string).
+
+    bf_map : optional Dict[scenario_name → BrownfieldConstraintResult].
+        Required for the four bf_* brownfield criteria.
     """
     cr  = getattr(scenario, "cost_result",   None)
     car = getattr(scenario, "carbon_result", None)
@@ -341,6 +388,125 @@ def _extract_raw(scenario: Any, criterion: str) -> Tuple[float, str]:
         v = TECH_MATURITY.get(tc, 50)
         return v, "/100"
 
+    # ── Brownfield criteria (only meaningful for BROWNFIELD weight profile) ──
+    if criterion in ("bf_disruption", "bf_constructability", "bf_asset_reuse",
+                     "bf_delivery_risk"):
+        return _extract_brownfield_criterion(scenario, criterion, cr)
+
+    return 0.0, ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BROWNFIELD CRITERION EXTRACTOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Retrofit-level data keyed by BF code.
+# These are the same values stored on RetrofitOption objects but reproduced here
+# to avoid importing the brownfield domain into the core scoring engine.
+_BF_SHUTDOWN_DAYS: Dict[str, int]   = {
+    "BF-01": 2, "BF-02": 5, "BF-03": 10, "BF-04": 20, "BF-05": 15,
+}
+_BF_CAN_STAGE: Dict[str, bool] = {
+    "BF-01": True, "BF-02": True, "BF-03": True, "BF-04": False, "BF-05": True,
+}
+_BF_IMPL_RISK: Dict[str, float] = {   # implementation_risk_adj from retrofit_library
+    "BF-01": 1.0, "BF-02": 2.0, "BF-03": 4.0, "BF-04": 3.0, "BF-05": 3.0,
+}
+_BF_OPS_RISK: Dict[str, float] = {    # operational_risk_adj from retrofit_library
+    "BF-01": 2.0, "BF-02": 3.0, "BF-03": 5.0, "BF-04": 1.0, "BF-05": 2.0,
+}
+
+# Maximum shutdown ceiling for 0–100 normalisation.
+# 30 days is the practical upper limit for a brownfield upgrade on a live plant.
+_BF_MAX_SHUTDOWN_DAYS = 30.0
+
+def _extract_brownfield_criterion(
+    scenario:  Any,
+    criterion: str,
+    cr:        Any,      # CostResult (may be None)
+) -> Tuple[float, str]:
+    """
+    Extract raw scores for the four brownfield-specific criteria.
+
+    All four return values on a 0–100 scale where HIGHER is BETTER
+    (matches CRITERION_LOWER_IS_BETTER[bf_*] = False).
+
+    Sources
+    -------
+    - Retrofit metadata read from ``scenario.brownfield_retrofit_code`` (set by
+      retrofit_generator on generated scenarios).
+    - Greenfield/base scenarios get conservative defaults (no retrofit = no
+      disruption from construction, but full new-build cost = low asset reuse).
+    """
+    retrofit_code    = getattr(scenario, "brownfield_retrofit_code", None)
+    is_bf_generated  = getattr(scenario, "is_brownfield_generated",  False)
+
+    # ── bf_disruption ─────────────────────────────────────────────────────
+    # Score = 100 × (1 - shutdown_days / MAX_SHUTDOWN)
+    # Bonus +10 if the retrofit can be staged (reduces effective disruption).
+    # Greenfield/base scenarios: shutdown_days=0 → full score 100.
+    if criterion == "bf_disruption":
+        if not is_bf_generated or retrofit_code is None:
+            # Base/greenfield scenario — no upgrade disruption
+            return 100.0, "disruption score"
+        days     = _BF_SHUTDOWN_DAYS.get(retrofit_code, _BF_MAX_SHUTDOWN_DAYS)
+        can_stage = _BF_CAN_STAGE.get(retrofit_code, False)
+        raw_score = 100.0 * (1.0 - days / _BF_MAX_SHUTDOWN_DAYS)
+        if can_stage:
+            raw_score = min(100.0, raw_score + 10.0)   # staging bonus
+        return round(max(0.0, raw_score), 1), "disruption score"
+
+    # ── bf_constructability ───────────────────────────────────────────────
+    # Score derived from implementation_risk_adj (lower adjustment = simpler).
+    # Greenfield scenario: score based on existing constructability profile (50).
+    # Formula: 100 - (impl_risk_adj / 5.0) * 50 → maps [0, 5] adj to [100, 50].
+    # Staging adds +10 (phased delivery reduces per-stage complexity).
+    if criterion == "bf_constructability":
+        if not is_bf_generated or retrofit_code is None:
+            # Base/greenfield — full constructability (all new build, staged)
+            return 50.0, "constructability score"
+        impl_adj  = _BF_IMPL_RISK.get(retrofit_code, 3.0)
+        can_stage = _BF_CAN_STAGE.get(retrofit_code, False)
+        raw_score = 100.0 - (impl_adj / 5.0) * 50.0
+        if can_stage:
+            raw_score = min(100.0, raw_score + 10.0)
+        return round(max(0.0, raw_score), 1), "constructability score"
+
+    # ── bf_asset_reuse ────────────────────────────────────────────────────
+    # Proportion of total scenario CAPEX that is EXISTING infrastructure.
+    # reuse_score = 100 × (1 - retrofit_capex / total_capex)
+    # Greenfield/base scenarios: retrofit_capex = 0 → but they also have no
+    # existing assets being reused, so score = 0.
+    # This creates an intentional asymmetry: brownfield retrofits always score
+    # higher than greenfield on this criterion.
+    if criterion == "bf_asset_reuse":
+        if not is_bf_generated or cr is None:
+            return 0.0, "asset reuse %"
+        total_capex  = cr.capex_total or 0.0
+        retrofit_cap = 0.0
+        for key, val in (getattr(cr, "capex_breakdown", None) or {}).items():
+            if "Brownfield retrofit" in key or "brownfield" in key.lower():
+                retrofit_cap += val
+        if total_capex <= 0:
+            return 0.0, "asset reuse %"
+        reuse_frac = max(0.0, 1.0 - retrofit_cap / total_capex)
+        return round(reuse_frac * 100.0, 1), "asset reuse %"
+
+    # ── bf_delivery_risk ──────────────────────────────────────────────────
+    # Combined integration + construction risk: lower risk_adj → higher score.
+    # Formula: 100 - (impl_adj + ops_adj) / 10.0 * 50
+    # Maps total adj range [0, 10] → score [100, 50].
+    # Greenfield/base: no retrofit risk adj → conservative 50 (some delivery
+    # risk always exists for new construction).
+    if criterion == "bf_delivery_risk":
+        if not is_bf_generated or retrofit_code is None:
+            return 50.0, "delivery risk score"
+        impl_adj = _BF_IMPL_RISK.get(retrofit_code, 3.0)
+        ops_adj  = _BF_OPS_RISK.get(retrofit_code, 2.0)
+        combined = impl_adj + ops_adj
+        raw_score = 100.0 - (combined / 10.0) * 50.0
+        return round(max(0.0, raw_score), 1), "delivery risk score"
+
     return 0.0, ""
 
 
@@ -364,14 +530,32 @@ class ScoringEngine:
         weight_profile:  WeightProfile = WeightProfile.BALANCED,
         custom_weights:  Optional[Dict[str, float]] = None,
         compliance_map:  Optional[Dict[str, str]]   = None,
+        brownfield_map:  Optional[Dict[str, Any]]   = None,
     ) -> DecisionResult:
+        """
+        Score a set of scenarios.
+
+        Parameters
+        ----------
+        brownfield_map : Optional dict mapping scenario_name →
+            BrownfieldConstraintResult.  When supplied and weight_profile is
+            BROWNFIELD, constraint status drives eligibility:
+              FAIL        → excluded (is_eligible = False)
+              WARNING     → allowed but flagged CONDITIONAL (-10 pt penalty)
+              PASS        → fully eligible
+            Brownfield-generated scenarios carry ``is_brownfield_generated=True``
+            and a ``brownfield_retrofit_code`` — the four bf_* criteria are
+            extracted from this metadata.
+        """
         weights = (
             custom_weights
             if weight_profile == WeightProfile.CUSTOM and custom_weights
             else WEIGHT_PROFILES.get(weight_profile, WEIGHT_PROFILES[WeightProfile.BALANCED])
         )
 
-        compliance = compliance_map or {}
+        compliance  = compliance_map  or {}
+        bf_map      = brownfield_map  or {}
+        is_brownfield_mode = (weight_profile == WeightProfile.BROWNFIELD)
 
         # ── Step 1: Collect raw values ────────────────────────────────────
         raw:   Dict[str, Dict[str, float]] = {c: {} for c in weights}
@@ -381,8 +565,15 @@ class ScoringEngine:
             if not getattr(s, "cost_result", None):
                 continue
             name = s.scenario_name
+
+            # Brownfield eligibility gate: exclude FAIL scenarios before scoring
+            if is_brownfield_mode and bf_map:
+                bf_cr = bf_map.get(name)
+                if bf_cr is not None and getattr(bf_cr, "status", "PASS") == "FAIL":
+                    continue   # skip collection — will be added as ineligible in Step 3
+
             for criterion in weights:
-                val, unit = _extract_raw(s, criterion)
+                val, unit = _extract_raw(s, criterion, bf_map=bf_map)
                 raw[criterion][name] = val
                 units[criterion] = unit
 
@@ -484,8 +675,33 @@ class ScoringEngine:
             status = compliance.get(name, "Compliant")
             is_ok  = status in ("Compliant", "Compliant with intervention")
 
+            # ── Brownfield eligibility and conditional flag ──────────────
+            bf_constraint_status = None
+            is_brownfield_conditional = False
+            if is_brownfield_mode and bf_map:
+                bf_cr = bf_map.get(name)
+                if bf_cr is not None:
+                    bf_constraint_status = getattr(bf_cr, "status", "PASS")
+                    if bf_constraint_status == "FAIL":
+                        is_ok = False
+                    elif bf_constraint_status == "WARNING":
+                        is_brownfield_conditional = True  # allowed but penalised
+
             total = 0.0
             crit_scores: Dict[str, CriterionScore] = {}
+
+            # Skip scoring for brownfield FAIL — no raw values collected in Step 1
+            if is_brownfield_mode and bf_constraint_status == "FAIL":
+                opt = ScoredOption(
+                    scenario_name=name,
+                    compliance_status=status,
+                    is_eligible=False,
+                    total_score=0.0,
+                    criterion_scores={},
+                    excluded_reason="Excluded: brownfield constraint FAIL",
+                )
+                ineligible.append(opt)
+                continue
 
             for criterion, w in weights.items():
                 raw_val  = raw[criterion].get(name, 0)
@@ -504,10 +720,13 @@ class ScoringEngine:
                     tied=criterion in tied_criteria,
                 )
 
-            # Apply CWI score cap — intervention required means raw costs
-            # do not reflect full compliance cost; cap prevents misleading ranking
+            # Apply CWI score cap (greenfield / non-brownfield)
             if status == "Compliant with intervention" and total > CWI_SCORE_CAP:
                 total = CWI_SCORE_CAP
+
+            # Apply brownfield CONDITIONAL penalty (-10 pts, minimum 0)
+            if is_brownfield_conditional:
+                total = max(0.0, total - 10.0)
 
             opt = ScoredOption(
                 scenario_name=name,
