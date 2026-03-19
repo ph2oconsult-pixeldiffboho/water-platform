@@ -1729,6 +1729,203 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             for _w in _qa.warnings:
                 story.append(P(rl_safe(f"Warning: {_w[:120]}"), styles["body"]))
 
+
+    # ── Appendix C — Advanced Engineering Analysis ────────────────────────
+    _hs  = getattr(report, "hydraulic_stress", None)
+    _cx  = getattr(report, "complexity_results", None)
+    _co  = getattr(report, "constructability_results", None)
+    _acr = getattr(report, "advanced_carbon_results", None)
+
+    if any([_hs, _cx, _co, _acr]):
+        story.append(PageBreak())
+        story.append(P("Appendix C — Advanced Engineering Analysis", styles["h1"]))
+        story.append(_pdf_hr(colours))
+        story.append(P(
+            "The following analyses are derived from engineering calculation layers applied "
+            "to each scenario. They provide additional depth beyond the base multi-criteria "
+            "comparison and are intended to inform detailed feasibility scope.",
+            styles["body"]))
+        story.append(Spacer(1, 8))
+        from reportlab.lib import colors as _rlcC
+
+        # ── C1. Hydraulic Stress Test ─────────────────────────────────────
+        if _hs:
+            story.append(P("<b>C1. Hydraulic Stress Test (Peak Wet Weather Flow)</b>", styles["h2"]))
+            story.append(P(
+                "Hydraulic performance at peak flow factor (PWWF). "
+                "Checks HRT, clarifier surface overflow rate, SBR fill ratio, and MBR flux.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _hs_rows = [[
+                P("<b>Scenario</b>", styles["body"]),
+                P("<b>Overall</b>",  styles["body"]),
+                P("<b>Checks</b>",   styles["body"]),
+                P("<b>Key finding</b>", styles["body"]),
+            ]]
+            for _sn, _hr in _hs.items():
+                _status_col = {
+                    "PASS":    ("PASS",    _rlcC.HexColor("#1a7a1a")),
+                    "WARNING": ("WARN",    _rlcC.HexColor("#b85c00")),
+                    "FAIL":    ("FAIL",    _rlcC.HexColor("#b00000")),
+                }.get(_hr.overall_status, ("?", _rlcC.black))
+                _hs_rows.append([
+                    P(rl_safe(_sn), styles["body"]),
+                    P(rl_safe(_status_col[0]), styles["body"]),
+                    P(rl_safe(", ".join(f"{c.name}:{c.status}" for c in _hr.checks)), styles["body"]),
+                    P(rl_safe(_hr.narrative[:100]), styles["body"]),
+                ])
+            _hs_tbl = _ST(_hs_rows, colWidths=[W*.18,W*.09,W*.38,W*.35], repeatRows=1)
+            _hs_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlcC.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlcC.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_hs_tbl)
+            story.append(Spacer(1, 8))
+
+        # ── C2. Operational Complexity ────────────────────────────────────
+        if _cx:
+            story.append(P("<b>C2. Operational Complexity Scores</b>", styles["h2"]))
+            story.append(P(
+                "Composite 0–100 score based on control loops, automation dependency, "
+                "process sensitivity, operator skill requirement, and failure consequence. "
+                "Higher score = more complex. Adjustments applied to operational risk in scoring.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _cx_rows = [[
+                P("<b>Scenario</b>",          styles["body"]),
+                P("<b>Score</b>",             styles["body"]),
+                P("<b>Ops risk adj</b>",      styles["body"]),
+                P("<b>Assessment</b>",        styles["body"]),
+            ]]
+            for _sn, _c in _cx.items():
+                _cx_rows.append([
+                    P(rl_safe(_sn), styles["body"]),
+                    P(rl_safe(f"{_c.complexity_score:.0f}/100"), styles["body"]),
+                    P(rl_safe(f"{_c.ops_risk_adjustment:+.1f} pts"), styles["body"]),
+                    P(rl_safe(_c.narrative[:100]), styles["body"]),
+                ])
+            _cx_tbl = _ST(_cx_rows, colWidths=[W*.18,W*.10,W*.14,W*.58], repeatRows=1)
+            _cx_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlcC.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlcC.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_cx_tbl)
+            story.append(Spacer(1, 8))
+
+        # ── C3. Constructability & Staging ────────────────────────────────
+        if _co:
+            story.append(P("<b>C3. Constructability and Staging Assessment</b>", styles["h2"]))
+            story.append(P(
+                "Construction complexity and staging scores based on retrofit difficulty, "
+                "temporary works requirements, contractor capability, and programme. "
+                "Adjustments applied to implementation risk in scoring.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _co_rows = [[
+                P("<b>Scenario</b>",         styles["body"]),
+                P("<b>Score</b>",            styles["body"]),
+                P("<b>Impl adj</b>",         styles["body"]),
+                P("<b>Programme</b>",        styles["body"]),
+                P("<b>Can stage?</b>",       styles["body"]),
+                P("<b>Assessment</b>",       styles["body"]),
+            ]]
+            for _sn, _c in _co.items():
+                _co_rows.append([
+                    P(rl_safe(_sn), styles["body"]),
+                    P(rl_safe(f"{_c.constructability_score:.0f}/100"), styles["body"]),
+                    P(rl_safe(f"{_c.impl_risk_adjustment:+.1f} pts"), styles["body"]),
+                    P(rl_safe(f"{_c.estimated_programme_months:.0f} months"
+                              if _c.estimated_programme_months else "—"), styles["body"]),
+                    P(rl_safe("Yes" if _c.can_stage else "No"), styles["body"]),
+                    P(rl_safe(_c.narrative[:80]), styles["body"]),
+                ])
+            _co_tbl = _ST(_co_rows, colWidths=[W*.15,W*.10,W*.10,W*.12,W*.10,W*.43], repeatRows=1)
+            _co_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlcC.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlcC.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_co_tbl)
+            story.append(Spacer(1, 8))
+
+        # ── C4. Advanced N₂O Carbon Model ────────────────────────────────
+        if _acr:
+            story.append(P("<b>C4. Advanced N\u2082O Carbon Model</b>", styles["h2"]))
+            story.append(P(
+                "N\u2082O emission factor adjusted for technology type, DO setpoint, SRT, "
+                "carbon availability, and temperature. Base model uses IPCC 2019 EF = 0.016. "
+                "Adjusted EF reflects site-specific operating conditions.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _ac_rows = [[
+                P("<b>Scenario</b>",         styles["body"]),
+                P("<b>EF adjusted</b>",      styles["body"]),
+                P("<b>N\u2082O (tCO\u2082e)</b>", styles["body"]),
+                P("<b>Range low</b>",         styles["body"]),
+                P("<b>Range high</b>",        styles["body"]),
+                P("<b>\u0394 vs base model</b>", styles["body"]),
+            ]]
+            for _sn, _ac in _acr.items():
+                _delta_txt = f"{_ac.scope1_delta_pct:+.1f}%"
+                _ac_rows.append([
+                    P(rl_safe(_sn), styles["body"]),
+                    P(rl_safe(f"{_ac.n2o_ef_adjusted:.4f}"), styles["body"]),
+                    P(rl_safe(f"{_ac.n2o_tco2e_yr:.0f}"), styles["body"]),
+                    P(rl_safe(f"{_ac.n2o_tco2e_yr_low:.0f}"), styles["body"]),
+                    P(rl_safe(f"{_ac.n2o_tco2e_yr_high:.0f}"), styles["body"]),
+                    P(rl_safe(_delta_txt), styles["body"]),
+                ])
+            # Sensitivity note
+            _ac_tbl = _ST(_ac_rows, colWidths=[W*.18,W*.13,W*.14,W*.13,W*.13,W*.29], repeatRows=1)
+            _ac_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlcC.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlcC.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_ac_tbl)
+            story.append(Spacer(1, 4))
+            # Sensitivity narrative for first eligible scenario
+            _first_ac = next(iter(_acr.values()), None)
+            if _first_ac and _first_ac.sensitivities:
+                s0 = _first_ac.sensitivities[0]
+                story.append(P(rl_safe(
+                    f"Key sensitivity: DO setpoint — reducing from {s0.high_value:.1f} to "
+                    f"{s0.low_value:.1f} mg/L could reduce N\u2082O EF from "
+                    f"{s0.high_ef:.4f} to {s0.low_ef:.4f} g N\u2082O/g N removed "
+                    "(Daelman et al. 2015). Site-specific DO optimisation recommended."
+                ), styles["body"]))
+
+
     # ── Appendix A — Key Assumptions ────────────────────────────────────────
     if report.assumptions_appendix:
         story.append(PageBreak())

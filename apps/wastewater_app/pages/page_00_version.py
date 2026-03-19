@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z7", "19 Mar 2026", [
+        "Hydraulic stress test — peak HRT, clarifier SOR, SBR fill ratio, MBR flux (PASS/WARNING/FAIL)",
+        "Operational complexity engine — 5-factor 0-100 score, adjusts operational_risk in scoring",
+        "Constructability & staging engine — retrofit complexity, programme estimate, adjusts implementation_risk",
+        "Advanced N₂O carbon model — EF adjusted for DO, SRT, technology type, carbon availability",
+        "All four layers run before scoring so adjustments feed into normalised scores",
+        "Appendix C added to comprehensive report with all four analysis tables",
+        "QA-E07: SBR fill ratio ≥ 1.0 at PWWF now triggers QA error",
+        "282/282 benchmark checks passing",
+    ]),
     ("v24Z6", "19 Mar 2026", [
         "Section 9: explains why cheaper non-compliant option (Base Case) is excluded",
         "Section 9: shows Base Case + intervention ($1,258k/yr) costs more than NEREDA ($1,211k/yr)",

@@ -312,12 +312,18 @@ def _extract_raw(scenario: Any, criterion: str) -> Tuple[float, str]:
         return round(v, 1), "% TN margin"
 
     if criterion == "operational_risk":
-        v = rr.operational_score if rr else 50
-        return v, "/100"
+        _base_ops = rr.operational_score if rr else 50.0
+        # Apply operational complexity adjustment from engineering layer
+        _ops_adj  = (tp.get(list(tp.keys())[0], {}).get("ops_risk_adjustment", 0.0)
+                     if tp else 0.0) or 0.0
+        return round(float(_base_ops) + float(_ops_adj), 2), "/100"
 
     if criterion == "implementation_risk":
-        v = rr.implementation_score if rr else 50
-        return v, "/100"
+        _base_impl = rr.implementation_score if rr else 50.0
+        # Apply constructability adjustment from engineering layer
+        _impl_adj  = (tp.get(list(tp.keys())[0], {}).get("impl_risk_adjustment", 0.0)
+                      if tp else 0.0) or 0.0
+        return round(float(_base_impl) + float(_impl_adj), 2), "/100"
 
     if criterion == "regulatory":
         # regulatory_score is a risk score — lower = better

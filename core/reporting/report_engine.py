@@ -495,6 +495,41 @@ class ReportEngine:
                     stamp_compliance(_sc)
         except Exception:
             pass
+        # ── Run engineering layers before scoring so adjustments feed into scores ──
+        try:
+            from core.engineering.hydraulic_stress import run_all_hydraulic_stress
+            from core.engineering.operational_complexity import score_all_complexity
+            from core.engineering.constructability import score_all_constructability
+            from core.engineering.advanced_carbon import run_all_advanced_carbon
+
+            if len(scored_scens) >= 1:
+                report.hydraulic_stress         = run_all_hydraulic_stress(scored_scens)
+                report.complexity_results       = score_all_complexity(scored_scens)
+                report.constructability_results = score_all_constructability(scored_scens)
+                report.advanced_carbon_results  = run_all_advanced_carbon(scored_scens)
+
+                # Write adjustments into DSO before scoring so _extract_raw picks them up
+                for _sc in scored_scens:
+                    _cx2 = report.complexity_results.get(_sc.scenario_name)
+                    _co2 = report.constructability_results.get(_sc.scenario_name)
+                    _dso2 = _sc.domain_specific_outputs or {}
+                    _tp2  = _dso2.get("technology_performance") or {}
+                    _tc2  = (_sc.treatment_pathway.technology_sequence[0]
+                             if _sc.treatment_pathway and _sc.treatment_pathway.technology_sequence else "")
+                    if _tc2 in _tp2:
+                        if _cx2:
+                            _tp2[_tc2]["complexity_score"]      = _cx2.complexity_score
+                            _tp2[_tc2]["ops_risk_adjustment"]   = _cx2.ops_risk_adjustment
+                            _tp2[_tc2]["complexity_narrative"]  = _cx2.narrative
+                        if _co2:
+                            _tp2[_tc2]["impl_risk_adjustment"]  = _co2.impl_risk_adjustment
+                            _tp2[_tc2]["constructability_score"]= _co2.constructability_score
+                            _tp2[_tc2]["constructability_narrative"] = _co2.narrative
+                            _tp2[_tc2]["can_stage"]             = _co2.can_stage
+                            _tp2[_tc2]["programme_months"]      = _co2.estimated_programme_months
+        except Exception:
+            pass   # engineering layers are non-critical
+
         if len(scored_scens) >= 2:
             try:
                 from core.decision.scoring_engine import ScoringEngine, WeightProfile
