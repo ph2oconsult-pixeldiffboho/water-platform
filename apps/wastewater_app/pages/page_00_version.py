@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z12", "19 Mar 2026", [
+        "Scoring page (page_12): Feasibility Status panel, fixed scenarios in scoring, confidence adj column",
+        "Scoring page: auto-computes hydraulic stress + remediation if not in session state",
+        "Scoring page: Engineering Decision Pathway section at bottom",
+        "Comparison page (page_05): fixed scenarios injected into all tables and charts",
+        "Comparison page: feasibility banner (FAIL/CONDITIONAL/fixed scenario notices)",
+        "Decision page (page_11): Engineering Decision Pathway expander at top with metrics + pathway table",
+        "All three pages store feasibility/hydraulic/fixed data in session_state for cross-page consistency",
+        "10/10 tests, 282/282 benchmark checks",
+    ]),
     ("v24Z11", "19 Mar 2026", [
         "Fixed scenario (NEREDA + 4th Reactor) included in all report surfaces: scenario_names, cost/carbon/comparison tables",
         "Decision Summary box updated to NEREDA + 4th Reactor after re-scoring",

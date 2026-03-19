@@ -172,21 +172,108 @@ def render() -> None:
     # ── Build compliance map ──────────────────────────────────────────────
     compliance_map = {s.scenario_name: _classify_compliance(s) for s in calc}
 
+    # ── Engineering Feasibility Status ────────────────────────────────────
+    # Pull from session state (computed by report engine) if available
+    _feasibility    = st.session_state.get("feasibility_statuses") or {}
+    _fixed_scens    = st.session_state.get("fixed_scenarios") or []
+    _hydraulic      = st.session_state.get("hydraulic_stress") or {}
+    _remediations   = st.session_state.get("remediation_results") or []
+    _decision_path  = st.session_state.get("decision_pathway") or []
+
+    # If not in session, compute them now
+    if not _feasibility and len(calc) >= 2:
+        try:
+            from core.engineering.hydraulic_stress import run_all_hydraulic_stress
+            from core.engineering.remediation import remediate_scenarios
+            from core.engineering.feasibility_status import compute_feasibility
+            _hydraulic    = run_all_hydraulic_stress(calc)
+            _remediations = remediate_scenarios(calc, _hydraulic, None)
+            _fixed_scens  = [r.modified_scenario for r in _remediations
+                             if r.feasible and r.modified_scenario]
+            _feasibility  = compute_feasibility(calc, _hydraulic, _remediations)
+        except Exception:
+            pass
+
+    # Extend calc with fixed scenarios for scoring
+    _calc_extended = calc + _fixed_scens
+    for _fs in _fixed_scens:
+        compliance_map[_fs.scenario_name] = "Compliant"
+
     # ── Run scoring engine ────────────────────────────────────────────────
     engine = ScoringEngine()
     try:
         result: DecisionResult = engine.score(
-            calc,
+            _calc_extended,
             weight_profile=selected_profile,
             custom_weights=custom_weights,
             compliance_map=compliance_map,
         )
+        # Mark original FAIL scenarios as excluded
+        from core.engineering.feasibility_status import FEASIBILITY_FAIL
+        for _opt in result.scored_options:
+            _fst = _feasibility.get(_opt.scenario_name)
+            if _fst and _fst.status == FEASIBILITY_FAIL:
+                _opt.is_eligible = False
+                _opt.excluded_reason = "Engineering Feasibility: FAIL"
+        # Apply confidence penalties
+        try:
+            from core.engineering.feasibility_status import apply_confidence_penalties
+            _all_fs = dict(_feasibility)
+            for _fs in _fixed_scens:
+                _all_fs[_fs.scenario_name] = type("_FS",(),{
+                    "status": "CONDITIONAL", "confidence_penalty": 5.0
+                })()
+            apply_confidence_penalties(result.scored_options, _all_fs)
+            # Recompute preferred after penalties
+            _elig = sorted([o for o in result.scored_options if o.is_eligible],
+                           key=lambda x: -x.total_score)
+            if _elig:
+                result.preferred = _elig[0]
+                result.runner_up  = _elig[1] if len(_elig) > 1 else None
+        except Exception:
+            pass
     except Exception as e:
         st.error(f"Scoring error: {e}")
         return
 
     # Store in session for comparison page integration
     st.session_state["decision_scoring_result"] = result
+    st.session_state["feasibility_statuses"]    = _feasibility
+    st.session_state["fixed_scenarios"]         = _fixed_scens
+    st.session_state["hydraulic_stress"]        = _hydraulic
+    st.session_state["remediation_results"]     = _remediations
+
+    # ── Engineering Feasibility Panel ─────────────────────────────────────
+    if _feasibility:
+        st.subheader("Engineering Feasibility Status")
+        _status_colours = {"PASS": "#27AE60", "CONDITIONAL": "#E67E22", "FAIL": "#C0392B"}
+        _fs_cols = st.columns(len(_feasibility))
+        for _i, (_sn, _fst) in enumerate(_feasibility.items()):
+            with _fs_cols[min(_i, len(_fs_cols)-1)]:
+                _col = _status_colours.get(_fst.status, "#888")
+                st.markdown(
+                    f'<div style="border:2px solid {_col};border-radius:6px;padding:8px;text-align:center;">'
+                    f'<div style="font-weight:700;font-size:0.8rem;">{_sn[:16]}</div>'
+                    f'<div style="color:{_col};font-weight:800;font-size:1rem;">{_fst.status}</div>'
+                    f'<div style="font-size:0.7rem;color:#666;">{_fst.hydraulic_gate}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+        st.divider()
+
+        # Hydraulic warnings / failures
+        _hydr_warns = [(n, h) for n,h in _hydraulic.items() if h.overall_status != "PASS"]
+        if _hydr_warns:
+            for _hn, _hs in _hydr_warns:
+                _icon = "🚨" if _hs.overall_status == "FAIL" else "⚠️"
+                st.warning(f"{_icon} **{_hn}** — {_hs.narrative[:120]}")
+        if _fixed_scens:
+            st.info(
+                f"ℹ️ {len(_fixed_scens)} remediated scenario(s) added to comparison: "
+                + ", ".join(f"**{fs.scenario_name}**" for fs in _fixed_scens)
+                + ". Confidence adjusted (−5 pts) to reflect redesign cost uncertainty."
+            )
+        st.divider()
 
     # ── QA guardrail check ────────────────────────────────────────────────
     if result.preferred:
@@ -292,11 +379,15 @@ def render() -> None:
         crit_order = list(CRITERION_LABELS.keys())
         crit_labels = list(CRITERION_LABELS.values())
 
-        # Header row
-        header_cols = st.columns([2, 1.5, 1] + [1] * len(crit_order))
+        # Header row — add confidence adjustment column
+        _has_conf_adj = any(hasattr(o, "confidence_adj") and o.confidence_adj for o in all_scored)
+        _extra_cols   = [1] if _has_conf_adj else []
+        header_cols = st.columns([2, 1.5, 1] + _extra_cols + [1] * len(crit_order))
         header_cols[0].markdown("**Scenario**")
-        header_cols[1].markdown("**Compliance**")
+        header_cols[1].markdown("**Compliance / Status**")
         header_cols[2].markdown("**Total**")
+        if _has_conf_adj:
+            header_cols[3].markdown("**Conf. Adj**")
         for i, label in enumerate(crit_labels):
             w = WEIGHT_PROFILES.get(selected_profile, {}).get(crit_order[i], 0)
             w_pct = int(w * 100)
@@ -315,8 +406,21 @@ def render() -> None:
             else:
                 row_cols[0].markdown(f"{opt.scenario_name}")
 
-            # Compliance
-            row_cols[1].markdown(_compliance_badge(opt.compliance_status))
+            # Compliance / feasibility status
+            _fst_ui = _feasibility.get(opt.scenario_name) if _feasibility else None
+            if _fst_ui:
+                _status_icon = {"PASS": "✅", "CONDITIONAL": "⚠️", "FAIL": "❌"}.get(_fst_ui.status, "")
+                row_cols[1].markdown(f"{_status_icon} **{_fst_ui.status}**")
+            else:
+                row_cols[1].markdown(_compliance_badge(opt.compliance_status))
+            # Confidence adjustment (if present)
+            if _has_conf_adj:
+                _base  = getattr(opt, "base_score", None)
+                _cadj  = getattr(opt, "confidence_adj", 0)
+                if _base is not None and _cadj:
+                    row_cols[3].markdown(f"<small>{_cadj:+.0f} pts</small>", unsafe_allow_html=True)
+                else:
+                    row_cols[3].markdown("<small>—</small>", unsafe_allow_html=True)
 
             # Total score
             col = _score_colour(opt.total_score)
@@ -403,3 +507,31 @@ def render() -> None:
         "Scores are concept-stage comparisons only (±40%). "
         "Sensitivity test with alternative profiles before technology lock-in."
     )
+
+
+    # ── Engineering Decision Pathway ──────────────────────────────────────
+    if _decision_path:
+        st.divider()
+        st.subheader("⚙️ Engineering Decision Pathway")
+        st.caption(
+            "Four-step pathway from initial scoring to final recommendation, "
+            "incorporating feasibility checking, remediation, and confidence adjustment."
+        )
+        import pandas as pd
+        _dp_df = pd.DataFrame(_decision_path)[["step","title","outcome","status"]]
+        _dp_df.columns = ["Step","Stage","Outcome","Confidence / Status"]
+        st.dataframe(_dp_df, use_container_width=True, hide_index=True)
+    elif _fixed_scens or _remediations:
+        # Compute a live pathway if not stored
+        st.divider()
+        st.subheader("⚙️ Remediation Summary")
+        for _rem in _remediations:
+            _ms = _rem.modified_scenario
+            if _ms and _ms.cost_result:
+                _lcc = _ms.cost_result.lifecycle_cost_annual / 1e3
+                st.success(
+                    f"🔧 **{_rem.scenario_name}** → **{_ms.scenario_name}**: "
+                    f"{_rem.fix_description[:80]}. "
+                    f"LCC after fix: ${_lcc:.0f}k/yr. "
+                    f"Hydraulic status: [{_rem.hydraulic_status_after}]."
+                )

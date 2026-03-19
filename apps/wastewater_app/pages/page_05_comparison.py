@@ -45,8 +45,41 @@ def render() -> None:
         )
         return
 
+    # ── Inject fixed scenarios from session state ─────────────────────────
+    _fixed_comp = st.session_state.get("fixed_scenarios") or []
+    if _fixed_comp:
+        _existing_names = {s.scenario_name for s in calc}
+        _new_fixed = [f for f in _fixed_comp if f.scenario_name not in _existing_names]
+        if _new_fixed:
+            calc = calc + _new_fixed   # extend for all downstream table/chart building
+
+    _feasibility_comp = st.session_state.get("feasibility_statuses") or {}
+    _hydraulic_comp   = st.session_state.get("hydraulic_stress") or {}
+
     sm = ScenarioManager()
     pm = ProjectManager()
+
+    # ── Engineering Feasibility Banner ────────────────────────────────────
+    if _feasibility_comp:
+        _fails  = [n for n,f in _feasibility_comp.items() if f.status == "FAIL"]
+        _conds  = [n for n,f in _feasibility_comp.items() if f.status == "CONDITIONAL"]
+        _passes = [n for n,f in _feasibility_comp.items() if f.status == "PASS"]
+        if _fails:
+            st.error(
+                f"🚨 **Feasibility FAIL**: {', '.join(_fails)} — excluded from recommendation. "
+                "See Scoring page for remediation options."
+            )
+        if _conds:
+            st.warning(
+                f"⚠️ **Conditional**: {', '.join(_conds)} — hydraulic redesign required. "
+                + (f"Remediated: {', '.join(f.scenario_name for f in _fixed_comp)}"
+                   if _fixed_comp else "")
+            )
+        if _fixed_comp:
+            st.success(
+                f"✅ **Remediated scenarios included**: "
+                + ", ".join(f"**{f.scenario_name}**" for f in _fixed_comp)
+            )
 
     # ── Comparison-level QA ────────────────────────────────────────────────
     try:

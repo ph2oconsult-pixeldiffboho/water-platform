@@ -66,6 +66,49 @@ def render() -> None:
     # Run decision engine
     decision = evaluate_scenario(calc, inputs)
 
+    # ── Engineering Decision Pathway (from scoring engine) ───────────────────
+    _dp11  = st.session_state.get("decision_pathway") or []
+    _fs11  = st.session_state.get("feasibility_statuses") or {}
+    _fix11 = st.session_state.get("fixed_scenarios") or []
+    _rem11 = st.session_state.get("remediation_results") or []
+
+    if _dp11 or _fs11 or _fix11:
+        with st.expander("⚙️ Engineering Decision Pathway", expanded=True):
+            if _fs11:
+                _status_icon = {"PASS": "✅", "CONDITIONAL": "⚠️", "FAIL": "❌"}
+                _cols11 = st.columns(len(_fs11))
+                for _i11, (_sn11, _fst11) in enumerate(_fs11.items()):
+                    with _cols11[min(_i11, len(_cols11)-1)]:
+                        _ic = _status_icon.get(_fst11.status, "")
+                        st.metric(
+                            label=_sn11[:16],
+                            value=f"{_ic} {_fst11.status}",
+                            help=_fst11.rationale,
+                        )
+
+            if _fix11:
+                st.divider()
+                for _rem11_item in _rem11:
+                    _ms11 = _rem11_item.modified_scenario
+                    if _ms11 and _ms11.cost_result:
+                        _lcc11 = _ms11.cost_result.lifecycle_cost_annual / 1e3
+                        st.success(
+                            f"🔧 **Redesign applied**: {_rem11_item.scenario_name} → "
+                            f"**{_ms11.scenario_name}**  |  "
+                            f"{_rem11_item.fix_description[:70]}  |  "
+                            f"LCC: ${_lcc11:.0f}k/yr  |  "
+                            f"[{_rem11_item.hydraulic_status_after}] after fix"
+                        )
+
+            if _dp11:
+                st.divider()
+                import pandas as pd
+                _dp11_df = pd.DataFrame(_dp11)[["step","title","outcome","status"]]
+                _dp11_df.columns = ["Step","Stage","Outcome","Confidence"]
+                st.dataframe(_dp11_df, use_container_width=True, hide_index=True)
+
+        st.divider()
+
     # ── Executive Summary ─────────────────────────────────────────────────────
     _render_executive_summary(decision, calc, inputs)
 
