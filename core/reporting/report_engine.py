@@ -604,6 +604,24 @@ class ReportEngine:
                     # Also update preferred/runner_up in decision_summary
                     ds_box["preferred"] = pref.scenario_name
                     ds_box["runner_up"] = ru.scenario_name
+                    # Override trade-off: compare preferred vs runner-up (both compliant)
+                    ru_advantages = []
+                    for crit, cs in ru.criterion_scores.items():
+                        p_cs = pref.criterion_scores.get(crit)
+                        if p_cs and cs.normalised > p_cs.normalised + 15:
+                            ru_advantages.append(cs.label)
+                    if ru_advantages:
+                        ds_box["trade_off"] = (
+                            f"Choosing {pref.scenario_name} over {ru.scenario_name} means "
+                            f"accepting higher {', '.join(ru_advantages[:2]).lower()}. "
+                            f"{ru.scenario_name} scores better on these criteria and "
+                            "should be reconsidered if they are utility priorities."
+                        )
+                    else:
+                        ds_box["trade_off"] = (
+                            f"{pref.scenario_name} outperforms {ru.scenario_name} "
+                            "on all major criteria under the selected weight profile."
+                        )
             except Exception:
                 pass  # scoring is non-critical — report generates without it
 

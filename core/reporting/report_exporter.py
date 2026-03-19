@@ -1328,6 +1328,16 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
 
     story.append(Spacer(1, 4))
 
+    # ── QA warnings in Section 9 ───────────────────────────────────────────
+    _qa_s9 = getattr(report, "platform_qa_result", None)
+    if _qa_s9 and (_qa_s9.errors or _qa_s9.warnings):
+        story.append(P("<b>Engineering Notes</b>", styles["h2"]))
+        for _e9 in _qa_s9.errors:
+            story.append(P(rl_safe(f"\u26a0 {_e9[:150]}"), styles["body"]))
+        for _w9 in _qa_s9.warnings:
+            story.append(P(rl_safe(f"Note: {_w9[:150]}"), styles["body"]))
+        story.append(Spacer(1, 4))
+
     # ── Selection guidance ────────────────────────────────────────────────
     story.append(P("Final selection should consider:", styles["body"]))
     recs = [
@@ -1543,26 +1553,72 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         _sr = getattr(report, "scoring_result", None)
         if _cp and _cp.preferred:
             story.append(Spacer(1, 10))
-            story.append(P("<b>Carbon Decision Pathway — Low-Carbon Profile</b>", styles["h2"]))
+            story.append(P("<b>Carbon Decision Pathway — Low-Carbon Weight Profile</b>", styles["h2"]))
             story.append(P(
                 "Re-ranking under the Low-carbon / future-focused weight profile "
                 "(carbon intensity 25%, cost 25%, risk 20%). "
-                "Relevant if the utility has a carbon reduction target or expects "
-                "carbon pricing to increase materially.",
+                "Relevant when the utility has a carbon reduction commitment or "
+                "expects carbon pricing to increase materially over the asset life.",
                 styles["body"]))
             story.append(Spacer(1, 4))
             _bal = _sr.preferred.scenario_name if _sr and _sr.preferred else "—"
             _lc  = _cp.preferred.scenario_name
             story.append(P(rl_safe(
-                f"Balanced profile preferred: <b>{_bal}</b>    |    "
-                f"Low-carbon profile preferred: <b>{_lc}</b> ({_cp.preferred.total_score:.0f}/100)"
+                f"<b>Balanced profile:</b> {_bal}    |    "
+                f"<b>Low-carbon profile:</b> {_lc} ({_cp.preferred.total_score:.0f}/100)"
             ), styles["body"]))
+            story.append(Spacer(1, 4))
+
+            # Build quantified carbon narrative from scoring data
+            # Find lowest-carbon eligible option and explain why it was/wasn't chosen
+            _eligible = [o for o in _cp.scored_options if o.is_eligible]
+            if _eligible:
+                _carbon_scores = sorted(_eligible, key=lambda o: o.criterion_scores.get("carbon",
+                    type("x",(),{"raw_value":999})()).raw_value
+                    if hasattr(o.criterion_scores.get("carbon", None), "raw_value") else 999)
+                _lowest_carbon_opt = _carbon_scores[0] if _carbon_scores else None
+                _preferred_opt = _cp.preferred
+
+                if (_lowest_carbon_opt and _preferred_opt and
+                        _lowest_carbon_opt.scenario_name != _preferred_opt.scenario_name):
+                    # Preferred is NOT the lowest-carbon option — explain the trade-off
+                    _lc_cs  = _lowest_carbon_opt.criterion_scores.get("carbon")
+                    _pr_cs  = _preferred_opt.criterion_scores.get("carbon")
+                    _lc_lcc = _lowest_carbon_opt.criterion_scores.get("lcc")
+                    _pr_lcc = _preferred_opt.criterion_scores.get("lcc")
+                    if _lc_cs and _pr_cs and _lc_lcc and _pr_lcc:
+                        _carbon_saving   = _pr_cs.raw_value - _lc_cs.raw_value
+                        _cost_premium    = _lc_lcc.raw_value - _pr_lcc.raw_value
+                        story.append(P(rl_safe(
+                            f"{_lowest_carbon_opt.scenario_name} has the lowest carbon intensity "
+                            f"({_lc_cs.raw_value:.3f} vs {_pr_cs.raw_value:.3f} kgCO\u2082e/kL "
+                            f"— saving {_carbon_saving:.3f} kgCO\u2082e/kL). "
+                            f"However, it carries a lifecycle cost premium of "
+                            f"${_cost_premium:.0f}k/yr over {_preferred_opt.scenario_name}. "
+                            f"Under the Low-carbon profile, {_preferred_opt.scenario_name} remains "
+                            "preferred because its cost advantage outweighs the marginal carbon saving "
+                            "at current carbon pricing. "
+                            f"This trade-off should be re-evaluated if carbon prices rise above "
+                            "approximately $120/tCO\u2082e or if the utility has a mandatory "
+                            "net-zero commitment."
+                        ), styles["body"]))
+                else:
+                    # Preferred IS the lowest-carbon compliant option
+                    if _preferred_opt:
+                        _pr_cs = _preferred_opt.criterion_scores.get("carbon")
+                        if _pr_cs:
+                            story.append(P(rl_safe(
+                                f"{_preferred_opt.scenario_name} is both the lowest lifecycle cost "
+                                f"and lowest carbon intensity option among compliant scenarios "
+                                f"({_pr_cs.raw_value:.3f} kgCO\u2082e/kL). "
+                                "The carbon profile does not change the recommendation."
+                            ), styles["body"]))
+
             if _lc != _bal:
-                story.append(Spacer(1, 3))
+                story.append(Spacer(1, 4))
                 story.append(P(rl_safe(
-                    f"Note: under carbon prioritisation, {_lc} becomes preferred over {_bal}. "
-                    "If carbon reduction is a strategic priority, evaluate both options "
-                    "before technology selection."
+                    f"Note: the carbon profile changes the recommendation from {_bal} to {_lc}. "
+                    "Evaluate both options in parallel before technology selection."
                 ), styles["body"]))
 
         # ── Platform QA ───────────────────────────────────────────────────

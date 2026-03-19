@@ -45,7 +45,7 @@ from typing import Dict, List, Optional, Any, Tuple
 # ─────────────────────────────────────────────────────────────────────────────
 TECH_MATURITY: Dict[str, float] = {
     "bnr":             90,   # conventional BNR: 50+ years, thousands of plants
-    "granular_sludge": 65,   # Nereda: 100+ plants globally, 15+ years commercial
+    "granular_sludge": 72,   # Nereda: 100+ plants globally, 15+ years commercial, AU reference sites
     "mbr":             80,   # MBR: 30+ years, widespread in AU
     "bnr_mbr":         75,   # BNR+MBR combination: well established
     "ifas_mbbr":       70,   # IFAS/MBBR: 20+ years, growing AU presence

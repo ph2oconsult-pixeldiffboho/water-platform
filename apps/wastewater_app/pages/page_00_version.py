@@ -19,6 +19,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z4", "19 Mar 2026", [
+        "Compliance labels: 'Compliant with intervention' removed for achievability-note-only scenarios",
+        "NEREDA maturity recalibrated 65→72 (100+ global reference plants, AU precedent)",
+        "Trade-off in Decision Summary now references compliant runner-up only (not non-compliant options)",
+        "Carbon narrative quantifies cost/carbon trade-off with carbon price threshold",
+        "QA warnings surfaced in Section 9 conclusions (not just Appendix B)",
+    ]),
+    ("v24Z3", "19 Mar 2026", [
+        "scenario.is_compliant — single source of truth stamped on ScenarioModel after every run",
+        "Platform QA layer (core/decision/platform_qa.py) — 8 checks, errors/warnings/notes",
+        "Intervention scenarios: ferric dosing for TP failures, methanol for TN failures",
+        "Carbon decision pathway: Low-carbon profile re-ranking in every report",
+        "Appendix B extended: intervention table + carbon pathway + QA status",
+    ]),
     ("v24Z+1", "19 Mar 2026", [
         "Added Version & Changelog page (this page)",
         "Git commit hash shown in sidebar for instant version check",

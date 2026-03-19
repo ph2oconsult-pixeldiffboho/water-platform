@@ -107,12 +107,8 @@ def stamp_compliance(scenario: Any) -> None:
         scenario.compliance_status = "Non-compliant"
         scenario.compliance_issues = " | ".join(hard_fail_issues)
     else:
-        has_ach = any(
-            tc_data.get("achievability_warnings", "")
-            for tc_data in tp.values()
-        )
         scenario.is_compliant      = True
-        scenario.compliance_status = "Compliant with intervention" if has_ach else "Compliant"
+        scenario.compliance_status = "Compliant"
         scenario.compliance_issues = ""
 
 class WastewaterDomainInterface:
@@ -254,12 +250,8 @@ class WastewaterDomainInterface:
             scenario.compliance_issues  = " | ".join(hard_fail_issues)
         else:
             # Check for achievability warnings (CWI) vs clean pass
-            has_ach_warning = any(
-                tc_data.get("achievability_warnings", "")
-                for tc_data in tp.values()
-            )
             scenario.is_compliant      = True
-            scenario.compliance_status = "Compliant with intervention" if has_ach_warning else "Compliant"
+            scenario.compliance_status = "Compliant"
             scenario.compliance_issues = ""
 
         return scenario
