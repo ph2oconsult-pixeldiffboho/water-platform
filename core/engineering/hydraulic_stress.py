@@ -48,8 +48,10 @@ HRT_MIN: Dict[str, float] = {
 
 # SBR fill ratio limits (NEREDA):
 #   fill_vol / reactor_vol per reactor at peak
-SBR_FILL_RATIO_WARN = 0.90   # >90% fill → marginal
-SBR_FILL_RATIO_FAIL = 1.00   # >100% → insufficient volume, impossible
+SBR_FILL_RATIO_WARN = 0.85   # >85% fill → marginal, plan additional capacity
+SBR_FILL_RATIO_FAIL = 0.95   # ≥95% fill → insufficient operating margin, FAIL
+# Engineering basis: fill ratio should not exceed 0.95 to allow for cycle timing
+# variation, granule settling time, and safety margin (Nereda design guidelines)
 
 # MBR flux limits (LMH — litres per m² per hour):
 MBR_FLUX_PEAK_WARN = 25.0    # LMH at peak
@@ -193,7 +195,7 @@ def run_hydraulic_stress(
             fill_ratio = fill_vol / vol_per_reactor if vol_per_reactor > 0 else 0.0
 
         result.fill_ratio_peak = round(fill_ratio, 3)
-        if fill_ratio > SBR_FILL_RATIO_FAIL:
+        if fill_ratio >= SBR_FILL_RATIO_FAIL:
             status = "FAIL"
             note   = (f"SBR fill ratio at peak {fill_ratio:.2f} > 1.0 — "
                       "reactor volume insufficient, cycle cannot complete under PWWF")

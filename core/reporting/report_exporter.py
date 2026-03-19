@@ -742,6 +742,14 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                         f"{sr_pref.scenario_name} costs ${abs(diff):.0f}k/yr more than "
                         f"{sr_ru.scenario_name} but scores higher on risk and maturity{risk_note}"
                     )
+    # ── QA override check for Decision Summary ───────────────────────────
+    _feasible_pref   = getattr(report, "feasible_preferred", None)
+    _requires_redsgn = getattr(report, "requires_redesign", False)
+    _raw_pref        = ds.get("preferred") if ds else None
+    _qa_override     = (_feasible_pref is not None and
+                        _feasible_pref != _raw_pref and
+                        _raw_pref is not None)
+
     if ds and ds.get("preferred"):
         from reportlab.platypus import Table as _DST, TableStyle as _DSTS
         from reportlab.lib import colors as _rlc
@@ -749,12 +757,33 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         rl_blue  = colours["blue"]
         rl_lt    = colours["lt"]
 
-        # Header row
-        hdr = [Paragraph("<b>🔷  DECISION SUMMARY</b>", styles["h1"])]
-        ds_rows = [
-            [Paragraph("<b>Preferred option</b>",  styles["h2"]),
-             Paragraph(rl_safe(ds["preferred"]),    styles["body"])],
-        ]
+        # Header row — flag QA override if active
+        _hdr_text = "🔷  DECISION SUMMARY"
+        if _qa_override or _requires_redsgn:
+            _hdr_text = "🔶  DECISION SUMMARY — QA OVERRIDE ACTIVE"
+        hdr = [Paragraph(f"<b>{_hdr_text}</b>", styles["h1"])]
+
+        # If QA override: show both raw preferred and feasible preferred
+        if _qa_override:
+            ds_rows = [
+                [Paragraph("<b>Preferred (raw score)</b>",      styles["h2"]),
+                 Paragraph(rl_safe(f"{_raw_pref} — HYDRAULIC FAIL at peak flow"), styles["body"])],
+                [Paragraph("<b>Preferred (feasible)</b>",       styles["h2"]),
+                 Paragraph(rl_safe(_feasible_pref or "—"),      styles["body"])],
+            ]
+        elif _requires_redsgn:
+            ds_rows = [
+                [Paragraph("<b>Preferred (raw score)</b>",  styles["h2"]),
+                 Paragraph(rl_safe(f"{_raw_pref} — REQUIRES REDESIGN"), styles["body"])],
+                [Paragraph("<b>Feasible option</b>",        styles["h2"]),
+                 Paragraph("No compliant option passes all hydraulic checks. "
+                            "Engineering redesign required before selection.", styles["body"])],
+            ]
+        else:
+            ds_rows = [
+                [Paragraph("<b>Preferred option</b>",  styles["h2"]),
+                 Paragraph(rl_safe(ds["preferred"]),    styles["body"])],
+            ]
         if ds.get("runner_up"):
             ds_rows.append([
                 Paragraph("<b>Runner-up</b>",           styles["h2"]),
@@ -1924,6 +1953,81 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
                     f"{s0.high_ef:.4f} to {s0.low_ef:.4f} g N\u2082O/g N removed "
                     "(Daelman et al. 2015). Site-specific DO optimisation recommended."
                 ), styles["body"]))
+
+        # ── C5. Auto-Remediation Results ──────────────────────────────────
+        _rems = getattr(report, "remediation_results", None) or []
+        if _rems:
+            story.append(Spacer(1, 8))
+            story.append(P("<b>C5. Hydraulic Remediation Options</b>", styles["h2"]))
+            story.append(P(
+                "The following options resolve hydraulic failures identified in Section C1. "
+                "Each represents the minimum engineering change required to achieve hydraulic compliance. "
+                "Costs are concept-level (\u00b140%). Modified scenarios include these costs in their LCC.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _rem_rows = [[
+                P("<b>Scenario</b>",       styles["body"]),
+                P("<b>Failure</b>",        styles["body"]),
+                P("<b>Fix applied</b>",    styles["body"]),
+                P("<b>+CAPEX ($M)</b>",    styles["body"]),
+                P("<b>+OPEX (k$/yr)</b>",  styles["body"]),
+                P("<b>Status after</b>",   styles["body"]),
+            ]]
+            for _rem in _rems:
+                _rem_rows.append([
+                    P(rl_safe(_rem.scenario_name),           styles["body"]),
+                    P(rl_safe(_rem.failure_description[:80]), styles["body"]),
+                    P(rl_safe(_rem.fix_description[:90]),     styles["body"]),
+                    P(rl_safe(f"${_rem.capex_delta_m:.2f}M"), styles["body"]),
+                    P(rl_safe(f"+${_rem.opex_delta_k_yr:.0f}k"), styles["body"]),
+                    P(rl_safe(_rem.hydraulic_status_after),  styles["body"]),
+                ])
+            _rem_tbl = _ST(_rem_rows, colWidths=[W*.13,W*.22,W*.30,W*.10,W*.10,W*.15], repeatRows=1)
+            _rem_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlcC.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlcC.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_rem_tbl)
+            # Show notes for each remediation
+            for _rem in _rems:
+                if _rem.notes:
+                    story.append(Spacer(1, 3))
+                    story.append(P(rl_safe(f"Note ({_rem.scenario_name}): {_rem.notes[:160]}"),
+                                   styles["disc"]))
+
+        # ── QA override narrative in Appendix B area ──────────────────────
+        _feas   = getattr(report, "feasible_preferred", None)
+        _redsgn = getattr(report, "requires_redesign", False)
+        _raw_p  = ds.get("preferred") if ds else None
+        if _feas and _feas != _raw_p:
+            story.append(Spacer(1, 8))
+            story.append(P("<b>QA Override — Feasibility Adjustment</b>", styles["h2"]))
+            story.append(P(rl_safe(
+                f"<b>{_raw_p}</b> scores highest under the Balanced weight profile "
+                f"({sr.preferred.total_score:.0f}/100) but fails hydraulic stress testing "
+                f"at {sr.preferred.scenario_name if sr and sr.preferred else ''}× peak flow. "
+                f"A hydraulic redesign (see Section C5) is required before {_raw_p} "
+                "can be confirmed for procurement. "
+                f"<b>Feasible preferred option: {_feas}</b> — the highest-scoring eligible "
+                "option that passes all hydraulic checks without redesign. "
+                "Both options should be carried to detailed feasibility."
+            ), styles["body"]))
+        elif _redsgn:
+            story.append(Spacer(1, 8))
+            story.append(P("<b>QA Override — Redesign Required</b>", styles["h2"]))
+            story.append(P(
+                "No compliant option passes all hydraulic checks as currently designed. "
+                "Engineering redesign is required before technology selection can be finalised. "
+                "The raw scoring result is presented for comparative purposes only.",
+                styles["body"]))
 
 
     # ── Appendix A — Key Assumptions ────────────────────────────────────────

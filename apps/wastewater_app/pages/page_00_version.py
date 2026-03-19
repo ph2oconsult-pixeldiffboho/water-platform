@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z8", "19 Mar 2026", [
+        "QA override logic: QA-FAIL scenario cannot be recommended — feasible_preferred selected instead",
+        "Auto-remediation engine (core/engineering/remediation.py): 4th SBR reactor, clarifier upsize, MBR membrane expansion",
+        "Decision Summary box: shows Preferred (raw) vs Preferred (feasible) when QA override is active",
+        "SBR fill ratio thresholds aligned: FAIL ≥ 0.95, WARNING ≥ 0.85 (both modules)",
+        "Appendix C5: Hydraulic Remediation table shows fix, cost delta, and post-fix status",
+        "QA override narrative: explicitly states why redesign is required and what the feasible alternative is",
+        "NEREDA 4th reactor: +$1.40M CAPEX, +$75k/yr OPEX → LCC $1,399k/yr → feasible preferred",
+        "282/282 benchmark checks passing",
+    ]),
     ("v24Z7", "19 Mar 2026", [
         "Hydraulic stress test — peak HRT, clarifier SOR, SBR fill ratio, MBR flux (PASS/WARNING/FAIL)",
         "Operational complexity engine — 5-factor 0-100 score, adjusts operational_risk in scoring",

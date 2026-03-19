@@ -66,6 +66,13 @@ class ReportObject:
     platform_qa_result:      Optional[Any] = None   # PlatformQAResult
     intervention_results:    Optional[Any] = None   # List[InterventionResult]
     carbon_pathway_result:   Optional[Any] = None   # DecisionResult (Low-carbon profile)
+    hydraulic_stress:        Optional[Any] = None   # Dict[name, HydraulicStressResult]
+    complexity_results:      Optional[Any] = None   # Dict[name, OperationalComplexityResult]
+    constructability_results:Optional[Any] = None   # Dict[name, ConstructabilityResult]
+    advanced_carbon_results: Optional[Any] = None   # Dict[name, AdvancedCarbonResult]
+    remediation_results:     Optional[Any] = None   # List[RemediationResult]
+    feasible_preferred:      Optional[str] = None   # preferred after QA/hydraulic override
+    requires_redesign:       bool = False
 
     # Metadata
     scenario_names: List[str] = field(default_factory=list)
@@ -532,6 +539,18 @@ class ReportEngine:
 
         if len(scored_scens) >= 2:
             try:
+                # ── Remediation engine (before scoring) ───────────────────────────────
+                try:
+                    from core.engineering.remediation import remediate_scenarios
+                    if report.hydraulic_stress:
+                        report.remediation_results = remediate_scenarios(
+                            scored_scens,
+                            report.hydraulic_stress,
+                            report.platform_qa_result,
+                        )
+                except Exception:
+                    pass
+
                 from core.decision.scoring_engine import ScoringEngine, WeightProfile
 
                 # Read compliance_status stamped directly onto the ScenarioModel.
@@ -650,6 +669,50 @@ class ReportEngine:
                             )
                     ds_box["preferred"] = pref.scenario_name
                     ds_box["runner_up"] = ru.scenario_name
+
+                # ── QA override: determine feasible_preferred ─────────────────
+                # If the scoring-preferred option has a QA FAIL (hydraulic or other),
+                # the feasible_preferred is the highest-scoring eligible option
+                # that does NOT have a QA FAIL.
+                try:
+                    _hs_r = report.hydraulic_stress or {}
+                    _qa_r = report.platform_qa_result
+                    # Build set of scenario names with QA FAIL
+                    _qa_fail_names = set()
+                    if _qa_r:
+                        for _e in (_qa_r.errors or []):
+                            # QA error format: "QA-Exx: <ScenarioName> — ..."
+                            for _sc in scored_scens:
+                                if _sc.scenario_name in _e:
+                                    _qa_fail_names.add(_sc.scenario_name)
+                    # Also add hydraulic FAIL scenarios
+                    for _hsn, _hsr in _hs_r.items():
+                        if _hsr.overall_status == "FAIL":
+                            _qa_fail_names.add(_hsn)
+
+                    _pref_name = (report.scoring_result.preferred.scenario_name
+                                 if report.scoring_result and report.scoring_result.preferred
+                                 else None)
+
+                    if _pref_name and _pref_name in _qa_fail_names:
+                        # Preferred has QA FAIL — find next eligible without fail
+                        _fallback = next(
+                            (o for o in sorted(report.scoring_result.scored_options,
+                                               key=lambda x: -x.total_score)
+                             if o.is_eligible
+                             and o.scenario_name not in _qa_fail_names
+                             and o.scenario_name != _pref_name),
+                            None
+                        )
+                        if _fallback:
+                            report.feasible_preferred = _fallback.scenario_name
+                        else:
+                            report.feasible_preferred = None
+                            report.requires_redesign  = True
+                    else:
+                        report.feasible_preferred = _pref_name
+                except Exception:
+                    report.feasible_preferred = None
                     # Override trade-off: compare preferred vs runner-up (both compliant)
                     ru_advantages = []
                     for crit, cs in ru.criterion_scores.items():

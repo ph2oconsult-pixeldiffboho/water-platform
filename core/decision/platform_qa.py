@@ -64,16 +64,16 @@ def run_platform_qa(
         tp  = (dso.get("technology_performance", {}) or {}).get(tc, {})
         # Check SBR fill ratio
         fill_ratio = tp.get("peak_fill_ratio")
-        if fill_ratio and fill_ratio >= 1.0:
+        if fill_ratio and fill_ratio >= 0.95:   # ≥0.95 → insufficient margin, FAIL
             qa.fail(
                 f"QA-E07: {s.scenario_name} — SBR fill ratio at peak flow = {fill_ratio:.2f} ≥ 1.0. "
                 "Reactor volume insufficient to handle PWWF. Increase reactor volume or "
                 "add flow balancing capacity before proceeding."
             )
-        elif fill_ratio and fill_ratio >= 0.90:
+        elif fill_ratio and fill_ratio >= 0.85:
             qa.warn(
                 f"QA-W04: {s.scenario_name} — SBR fill ratio at peak flow = {fill_ratio:.2f} "
-                "(marginal). Consider flow balancing or additional reactor volume."
+                "(marginal ≥0.85). Consider flow balancing or additional reactor volume."
             )
         # Note: clarifier SOR and MBR flux are computed in hydraulic_stress module
         # and surface in the report — no QA gate here (report narrative covers them)
