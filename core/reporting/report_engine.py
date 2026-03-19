@@ -761,9 +761,9 @@ class ReportEngine:
                     ds_box["runner_up"] = ru.scenario_name
 
                 # ── QA override: determine feasible_preferred ─────────────────
-                # If the scoring-preferred option has a QA FAIL (hydraulic or other),
-                # the feasible_preferred is the highest-scoring eligible option
-                # that does NOT have a QA FAIL.
+                # Use the re-scored preferred (which includes fixed scenarios).
+                # If the re-scored preferred passes all checks, it IS the feasible option.
+                # Only fall back to 'next eligible' logic if preferred is still blocked.
                 try:
                     _hs_r = report.hydraulic_stress or {}
                     _qa_r = report.platform_qa_result
@@ -784,8 +784,17 @@ class ReportEngine:
                                  if report.scoring_result and report.scoring_result.preferred
                                  else None)
 
-                    if _pref_name and _pref_name in _qa_fail_names:
-                        # Preferred has QA FAIL — find next eligible without fail
+                    # Re-scored preferred may be a fixed scenario — check it
+                    _rescored_pref = (
+                        report.scoring_result.preferred.scenario_name
+                        if report.scoring_result and report.scoring_result.preferred
+                        else None
+                    )
+                    if _rescored_pref and _rescored_pref not in _qa_fail_names:
+                        # Re-scored preferred passes — use it as feasible
+                        report.feasible_preferred = _rescored_pref
+                    elif _pref_name and _pref_name in _qa_fail_names:
+                        # Re-scored preferred still blocked — find next eligible
                         _fallback = next(
                             (o for o in sorted(report.scoring_result.scored_options,
                                                key=lambda x: -x.total_score)
@@ -856,6 +865,9 @@ class ReportEngine:
                             _re.preferred = _eligible_re[0]
                             _re.runner_up = _eligible_re[1] if len(_eligible_re) > 1 else None
                         report.scoring_result = _re
+                        # Update feasible_preferred to reflect the re-scored result
+                        if _re.preferred:
+                            report.feasible_preferred = _re.preferred.scenario_name
 
                     # Build 4-step decision pathway
                     report.decision_pathway = _build_decision_pathway(
