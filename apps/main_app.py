@@ -243,7 +243,20 @@ if st.session_state.get("active_app") == "wastewater":
                 ProjectManager().save(project)
                 st.session_state["has_unsaved_changes"] = False
                 _ww_sidebar.success("Saved ✓")
-    _ww_sidebar.caption("v1.0.0 — Concept Stage Planning")
+    # Version display — shows exact git commit so you always know what's running
+    try:
+        import subprocess
+        _git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=ROOT, stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        _git_date = subprocess.check_output(
+            ["git", "log", "-1", "--format=%cd", "--date=format:%d %b %H:%M"],
+            cwd=ROOT, stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        _ww_sidebar.caption(f"🔖 `{_git_hash}` · {_git_date}")
+    except Exception:
+        _ww_sidebar.caption("v1.0 — Concept Stage Planning")
 
 # ── Platform footer ────────────────────────────────────────────────────────
 else:
