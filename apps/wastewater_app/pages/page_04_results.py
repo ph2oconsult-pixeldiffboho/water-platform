@@ -773,3 +773,54 @@ def _run_calculations(project, scenario, pm: ProjectManager, use_calibrated: boo
             st.error(f"Calculation error: {e}")
             import traceback
             st.code(traceback.format_exc())
+
+
+# ── Brownfield constraint badge (optional — only shows in brownfield mode) ────
+
+def render_brownfield_badge(scenario) -> None:
+    """
+    Call after run_scenario() to show PASS / WARNING / FAIL badge
+    if brownfield mode is active.
+
+    Usage in results page:
+        if st.session_state.get("brownfield_mode"):
+            from apps.wastewater_app.pages.page_04_results import render_brownfield_badge
+            render_brownfield_badge(scenario)
+    """
+    import streamlit as st
+    constraints = getattr(scenario, "brownfield_constraints", None)
+    if constraints is None:
+        return
+
+    status = constraints.status
+    colour = {"PASS": "green", "WARNING": "orange", "FAIL": "red"}.get(status, "grey")
+    icon   = {"PASS": "✅", "WARNING": "⚠️", "FAIL": "🚨"}.get(status, "ℹ️")
+
+    st.markdown(
+        f'<div style="border:2px solid {colour};border-radius:6px;padding:10px;margin:8px 0;">'
+        f'<b>{icon} Brownfield Feasibility: {status}</b><br>'
+        + (
+            "<ul>" + "".join(f"<li>❌ {v}</li>" for v in constraints.violations) + "</ul>"
+            if constraints.violations else ""
+        )
+        + (
+            "<ul>" + "".join(f"<li>⚠️ {w}</li>" for w in constraints.warnings) + "</ul>"
+            if constraints.warnings else ""
+        )
+        + (f"<small>{constraints.summary_line()}</small>" if status == "PASS" else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Utilisation summary
+    us = constraints.utilisation_summary
+    non_none = {k: v for k, v in us.items() if v is not None}
+    if non_none:
+        import pandas as pd
+        df = pd.DataFrame([
+            {"Constraint": k.replace("_", " ").replace(" pct", " %").title(),
+             "Utilisation %": f"{v:.0f}%"}
+            for k, v in non_none.items()
+        ])
+        with st.expander("Constraint utilisation detail", expanded=False):
+            st.dataframe(df, use_container_width=True, hide_index=True)
