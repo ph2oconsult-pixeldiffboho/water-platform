@@ -268,7 +268,10 @@ class ScenarioModel:
     description: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     last_modified: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    is_preferred: bool = False
+    is_preferred:         bool = False
+    is_compliant:         Optional[bool] = None   # None = not yet evaluated
+    compliance_status:    str = ""                # "Compliant" | "Non-compliant" | "CWI" | ""
+    compliance_issues:    str = ""                # human-readable issues string
 
     # Design inputs
     design_flow_mld: Optional[float] = None

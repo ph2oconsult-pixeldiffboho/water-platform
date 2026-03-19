@@ -62,7 +62,10 @@ class ReportObject:
     # Decision framework output (populated when wastewater domain scenarios are present)
     decision: Optional[Any] = None  # ScenarioDecision from decision_engine
     decision_summary: Optional[Dict] = None  # Structured box: preferred, runner-up, driver, trade-off
-    scoring_result: Optional[Any] = None     # DecisionResult from scoring_engine
+    scoring_result:          Optional[Any] = None   # DecisionResult from scoring_engine
+    platform_qa_result:      Optional[Any] = None   # PlatformQAResult
+    intervention_results:    Optional[Any] = None   # List[InterventionResult]
+    carbon_pathway_result:   Optional[Any] = None   # DecisionResult (Low-carbon profile)
 
     # Metadata
     scenario_names: List[str] = field(default_factory=list)
@@ -484,36 +487,36 @@ class ReportEngine:
 
         # ── Run scoring engine for report integration ─────────────────────
         scored_scens = [s for s in scenarios if s.cost_result and s.risk_result]
+        # Stamp compliance on any scenario that hasn't been stamped yet
+        try:
+            from domains.wastewater.domain_interface import stamp_compliance
+            for _sc in scored_scens:
+                if not getattr(_sc, "compliance_status", ""):
+                    stamp_compliance(_sc)
+        except Exception:
+            pass
         if len(scored_scens) >= 2:
             try:
                 from core.decision.scoring_engine import ScoringEngine, WeightProfile
 
-                # Read compliance_flag that was already computed by the domain interface.
-                # Using the pre-computed flag guarantees ONE compliance determination
-                # shared by ALL report surfaces: comparison table, Section 9, Appendix B.
-                # This eliminates the Section 9 vs Appendix B contradiction.
+                # Read compliance_status stamped directly onto the ScenarioModel.
+                # This is the single source of truth — set in domain_interface
+                # populate_scenario_from_calc after every run_scenario call.
                 def _classify_compliance_inline(scenario) -> str:
+                    # 1. Use ScenarioModel.compliance_status if already stamped (preferred)
+                    status = getattr(scenario, "compliance_status", "")
+                    if status in ("Compliant", "Non-compliant", "Compliant with intervention"):
+                        return status
+                    # 2. Fall back to pre-computed compliance_flag in technology_performance
                     dso = getattr(scenario, "domain_specific_outputs", None) or {}
                     tp  = dso.get("technology_performance", {})
                     for tc_data in tp.values():
                         flag   = tc_data.get("compliance_flag", "")
                         issues = tc_data.get("compliance_issues", "") or ""
-                        if flag == "Meets Targets":
-                            return "Compliant"
                         if flag == "Review Required" and issues:
                             return "Non-compliant"
                         if flag == "Review Required":
-                            # achievability warning only — still compliant but flagged
                             return "Compliant with intervention"
-                    # No technology_performance data — fall back to domain_inputs check
-                    dinp   = getattr(scenario, "domain_inputs", None) or {}
-                    tp_tgt = dinp.get("effluent_tp_mg_l", 1.0)
-                    tn_tgt = dinp.get("effluent_tn_mg_l", 10.0)
-                    for tc_data in tp.values():
-                        tn = tc_data.get("effluent_tn_mg_l")
-                        p  = tc_data.get("effluent_tp_mg_l")
-                        if (tn is not None and tn > tn_tgt * 1.05) or                            (p  is not None and p  > tp_tgt * 1.05):
-                            return "Non-compliant"
                     return "Compliant"
 
                 compliance_map = {
@@ -525,6 +528,49 @@ class ReportEngine:
                     weight_profile=WeightProfile.BALANCED,
                     compliance_map=compliance_map,
                 )
+                # Run platform QA
+                try:
+                    from core.decision.platform_qa import run_platform_qa
+                    report.platform_qa_result = run_platform_qa(
+                        scored_scens,
+                        report.scoring_result,
+                        report.decision,
+                    )
+                except Exception:
+                    pass
+
+                # Generate intervention scenarios for non-compliant options
+                try:
+                    from core.decision.intervention_scenarios import generate_interventions
+                    ref_inp_for_int = {
+                        "design_flow_mld":    scored_scens[0].domain_inputs.get("design_flow_mld", 10.0)
+                                              if scored_scens and scored_scens[0].domain_inputs else 10.0,
+                        "effluent_tn_mg_l":   scored_scens[0].domain_inputs.get("effluent_tn_mg_l", 10.0)
+                                              if scored_scens and scored_scens[0].domain_inputs else 10.0,
+                        "effluent_tp_mg_l":   scored_scens[0].domain_inputs.get("effluent_tp_mg_l", 1.0)
+                                              if scored_scens and scored_scens[0].domain_inputs else 1.0,
+                    }
+                    # Get assumptions from first scenario's cost_result metadata
+                    report.intervention_results = generate_interventions(
+                        scored_scens, None, ref_inp_for_int
+                    )
+                except Exception:
+                    pass
+
+                # Generate carbon decision pathway (Low-carbon profile re-ranking)
+                try:
+                    carbon_cm = {
+                        s.scenario_name: _classify_compliance_inline(s)
+                        for s in scored_scens
+                    }
+                    report.carbon_pathway_result = engine.score(
+                        scored_scens,
+                        weight_profile=WeightProfile.LOW_CARBON,
+                        compliance_map=carbon_cm,
+                    )
+                except Exception:
+                    pass
+
                 # Update decision_summary driver from scoring_result —
                 # ensures ALL output formats (PDF, DOCX, page 3 box) use correct text
                 sr_result = report.scoring_result

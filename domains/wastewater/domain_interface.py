@@ -87,6 +87,34 @@ TECHNOLOGY_INPUT_CLASSES: Dict[str, Any] = {
 }
 
 
+
+def stamp_compliance(scenario: Any) -> None:
+    """
+    Stamp compliance status onto a ScenarioModel from its domain_specific_outputs.
+    Call this after cost_result and domain_specific_outputs are both populated.
+    This is the single source of truth for is_compliant / compliance_status.
+    """
+    dso = getattr(scenario, "domain_specific_outputs", None) or {}
+    tp  = dso.get("technology_performance", {})
+    hard_fail_issues = []
+    for tc_data in tp.values():
+        flag   = tc_data.get("compliance_flag", "")
+        issues = tc_data.get("compliance_issues", "") or ""
+        if flag == "Review Required" and issues:
+            hard_fail_issues.append(issues)
+    if hard_fail_issues:
+        scenario.is_compliant      = False
+        scenario.compliance_status = "Non-compliant"
+        scenario.compliance_issues = " | ".join(hard_fail_issues)
+    else:
+        has_ach = any(
+            tc_data.get("achievability_warnings", "")
+            for tc_data in tp.values()
+        )
+        scenario.is_compliant      = True
+        scenario.compliance_status = "Compliant with intervention" if has_ach else "Compliant"
+        scenario.compliance_issues = ""
+
 class WastewaterDomainInterface:
     """
     Orchestrates wastewater scenario calculations.
@@ -207,6 +235,33 @@ class WastewaterDomainInterface:
         scenario.validation_result = calc_result.validation_result
         scenario.domain_specific_outputs = calc_result.to_domain_outputs_dict()
         scenario.mark_calculated()
+
+        # ── Stamp compliance onto ScenarioModel — single source of truth ─────
+        # Every downstream consumer (report, scoring, UI) reads from here.
+        dso = scenario.domain_specific_outputs or {}
+        tp  = dso.get("technology_performance", {})
+        hard_fail_issues = []
+        for tc_data in tp.values():
+            flag   = tc_data.get("compliance_flag", "")
+            issues = tc_data.get("compliance_issues", "") or ""
+            if flag == "Meets Targets":
+                pass  # keep checking others
+            elif flag == "Review Required" and issues:
+                hard_fail_issues.append(issues)
+        if hard_fail_issues:
+            scenario.is_compliant       = False
+            scenario.compliance_status  = "Non-compliant"
+            scenario.compliance_issues  = " | ".join(hard_fail_issues)
+        else:
+            # Check for achievability warnings (CWI) vs clean pass
+            has_ach_warning = any(
+                tc_data.get("achievability_warnings", "")
+                for tc_data in tp.values()
+            )
+            scenario.is_compliant      = True
+            scenario.compliance_status = "Compliant with intervention" if has_ach_warning else "Compliant"
+            scenario.compliance_issues = ""
+
         return scenario
 
     # ── Private methods ───────────────────────────────────────────────────

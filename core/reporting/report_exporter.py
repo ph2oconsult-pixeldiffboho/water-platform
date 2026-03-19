@@ -1490,6 +1490,95 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             "Sensitivity test with alternative profiles before technology lock-in.",
             styles["disc"]))
 
+
+        # ── Intervention Scenarios ────────────────────────────────────────
+        from reportlab.lib import colors as _rlc4
+        _ivs = getattr(report, "intervention_results", None) or []
+        if _ivs:
+            story.append(Spacer(1, 10))
+            story.append(P("<b>Intervention Scenarios</b>", styles["h2"]))
+            story.append(P(
+                "Engineering interventions that can make non-compliant options viable. "
+                "Costs are indicative (\u00b140%). Ferric chloride dosing achieves TP target.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _int_rows = [[
+                P("<b>Option</b>", styles["body"]),
+                P("<b>Intervention</b>", styles["body"]),
+                P("<b>+OPEX (k$/yr)</b>", styles["body"]),
+                P("<b>+CAPEX ($M)</b>", styles["body"]),
+                P("<b>LCC with intervention</b>", styles["body"]),
+                P("<b>Compliant?</b>", styles["body"]),
+            ]]
+            for _iv in _ivs:
+                _ms  = _iv.modified_scenario
+                _lcc = f"${_ms.cost_result.lifecycle_cost_annual/1e3:.0f}k/yr" if _ms and _ms.cost_result else "—"
+                _ach = "Yes" if _iv.achieves_compliance else "Partial"
+                _int = _iv.intervention_label.replace(_iv.base_scenario_name + " + ", "")
+                _int_rows.append([
+                    P(rl_safe(_iv.base_scenario_name), styles["body"]),
+                    P(rl_safe(_int[:60]), styles["body"]),
+                    P(rl_safe(f"+${_iv.opex_delta_k_yr:.0f}"), styles["body"]),
+                    P(rl_safe(f"+${_iv.capex_delta_m:.2f}"), styles["body"]),
+                    P(rl_safe(_lcc), styles["body"]),
+                    P(rl_safe(_ach), styles["body"]),
+                ])
+            _int_tbl = _ST(_int_rows, colWidths=[W*.17,W*.28,W*.13,W*.12,W*.17,W*.13], repeatRows=1)
+            _int_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlc4.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlc4.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_int_tbl)
+
+        # ── Carbon Decision Pathway ───────────────────────────────────────
+        _cp = getattr(report, "carbon_pathway_result", None)
+        _sr = getattr(report, "scoring_result", None)
+        if _cp and _cp.preferred:
+            story.append(Spacer(1, 10))
+            story.append(P("<b>Carbon Decision Pathway — Low-Carbon Profile</b>", styles["h2"]))
+            story.append(P(
+                "Re-ranking under the Low-carbon / future-focused weight profile "
+                "(carbon intensity 25%, cost 25%, risk 20%). "
+                "Relevant if the utility has a carbon reduction target or expects "
+                "carbon pricing to increase materially.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _bal = _sr.preferred.scenario_name if _sr and _sr.preferred else "—"
+            _lc  = _cp.preferred.scenario_name
+            story.append(P(rl_safe(
+                f"Balanced profile preferred: <b>{_bal}</b>    |    "
+                f"Low-carbon profile preferred: <b>{_lc}</b> ({_cp.preferred.total_score:.0f}/100)"
+            ), styles["body"]))
+            if _lc != _bal:
+                story.append(Spacer(1, 3))
+                story.append(P(rl_safe(
+                    f"Note: under carbon prioritisation, {_lc} becomes preferred over {_bal}. "
+                    "If carbon reduction is a strategic priority, evaluate both options "
+                    "before technology selection."
+                ), styles["body"]))
+
+        # ── Platform QA ───────────────────────────────────────────────────
+        _qa = getattr(report, "platform_qa_result", None)
+        if _qa:
+            story.append(Spacer(1, 10))
+            story.append(P("<b>Platform QA</b>", styles["h2"]))
+            _qa_status = "PASSED" if _qa.passed else "FAILED"
+            story.append(P(rl_safe(f"Status: {_qa_status}   "
+                f"Errors: {len(_qa.errors)}   Warnings: {len(_qa.warnings)}   Notes: {len(_qa.notes)}"),
+                styles["body"]))
+            for _e in _qa.errors:
+                story.append(P(rl_safe(f"ERROR: {_e[:120]}"), styles["body"]))
+            for _w in _qa.warnings:
+                story.append(P(rl_safe(f"Warning: {_w[:120]}"), styles["body"]))
+
     # ── Appendix A — Key Assumptions ────────────────────────────────────────
     if report.assumptions_appendix:
         story.append(PageBreak())
