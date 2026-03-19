@@ -1650,6 +1650,92 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             "Sensitivity test with alternative profiles before technology lock-in.",
             styles["disc"]))
 
+        # ── Engineering Feasibility Status ───────────────────────────────
+        from reportlab.lib import colors as _rlcF
+        _fs_map = getattr(report, "feasibility_statuses", None) or {}
+        if _fs_map:
+            story.append(Spacer(1, 8))
+            story.append(P("<b>Engineering Feasibility Status</b>", styles["h2"]))
+            story.append(P(
+                "PASS = compliant + hydraulic OK. CONDITIONAL = ranked with remediation cost "
+                "included, confidence reduced. FAIL = excluded from ranking.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _fs_rows = [[
+                P("<b>Scenario</b>",       styles["body"]),
+                P("<b>Status</b>",         styles["body"]),
+                P("<b>Compliance</b>",     styles["body"]),
+                P("<b>Hydraulic</b>",      styles["body"]),
+                P("<b>Confidence</b>",     styles["body"]),
+                P("<b>Rationale</b>",      styles["body"]),
+            ]]
+            for _sn2, _fst2 in _fs_map.items():
+                _fs_rows.append([
+                    P(rl_safe(_sn2), styles["body"]),
+                    P(rl_safe(_fst2.status), styles["body"]),
+                    P(rl_safe(_fst2.compliance_gate), styles["body"]),
+                    P(rl_safe(_fst2.hydraulic_gate), styles["body"]),
+                    P(rl_safe(f"-{_fst2.confidence_penalty:.0f} pts"
+                              if _fst2.confidence_penalty else "none"), styles["body"]),
+                    P(rl_safe(_fst2.rationale[:80]), styles["body"]),
+                ])
+            _fs_tbl = _ST(_fs_rows, colWidths=[W*.15,W*.10,W*.14,W*.14,W*.11,W*.36], repeatRows=1)
+            _fs_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlcF.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlcF.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_fs_tbl)
+
+        # ── Engineering Decision Pathway ──────────────────────────────────
+        _dpw = getattr(report, "decision_pathway", None) or []
+        if _dpw:
+            story.append(Spacer(1, 8))
+            story.append(P("<b>Engineering Decision Pathway</b>", styles["h2"]))
+            story.append(P(
+                "Four-step pathway from initial scoring to final recommendation, "
+                "incorporating feasibility, remediation, and confidence adjustment.",
+                styles["body"]))
+            story.append(Spacer(1, 4))
+            _dp_rows = [[
+                P("<b>Step</b>",    styles["body"]),
+                P("<b>Stage</b>",   styles["body"]),
+                P("<b>Action</b>",  styles["body"]),
+                P("<b>Outcome</b>", styles["body"]),
+                P("<b>Confidence / Status</b>", styles["body"]),
+            ]]
+            for _dps in _dpw:
+                _dp_rows.append([
+                    P(rl_safe(_dps.get("step","")),        styles["body"]),
+                    P(rl_safe(_dps.get("title","")[:40]),   styles["body"]),
+                    P(rl_safe(_dps.get("action","")[:60]),  styles["body"]),
+                    P(rl_safe(_dps.get("outcome","")[:90]), styles["body"]),
+                    P(rl_safe(_dps.get("status","")[:60]),  styles["body"]),
+                ])
+            _dp_tbl = _ST(_dp_rows, colWidths=[W*.06,W*.18,W*.22,W*.36,W*.18], repeatRows=1)
+            _dp_tbl.setStyle(_STS([
+                ("BACKGROUND",    (0,0),(-1,0), colours["blue"]),
+                ("TEXTCOLOR",     (0,0),(-1,0), _rlcF.white),
+                ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+                ("TOPPADDING",    (0,0),(-1,-1), 4),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+                ("LEFTPADDING",   (0,0),(-1,-1), 5),
+                ("GRID",          (0,0),(-1,-1), 0.25, colours["lt"]),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colours["lt"], _rlcF.white]),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(_dp_tbl)
+
+
+
 
         # ── Intervention Scenarios ────────────────────────────────────────
         from reportlab.lib import colors as _rlc4

@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z10", "19 Mar 2026", [
+        "Auto re-run fixed scenarios: NEREDA + 4th Reactor enters full scoring comparison",
+        "Unified Engineering Feasibility Status: PASS/CONDITIONAL/FAIL replaces dual compliance+hydraulic flags",
+        "Confidence adjustment: CONDITIONAL scenarios penalised -10pts, fixed scenarios -5pts",
+        "Decision Engine update: only PASS and CONDITIONAL (with remediation) are ranked",
+        "Decision Pathway: 4-step table (initial scoring → feasibility gate → remediation → re-evaluated)",
+        "Feasibility status table in Appendix B showing all 5 criteria per scenario",
+        "NEREDA+4th Reactor: 61.9/100 — beats MBBR (49.2) as feasible preferred",
+        "282/282 benchmark passing",
+    ]),
     ("v24Z9", "19 Mar 2026", [
         "QA contradiction eliminated: report no longer recommends a QA-failed option anywhere",
         "qa_recommendation_text built once in report_engine — single source for Section 9, Appendix B, Decision Summary",

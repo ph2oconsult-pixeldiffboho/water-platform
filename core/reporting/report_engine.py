@@ -74,6 +74,9 @@ class ReportObject:
     feasible_preferred:      Optional[str] = None   # preferred after QA/hydraulic override
     requires_redesign:       bool = False
     qa_recommendation_text:  Optional[str] = None
+    feasibility_statuses:    Optional[Any] = None   # Dict[name, FeasibilityStatus]
+    fixed_scenarios:         Optional[Any] = None   # List[ScenarioModel] remediated
+    decision_pathway:        Optional[Any] = None   # List[dict] 4-step pathway
 
     # Metadata
     scenario_names: List[str] = field(default_factory=list)
@@ -85,6 +88,92 @@ class ReportObject:
 # ─────────────────────────────────────────────────────────────────────────────
 # REPORT ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _build_decision_pathway(
+    scenarios:       list,
+    feasibility:     dict,
+    remediations:    list,
+    scoring_result:  Any,
+    fixed_scenarios: list,
+) -> list:
+    """
+    Build the 4-step Engineering Decision Pathway for the report.
+
+    Returns a list of dicts, one per step:
+      step, title, scenarios_affected, outcome, confidence
+    """
+    pathway = []
+
+    # Step 1: Raw scoring (before any QA or feasibility checks)
+    if scoring_result and scoring_result.scored_options:
+        raw_ranked = sorted(
+            [o for o in scoring_result.scored_options],
+            key=lambda x: -x.base_score if hasattr(x, "base_score") else -x.total_score
+        )
+        raw_top = raw_ranked[0] if raw_ranked else None
+        pathway.append({
+            "step":     "1",
+            "title":    "Initial weighted scoring",
+            "action":   "Score all compliant options using balanced weight profile",
+            "outcome":  f"Preferred: {raw_top.scenario_name if raw_top else '—'} "
+                        f"({getattr(raw_top, 'base_score', getattr(raw_top, 'total_score', 0) if raw_top else 0):.0f}/100)",
+            "status":   "Complete",
+        })
+
+    # Step 2: Feasibility gate
+    fails  = [n for n,fs in feasibility.items() if fs.status == "FAIL"]
+    conds  = [n for n,fs in feasibility.items() if fs.status == "CONDITIONAL"]
+    passes = [n for n,fs in feasibility.items() if fs.status == "PASS"]
+    if fails or conds:
+        pathway.append({
+            "step":     "2",
+            "title":    "Engineering feasibility gate",
+            "action":   "Apply hydraulic stress test and compliance checks",
+            "outcome":  (f"FAIL: {', '.join(fails)} — excluded. " if fails else "") +
+                        (f"CONDITIONAL: {', '.join(conds)} — remediation required." if conds else "") +
+                        (f"PASS: {', '.join(passes)}." if passes else ""),
+            "status":   "FAIL detected" if fails else "Conditionals identified",
+        })
+
+    # Step 3: Remediation
+    if remediations:
+        rem_lines = []
+        for rem in remediations:
+            ms = rem.modified_scenario
+            if ms and ms.cost_result:
+                rem_lines.append(
+                    f"{rem.scenario_name} → {ms.scenario_name}: "
+                    f"+${rem.capex_delta_m:.2f}M CAPEX, "
+                    f"+${rem.opex_delta_k_yr:.0f}k/yr OPEX, "
+                    f"LCC ${ms.cost_result.lifecycle_cost_annual/1e3:.0f}k/yr"
+                )
+        pathway.append({
+            "step":     "3",
+            "title":    "Auto-remediation",
+            "action":   "Generate fixed scenarios with minimum engineering change",
+            "outcome":  "; ".join(rem_lines) if rem_lines else "No remediation required",
+            "status":   f"{len(remediations)} fix(es) generated",
+        })
+
+    # Step 4: Re-evaluated result
+    if scoring_result and scoring_result.preferred:
+        pref = scoring_result.preferred
+        fs   = feasibility.get(pref.scenario_name)
+        conf = "High"
+        if fs and fs.status == "CONDITIONAL":
+            conf = "Moderate (remediation required — cost uncertainty ±40%)"
+        elif any(pref.scenario_name == f.scenario_name for f in fixed_scenarios):
+            conf = "Moderate (includes remediation cost delta)"
+        pathway.append({
+            "step":     "4",
+            "title":    "Re-evaluated recommendation",
+            "action":   "Score all PASS and CONDITIONAL (with remediation) options",
+            "outcome":  f"Recommended: {pref.scenario_name} ({pref.total_score:.0f}/100)",
+            "status":   conf,
+        })
+
+    return pathway
+
 
 class ReportEngine:
     """
@@ -714,6 +803,70 @@ class ReportEngine:
                         report.feasible_preferred = _pref_name
                 except Exception:
                     report.feasible_preferred = None
+
+                # ── Unified feasibility status + auto re-run fixed scenarios ─────────
+                try:
+                    from core.engineering.feasibility_status import (
+                        compute_feasibility, apply_confidence_penalties,
+                        FEASIBILITY_FAIL, FEASIBILITY_CONDITIONAL
+                    )
+                    report.feasibility_statuses = compute_feasibility(
+                        scored_scens,
+                        report.hydraulic_stress or {},
+                        report.remediation_results or [],
+                    )
+
+                    # Collect fixed scenarios from remediation results
+                    _fixed = [rem.modified_scenario
+                              for rem in (report.remediation_results or [])
+                              if rem.feasible and rem.modified_scenario]
+                    report.fixed_scenarios = _fixed
+
+                    if _fixed:
+                        # Re-score: base scenarios + fixed scenarios together
+                        _all_sc = scored_scens + _fixed
+                        _fix_cm = dict(compliance_map)
+                        for _fs in _fixed:
+                            _fix_cm[_fs.scenario_name] = 'Compliant'
+                        _re = engine.score(_all_sc, WeightProfile.BALANCED, compliance_map=_fix_cm)
+
+                        # Mark original FAIL scenarios as excluded in the re-scored result
+                        for _opt in _re.scored_options:
+                            _fstat = (report.feasibility_statuses or {}).get(_opt.scenario_name)
+                            if _fstat and _fstat.status == FEASIBILITY_FAIL:
+                                _opt.is_eligible = False
+                                _opt.excluded_reason = 'Engineering Feasibility: FAIL'
+
+                        # Apply confidence penalties (CONDITIONAL → -10 pts)
+                        _all_fs = dict(report.feasibility_statuses or {})
+                        for _fs in _fixed:
+                            # Fixed scenarios get a small penalty (remediation adds cost uncertainty)
+                            _all_fs[_fs.scenario_name] = type('_FS', (), {
+                                'status': FEASIBILITY_CONDITIONAL,
+                                'confidence_penalty': 5.0
+                            })()
+                        apply_confidence_penalties(_re.scored_options, _all_fs)
+
+                        # Recompute preferred (may change with fixed scenario in field)
+                        _eligible_re = sorted(
+                            [o for o in _re.scored_options if o.is_eligible],
+                            key=lambda x: -x.total_score
+                        )
+                        if _eligible_re:
+                            _re.preferred = _eligible_re[0]
+                            _re.runner_up = _eligible_re[1] if len(_eligible_re) > 1 else None
+                        report.scoring_result = _re
+
+                    # Build 4-step decision pathway
+                    report.decision_pathway = _build_decision_pathway(
+                        scored_scens,
+                        report.feasibility_statuses or {},
+                        report.remediation_results or [],
+                        report.scoring_result,
+                        report.fixed_scenarios or [],
+                    )
+                except Exception:
+                    pass
 
                 # Build QA-aware recommendation text
                 try:
