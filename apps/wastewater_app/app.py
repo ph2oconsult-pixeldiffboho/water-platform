@@ -32,6 +32,7 @@ st.sidebar.markdown("*Water Utility Planning Platform*")
 st.sidebar.divider()
 
 PAGES = {
+    "🔖 Version": "00_version",
     "🏠 Project Setup": "01_project_setup",
     "📋 Inputs": "02_inputs",
     "⚙️ Treatment Selection": "03_treatment_selection",
@@ -60,7 +61,11 @@ st.session_state["page"] = PAGES[selected_page]
 # ── Route to selected page ─────────────────────────────────────────────────
 page_key = st.session_state["page"]
 
-if page_key == "01_project_setup":
+if page_key == "00_version":
+    from apps.wastewater_app.pages import page_00_version
+    page_00_version.render()
+
+elif page_key == "01_project_setup":
     from apps.wastewater_app.pages import page_01_project_setup
     page_01_project_setup.render()
 
