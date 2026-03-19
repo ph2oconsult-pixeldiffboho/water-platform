@@ -1363,6 +1363,48 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             styles["body"]))
         story.append(Spacer(1, 6))
 
+        # Decision hierarchy explanation
+        story.append(P("<b>Decision Logic</b>", styles["h2"]))
+        excl_names = ", ".join(e.scenario_name for e in sr.excluded) if sr.excluded else "none"
+        pref_name  = sr.preferred.scenario_name if sr.preferred else "—"
+        pref_score = f"{sr.preferred.total_score:.0f}/100" if sr.preferred else "—"
+        close_txt  = (f"Close decision (gap {sr.preferred.total_score - sr.runner_up.total_score:.1f} pts) "
+                      "— validate before commitment"
+                      if sr.close_decision and sr.runner_up
+                      else "Clear preference — proceed with validation")
+        _hier_rows = [
+            [P("<b>Step</b>", styles["body"]), P("<b>Rule</b>", styles["body"]),
+             P("<b>Outcome</b>", styles["body"])],
+            [P("1. Compliance gate", styles["body"]),
+             P("Fail any effluent target → excluded from recommendation", styles["body"]),
+             P(rl_safe(f"Excluded: {excl_names}"), styles["body"])],
+            [P("2. Cost ranking", styles["body"]),
+             P("Rank compliant options by lifecycle cost (lower = preferred)", styles["body"]),
+             P(rl_safe(f"Lowest LCC compliant: {pref_name}"), styles["body"])],
+            [P("3. Weighted scoring", styles["body"]),
+             P("Apply cost, environmental, risk and maturity weights", styles["body"]),
+             P(rl_safe(f"Preferred: {pref_name} ({pref_score})"), styles["body"])],
+            [P("4. Close-decision", styles["body"]),
+             P(rl_safe(f"Gap < {sr.close_decision_threshold:.0f} pts → flag, do not lock in"), styles["body"]),
+             P(rl_safe(close_txt), styles["body"])],
+        ]
+        from reportlab.lib import colors as _rlc3
+        _hier_tbl = _ST(_hier_rows, colWidths=[W*0.20, W*0.47, W*0.33], repeatRows=1)
+        _hier_tbl.setStyle(_STS([
+            ("BACKGROUND",    (0,0), (-1,0), colours["blue"]),
+            ("TEXTCOLOR",     (0,0), (-1,0), _rlc3.white),
+            ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,-1), 7.5),
+            ("TOPPADDING",    (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("LEFTPADDING",   (0,0), (-1,-1), 5),
+            ("GRID",          (0,0), (-1,-1), 0.25, colours["lt"]),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colours["lt"], _rlc3.white]),
+            ("VALIGN",        (0,0), (-1,-1), "TOP"),
+        ]))
+        story.append(_hier_tbl)
+        story.append(Spacer(1, 8))
+
         # Recommendation paragraph
         story.append(P(f"<b>Preferred option:</b> {sr.preferred.scenario_name} "
                        f"({sr.preferred.total_score:.0f}/100)", styles["body"]))

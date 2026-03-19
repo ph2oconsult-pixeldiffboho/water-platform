@@ -488,36 +488,32 @@ class ReportEngine:
             try:
                 from core.decision.scoring_engine import ScoringEngine, WeightProfile
 
-                # Inline compliance classification — avoids Streamlit import dependency
+                # Read compliance_flag that was already computed by the domain interface.
+                # Using the pre-computed flag guarantees ONE compliance determination
+                # shared by ALL report surfaces: comparison table, Section 9, Appendix B.
+                # This eliminates the Section 9 vs Appendix B contradiction.
                 def _classify_compliance_inline(scenario) -> str:
-                    dso  = getattr(scenario, "domain_specific_outputs", None) or {}
-                    tp   = dso.get("technology_performance", {})
-                    dinp = getattr(scenario, "domain_inputs", None) or {}
-                    tn_target  = dinp.get("effluent_tn_mg_l",  10.0)
-                    nh4_target = dinp.get("effluent_nh4_mg_l",  5.0)
-                    tp_target  = dinp.get("effluent_tp_mg_l",   1.0)
-                    bod_target = dinp.get("effluent_bod_mg_l", 20.0)
-                    tss_target = dinp.get("effluent_tss_mg_l", 20.0)
-                    hard_fail = marginal = False
-                    for tech_perf in tp.values():
-                        for key, target, margin in [
-                            ("effluent_tn_mg_l",  tn_target,  0.10),
-                            ("effluent_nh4_mg_l", nh4_target, 0.10),
-                            ("effluent_tp_mg_l",  tp_target,  0.10),
-                            ("effluent_bod_mg_l", bod_target, 0.10),
-                            ("effluent_tss_mg_l", tss_target, 0.10),
-                        ]:
-                            actual = tech_perf.get(key)
-                            if actual is None:
-                                continue
-                            if actual > target * (1 + margin):
-                                hard_fail = True
-                            elif actual > target * 1.02:
-                                marginal = True
-                    if hard_fail:
-                        return "Non-compliant"
-                    if marginal:
-                        return "Compliant with intervention"
+                    dso = getattr(scenario, "domain_specific_outputs", None) or {}
+                    tp  = dso.get("technology_performance", {})
+                    for tc_data in tp.values():
+                        flag   = tc_data.get("compliance_flag", "")
+                        issues = tc_data.get("compliance_issues", "") or ""
+                        if flag == "Meets Targets":
+                            return "Compliant"
+                        if flag == "Review Required" and issues:
+                            return "Non-compliant"
+                        if flag == "Review Required":
+                            # achievability warning only — still compliant but flagged
+                            return "Compliant with intervention"
+                    # No technology_performance data — fall back to domain_inputs check
+                    dinp   = getattr(scenario, "domain_inputs", None) or {}
+                    tp_tgt = dinp.get("effluent_tp_mg_l", 1.0)
+                    tn_tgt = dinp.get("effluent_tn_mg_l", 10.0)
+                    for tc_data in tp.values():
+                        tn = tc_data.get("effluent_tn_mg_l")
+                        p  = tc_data.get("effluent_tp_mg_l")
+                        if (tn is not None and tn > tn_tgt * 1.05) or                            (p  is not None and p  > tp_tgt * 1.05):
+                            return "Non-compliant"
                     return "Compliant"
 
                 compliance_map = {

@@ -195,6 +195,13 @@ CRITERION_LOWER_IS_BETTER: Dict[str, bool] = {
 # after cancellation of correlated errors between the same-methodology scenarios.
 MIN_SPREAD_FRACTION = 0.15
 
+# Normalised score clamping — prevents 0/100 binary extremes that mislead clients.
+# No technology scores "perfect" (100) or "completely unacceptable" (0) on any criterion
+# at concept stage — these represent unfounded certainty.
+# Range 20–85: reflects the practical range of concept-level discrimination.
+SCORE_CLAMP_MIN = 20.0
+SCORE_CLAMP_MAX = 85.0
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DATA MODELS
@@ -392,17 +399,17 @@ class ScoringEngine:
             norm = {}
 
             if rng < max(1e-9, min_spread):
-                # Spread too small — treat as tied, all score 100
+                # Spread too small — treat as tied, score midpoint
                 for name in values:
-                    norm[name] = 100.0
+                    norm[name] = (SCORE_CLAMP_MIN + SCORE_CLAMP_MAX) / 2  # midpoint for ties
                 if len(values) > 1:
                     tied_criteria.append(criterion)
             else:
                 for name, v in values.items():
                     if lower_better:
-                        norm[name] = 100.0 * (1 - (v - lo) / rng)
+                        norm[name] = max(SCORE_CLAMP_MIN, min(SCORE_CLAMP_MAX, 100.0 * (1 - (v - lo) / rng)))
                     else:
-                        norm[name] = 100.0 * (v - lo) / rng
+                        norm[name] = max(SCORE_CLAMP_MIN, min(SCORE_CLAMP_MAX, 100.0 * (v - lo) / rng))
             normalised[criterion] = norm
 
         # ── Step 2b: Detect correlation and uncertainty issues ──────────────
