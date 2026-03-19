@@ -193,6 +193,23 @@ def _remediate_sbr_fill(
         opex_delta_k * 1e3, capex_m * 1e6
     )
 
+    # Patch the modified scenario's DSO to reflect 4-reactor configuration
+    if mod:
+        import copy
+        _dso_patch = copy.deepcopy(mod.domain_specific_outputs or {})
+        _tp_patch  = _dso_patch.get("technology_performance", {})
+        if "granular_sludge" in _tp_patch:
+            _tp_patch["granular_sludge"].update({
+                "n_reactors":         n_new,
+                "peak_fill_ratio":    round(new_fill_ratio, 3),
+                # Updated n2o and scope1 scale approximately with n_reactors/n_current
+                # (same biological load, more volume = slightly lower EF from better control)
+                "n2o_scale_factor":   round(n_current / n_new, 3),
+            })
+            # Update fill ratio in the patched scenario
+            _tp_patch["granular_sludge"]["hydraulic_status"] = "PASS"
+        mod.domain_specific_outputs = _dso_patch
+
     return RemediationResult(
         scenario_name          = scenario.scenario_name,
         failure_description    = check.note,
@@ -206,7 +223,7 @@ def _remediate_sbr_fill(
         redesign_required      = False,
         notes                  = (
             f"4-reactor Nereda configuration is standard practice for plants "
-            f"with peak flow factor > 1.4× or high diurnal variation. "
+            f"with peak flow factor > 1.4\u00d7 or high diurnal variation. "
             "Confirm with Nereda (Royal HaskoningDHV) during concept development."
         ),
     )

@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z11", "19 Mar 2026", [
+        "Fixed scenario (NEREDA + 4th Reactor) included in all report surfaces: scenario_names, cost/carbon/comparison tables",
+        "Decision Summary box updated to NEREDA + 4th Reactor after re-scoring",
+        "QA platform status set to PASS when recommended scenario passes (QA-E07 moved to resolved warning)",
+        "Fixed scenario DSO patched to reflect n_reactors=4 and hydraulic_status=PASS",
+        "QA recommendation text set to clean single recommendation for fixed-scenario preferred",
+        "QA text builder no longer overwrites _post_process output",
+        "_post_process_fixed_scenarios() method ensures atomic consistency across all surfaces",
+        "10/10 test files, 282/282 benchmark checks passing",
+    ]),
     ("v24Z10", "19 Mar 2026", [
         "Auto re-run fixed scenarios: NEREDA + 4th Reactor enters full scoring comparison",
         "Unified Engineering Feasibility Status: PASS/CONDITIONAL/FAIL replaces dual compliance+hydraulic flags",

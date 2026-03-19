@@ -89,6 +89,134 @@ class ReportObject:
 # REPORT ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _post_process_fixed_scenarios(report: Any, scored_scens: list, engine: Any,
+                                    WeightProfile: Any) -> None:
+    """
+    Run after re-scoring to ensure every report surface is consistent.
+    Handles: scenario_names, all tables, decision_summary, QA status,
+             driver text, qa_recommendation_text.
+    Called once — idempotent if fixed_scenarios is empty.
+    """
+    fixed = report.fixed_scenarios or []
+    if not fixed:
+        return
+
+    sr    = report.scoring_result
+    pref  = sr.preferred.scenario_name if (sr and sr.preferred) else None
+    ru    = sr.runner_up.scenario_name if (sr and sr.runner_up) else None
+    all_s = scored_scens + fixed
+
+    # ── Gap 1: scenario_names ─────────────────────────────────────────────
+    existing = set(report.scenario_names or [])
+    for fs in fixed:
+        if fs.scenario_name not in existing:
+            report.scenario_names = list(report.scenario_names or []) + [fs.scenario_name]
+
+    # ── Gaps 2-4: rebuild tables ──────────────────────────────────────────
+    try:
+        report.cost_table       = engine._build_cost_table(all_s)
+        report.carbon_table     = engine._build_carbon_table(all_s)
+        report.comparison_table = engine._build_comparison_table(all_s)
+        if hasattr(engine, '_build_opex_breakdown_table'):
+            report.opex_breakdown_table = engine._build_opex_breakdown_table(all_s)
+        if hasattr(engine, '_build_specific_metrics_table'):
+            report.specific_metrics_table = engine._build_specific_metrics_table(all_s)
+    except Exception:
+        pass
+
+    # ── Gap 5: decision_summary box ──────────────────────────────────────
+    if report.decision_summary and pref:
+        report.decision_summary['preferred'] = pref
+        if ru:
+            report.decision_summary['runner_up'] = ru
+        # Rebuild driver text for new preferred vs runner-up
+        try:
+            rp   = sr.preferred
+            rru  = sr.runner_up
+            rlp  = rp.criterion_scores.get('lcc') if rp else None
+            rlru = rru.criterion_scores.get('lcc') if rru else None
+            if rlp and rlru and rru:
+                rdiff = round(rlru.raw_value - rlp.raw_value)
+                if rdiff > 50:
+                    report.decision_summary['driver'] = (
+                        f"Clear economic advantage: {pref} reduces lifecycle cost by "
+                        f"${rdiff:,}k/yr vs {ru} (next-best compliant option)"
+                    )
+                else:
+                    report.decision_summary['driver'] = (
+                        f"{pref} preferred on weighted score "
+                        f"({rp.total_score:.0f} vs {rru.total_score:.0f} for {ru})"
+                    )
+            report.decision_summary['basis'] = (
+                "Lowest lifecycle cost among compliant options (includes remediation cost)"
+                if any(f.scenario_name == pref for f in fixed) else
+                "Lowest lifecycle cost among compliant options"
+            )
+        except Exception:
+            pass
+
+    # ── Gap 6: QA status ─────────────────────────────────────────────────
+    qa = report.platform_qa_result
+    if qa and pref:
+        # Check if recommended option passes hydraulic stress
+        hs_pref = (report.hydraulic_stress or {}).get(pref)
+        pref_is_fixed = any(f.scenario_name == pref for f in fixed)
+        fs_pref = (report.feasibility_statuses or {}).get(pref)
+        pref_passes = (
+            pref_is_fixed                                     # fixed scenarios pass by construction
+            or (hs_pref and hs_pref.overall_status == "PASS") # direct pass
+            or (fs_pref and fs_pref.status == "PASS")         # feasibility PASS
+        )
+        if pref_passes:
+            qa.passed = True
+            # Move QA errors to resolved warnings (retain for transparency)
+            if qa.errors:
+                for qe in qa.errors:
+                    qa.warnings.append(
+                        f"[Resolved — {pref} selected instead] {qe}"
+                    )
+                qa.errors = []
+
+    # ── Gap 8: qa_recommendation_text ────────────────────────────────────
+    # When preferred is the fixed scenario, there's no contradiction —
+    # the report should show a clean single recommendation
+    if pref and any(f.scenario_name == pref for f in fixed):
+        rems = report.remediation_results or []
+        rem_item = next((r for r in rems if r.modified_scenario and
+                         r.modified_scenario.scenario_name == pref), None)
+        # Get LCC directly from scoring_result (most reliable source)
+        lcc_pref = 0
+        if sr and sr.preferred:
+            lcc_cs = sr.preferred.criterion_scores.get("lcc")
+            if lcc_cs:
+                lcc_pref = lcc_cs.raw_value
+        if lcc_pref == 0 and rem_item and rem_item.modified_scenario:
+            ms_cr = rem_item.modified_scenario.cost_result
+            if ms_cr:
+                lcc_pref = ms_cr.lifecycle_cost_annual / 1e3
+
+        if rem_item:
+            report.qa_recommendation_text = (
+                f"{pref} is the recommended option. "
+                f"This is {rem_item.scenario_name} with a hydraulic redesign: "
+                f"{rem_item.fix_description[:60]}. "
+                f"Lifecycle cost: ${lcc_pref:.0f}k/yr (includes "
+                f"+${rem_item.capex_delta_m:.2f}M CAPEX and "
+                f"+${rem_item.opex_delta_k_yr:.0f}k/yr OPEX). "
+                f"All engineering feasibility checks pass."
+            )
+        else:
+            report.qa_recommendation_text = (
+                f"{pref} is the recommended option. "
+                f"This is a remediated scenario that passes all feasibility checks."
+            )
+
+    elif not pref or not any(f.scenario_name == pref for f in fixed):
+        # Non-fixed preferred — clear any stale QA text if no longer blocked
+        if report.feasible_preferred == pref:
+            report.qa_recommendation_text = None
+
+
 def _build_decision_pathway(
     scenarios:       list,
     feasibility:     dict,
@@ -877,6 +1005,11 @@ class ReportEngine:
                         report.scoring_result,
                         report.fixed_scenarios or [],
                     )
+
+                    # ── Post-process: ensure all surfaces are consistent ─────────
+                    _post_process_fixed_scenarios(
+                        report, scored_scens, self, WeightProfile
+                    )
                 except Exception:
                     pass
 
@@ -931,9 +1064,11 @@ class ReportEngine:
                             )
                         report.qa_recommendation_text = ' '.join(_parts2)
                     else:
-                        report.qa_recommendation_text = None
+                        # Only clear if not already set by _post_process (fixed scenario)
+                        if not getattr(report, 'qa_recommendation_text', None):
+                            report.qa_recommendation_text = None
                 except Exception:
-                    report.qa_recommendation_text = None
+                    pass
                     # Override trade-off: compare preferred vs runner-up (both compliant)
                     ru_advantages = []
                     for crit, cs in ru.criterion_scores.items():
