@@ -130,17 +130,33 @@ def run_platform_qa(
                 f"QA-N01: {s.scenario_name} — achievability note: {ach[:80]}"
             )
 
-        # Flag if TN achievability warning present but no supplemental carbon in OPEX
+        # Flag if TN achievability warning is present AND the technology actually requires
+        # supplemental carbon (COD/TKN < 10) but no methanol appears in OPEX.
+        # Do NOT fire if the model achieves TN naturally — the achievability warning
+        # is then a site-investigation caution, not a cost omission.
         if "supplemental carbon" in ach.lower() or "methanol" in ach.lower():
-            cr = getattr(s, "cost_result", None)
-            opex_keys = list(cr.opex_breakdown.keys()) if cr and hasattr(cr, "opex_breakdown") else []
-            has_methanol_opex = any("methanol" in k.lower() for k in opex_keys)
-            if not has_methanol_opex:
-                qa.warn(
-                    f"QA-W03: {s.scenario_name} — achievability warning mentions supplemental "
-                    f"carbon/methanol but no methanol cost item found in OPEX. "
-                    "OPEX may be understated if supplemental carbon is required on-site."
-                )
+            tc_code = (s.treatment_pathway.technology_sequence[0]
+                       if s.treatment_pathway and s.treatment_pathway.technology_sequence else "")
+            dso2    = getattr(s, "domain_specific_outputs", None) or {}
+            tp2     = dso2.get("technology_performance", {}).get(tc_code, {})
+            # Only warn if the engineering summary explicitly says methanol is REQUIRED
+            # (not just mentioned as a possibility)
+            eng_notes = str(tp2.get("notes", "")) + str(tp2.get("engineering_notes", ""))
+            methanol_required = (
+                "methanol dose required" in eng_notes.lower() or
+                "methanol: " in eng_notes.lower()
+            )
+            if methanol_required:
+                cr = getattr(s, "cost_result", None)
+                opex_keys = list(cr.opex_breakdown.keys()) if cr and hasattr(cr, "opex_breakdown") else []
+                has_methanol_opex = any("methanol" in k.lower() for k in opex_keys)
+                if not has_methanol_opex:
+                    qa.warn(
+                        f"QA-W03: {s.scenario_name} — engineering notes indicate methanol dosing "
+                        f"is required for reliable TN compliance, but no methanol cost is included "
+                        "in OPEX. Lifecycle cost may be understated — confirm carbon availability "
+                        "on site before relying on this cost estimate."
+                    )
 
     # ── QA-5: Cost result present for all scenarios ───────────────────────
     for s in scenarios:

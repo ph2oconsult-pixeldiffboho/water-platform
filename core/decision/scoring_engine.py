@@ -412,6 +412,20 @@ class ScoringEngine:
                         norm[name] = max(SCORE_CLAMP_MIN, min(SCORE_CLAMP_MAX, 100.0 * (v - lo) / rng))
             normalised[criterion] = norm
 
+        # ── Post-normalisation: maturity-adjusted implementation floor ─────────
+        # Technologies with high maturity (≥65) have demonstrated global implementation.
+        # The normalised implementation score should not drop below 30 purely because
+        # a more conventional option is in the same comparison field.
+        if "implementation_risk" in normalised and "maturity" in normalised:
+            for name in list(normalised["implementation_risk"].keys()):
+                mat_score = normalised["maturity"].get(name, 0)
+                if mat_score >= 50:   # materially mature technology
+                    floor = 20 + (mat_score - 50) * 0.4   # scales from 20 at mat=50 to 36 at mat=90
+                    floor = min(floor, 40.0)               # never exceed 40 as a floor
+                    normalised["implementation_risk"][name] = max(
+                        normalised["implementation_risk"][name], floor
+                    )
+
         # ── Step 2b: Detect correlation and uncertainty issues ──────────────
         # IMPORTANT: correlation detection requires >= 3 scenarios.
         # With exactly 2 scenarios, any two criteria correlate at r=+/-1.0

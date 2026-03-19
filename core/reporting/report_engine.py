@@ -591,7 +591,13 @@ class ReportEngine:
                                          else f", {abs(risk_diff)} points higher risk")
                     if lcc_p and lcc_r:
                         diff = lcc_r.raw_value - lcc_p.raw_value
-                        if diff > 0:
+                        if diff > 100:   # material — state with confidence
+                            ds_box["driver"] = (
+                                f"Clear economic advantage: {pref.scenario_name} reduces "
+                                f"lifecycle cost by ${diff:.0f}k/yr vs {ru.scenario_name} "
+                                f"(next-best compliant option){risk_note}"
+                            )
+                        elif diff > 0:
                             ds_box["driver"] = (
                                 f"{pref.scenario_name} saves ${diff:.0f}k/yr lifecycle cost "
                                 f"vs {ru.scenario_name}{risk_note}"
@@ -601,7 +607,6 @@ class ReportEngine:
                                 f"{pref.scenario_name} costs ${abs(diff):.0f}k/yr more than "
                                 f"{ru.scenario_name} but scores higher on risk and maturity{risk_note}"
                             )
-                    # Also update preferred/runner_up in decision_summary
                     ds_box["preferred"] = pref.scenario_name
                     ds_box["runner_up"] = ru.scenario_name
                     # Override trade-off: compare preferred vs runner-up (both compliant)

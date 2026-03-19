@@ -19,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z5", "19 Mar 2026", [
+        "Section 9 rewritten: two-tier compliance structure (base / with intervention)",
+        "Economic advantage stated clearly: 'NEREDA reduces lifecycle cost by $747k/yr'",
+        "Carbon note in Section 9: MABR-BNR lowest carbon but cost premium outweighs benefit",
+        "NEREDA implementation score: maturity-adjusted floor — proven techs no longer penalised",
+        "QA-W03 false positive fixed: only fires when methanol is genuinely required in engineering notes",
+        "Driver tone: 'Clear economic advantage' label for savings >$100k/yr",
+    ]),
     ("v24Z4", "19 Mar 2026", [
         "Compliance labels: 'Compliant with intervention' removed for achievability-note-only scenarios",
         "NEREDA maturity recalibrated 65→72 (100+ global reference plants, AU precedent)",
