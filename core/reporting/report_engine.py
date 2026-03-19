@@ -73,6 +73,7 @@ class ReportObject:
     remediation_results:     Optional[Any] = None   # List[RemediationResult]
     feasible_preferred:      Optional[str] = None   # preferred after QA/hydraulic override
     requires_redesign:       bool = False
+    qa_recommendation_text:  Optional[str] = None
 
     # Metadata
     scenario_names: List[str] = field(default_factory=list)
@@ -713,6 +714,61 @@ class ReportEngine:
                         report.feasible_preferred = _pref_name
                 except Exception:
                     report.feasible_preferred = None
+
+                # Build QA-aware recommendation text
+                try:
+                    _fp2  = report.feasible_preferred
+                    _sr2  = report.scoring_result
+                    _raw2 = _sr2.preferred.scenario_name if (_sr2 and _sr2.preferred) else None
+                    _ru2  = (_sr2.runner_up.scenario_name
+                             if (_sr2 and _sr2.runner_up) else '-')
+                    _rems2 = report.remediation_results or []
+                    _qa2   = report.platform_qa_result
+                    _blocked2 = (_fp2 and _fp2 != _raw2) or report.requires_redesign
+                    if _blocked2 and _raw2:
+                        _rem2 = next(
+                            (r for r in _rems2 if r.scenario_name == _raw2), None
+                        )
+                        _errs2   = [e for e in (_qa2.errors if _qa2 else []) if _raw2 in e]
+                        _detail2 = _errs2[0].split('-- ', 1)[-1].split('\u2014 ',1)[-1][:130] if _errs2 else ''
+                        if not _detail2 and _errs2:
+                            _detail2 = _errs2[0][_errs2[0].find(' -- ')+4:][:130] if ' -- ' in _errs2[0] else _errs2[0].split(': ',2)[-1][:130]
+                        _fix2 = _rem2.fix_description[:80] if _rem2 else ''
+                        _lcc2 = (
+                            _rem2.modified_scenario.cost_result.lifecycle_cost_annual / 1e3
+                            if (_rem2 and _rem2.modified_scenario
+                                and _rem2.modified_scenario.cost_result) else 0
+                        )
+                        _parts2 = []
+                        _parts2.append(
+                            _raw2 + ' is the preferred option based on cost and carbon performance.'
+                        )
+                        if _detail2:
+                            _parts2.append(
+                                'However, QA-E07 identifies a hydraulic constraint at peak flow: '
+                                + _detail2
+                                + ' As currently configured, ' + _raw2
+                                + ' is not feasible for procurement.'
+                            )
+                        _parts2.append('Required action before selection:')
+                        if _fix2:
+                            _parts2.append('\u2022 Modify ' + _raw2 + ': ' + _fix2)
+                        _parts2.append(
+                            '\u2022 Re-run ' + _raw2
+                            + ' with updated hydraulic sizing before final selection.'
+                        )
+                        if _fp2 and not report.requires_redesign:
+                            _parts2.append(
+                                'Current feasible recommendation: ' + _fp2 + '. '
+                                + _fp2 + ' passes all hydraulic checks as currently designed '
+                                + 'and is recommended for detailed feasibility unless '
+                                + _raw2 + ' is redesigned.'
+                            )
+                        report.qa_recommendation_text = ' '.join(_parts2)
+                    else:
+                        report.qa_recommendation_text = None
+                except Exception:
+                    report.qa_recommendation_text = None
                     # Override trade-off: compare preferred vs runner-up (both compliant)
                     ru_advantages = []
                     for crit, cs in ru.criterion_scores.items():

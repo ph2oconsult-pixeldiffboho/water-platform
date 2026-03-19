@@ -19,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z9", "19 Mar 2026", [
+        "QA contradiction eliminated: report no longer recommends a QA-failed option anywhere",
+        "qa_recommendation_text built once in report_engine — single source for Section 9, Appendix B, Decision Summary",
+        "Section 9 and Appendix B show two-part narrative: preferred (raw) + hydraulic constraint + feasible recommendation",
+        "Appendix B: NEREDA shown as raw preferred with HYDRAULIC CONSTRAINT flag; MBBR as feasible recommendation",
+        "Decision Summary box: 'NEREDA (raw) — HYDRAULIC CONSTRAINT | MBBR (feasible)' when QA override active",
+        "NEREDA (fixed) auto-remediation scenario tracked through remediation_results",
+    ]),
     ("v24Z8", "19 Mar 2026", [
         "QA override logic: QA-FAIL scenario cannot be recommended — feasible_preferred selected instead",
         "Auto-remediation engine (core/engineering/remediation.py): 4th SBR reactor, clarifier upsize, MBR membrane expansion",

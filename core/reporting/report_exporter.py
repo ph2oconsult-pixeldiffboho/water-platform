@@ -1313,12 +1313,15 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
             _saving9 = round(_lcc_ru9.raw_value - _lcc_p9.raw_value)
             if _saving9 > 50:   # material saving — state it boldly
                 story.append(P(rl_safe(
-                    f"<b>{_p9.scenario_name}</b> is the recommended option. "
-                    f"It provides a clear economic advantage over the next-best compliant option "
-                    f"({_ru9.scenario_name}), reducing lifecycle cost by approximately "
-                    f"<b>${_saving9:,}k/yr</b> over the 30-year analysis period. "
-                    f"At \u00b140% estimate accuracy this saving ({_saving9:,}k/yr) "
-                    "is material and should be the primary driver of technology selection."
+                    (getattr(report, "qa_recommendation_text", None)
+                     or (
+                         f"<b>{_p9.scenario_name}</b> is the recommended option. "
+                         f"It provides a clear economic advantage over the next-best compliant option "
+                         f"({_ru9.scenario_name}), reducing lifecycle cost by approximately "
+                         f"<b>${_saving9:,}k/yr</b> over the 30-year analysis period. "
+                         f"At \u00b140% estimate accuracy this saving ({_saving9:,}k/yr) "
+                         "is material and should be the primary driver of technology selection."
+                     ))
                 ), styles["body"]))
                 # Issue 1+2: explain non-compliant exclusion and intervention comparison
                 _ivs_s9b = getattr(report, "intervention_results", None) or []
@@ -1538,15 +1541,39 @@ def _pdf_comprehensive(report: ReportObject) -> bytes:
         story.append(_hier_tbl)
         story.append(Spacer(1, 8))
 
-        # Recommendation paragraph
-        story.append(P(f"<b>Preferred option:</b> {sr.preferred.scenario_name} "
-                       f"({sr.preferred.total_score:.0f}/100)", styles["body"]))
-        if sr.runner_up:
-            story.append(P(f"<b>Runner-up:</b> {sr.runner_up.scenario_name} "
-                           f"({sr.runner_up.total_score:.0f}/100)", styles["body"]))
-        story.append(P(f"<b>Recommendation:</b> {sr.recommendation}", styles["body"]))
-        if sr.trade_off:
-            story.append(P(f"<b>Trade-off:</b> {sr.trade_off}", styles["body"]))
+        # Recommendation paragraph — QA override aware
+        _qa_txt  = getattr(report, "qa_recommendation_text", None)
+        _fp_app  = getattr(report, "feasible_preferred", None)
+        _raw_app = sr.preferred.scenario_name if sr.preferred else "—"
+        _sc_app  = sr.preferred.total_score if sr.preferred else 0
+        _blocked = _qa_txt is not None and _fp_app and _fp_app != _raw_app
+
+        if _blocked:
+            _fp_score = next(
+                (o.total_score for o in sr.scored_options if o.scenario_name == _fp_app), 0
+            )
+            story.append(P(rl_safe(
+                f"<b>Preferred option (raw score):</b> {_raw_app} ({_sc_app:.0f}/100)"
+                " — HYDRAULIC CONSTRAINT IDENTIFIED"
+            ), styles["body"]))
+            story.append(P(rl_safe(
+                f"<b>Feasible recommendation:</b> {_fp_app} ({_fp_score:.0f}/100)"
+            ), styles["body"]))
+            story.append(Spacer(1, 4))
+            story.append(P(rl_safe(_qa_txt), styles["body"]))
+        else:
+            story.append(P(rl_safe(
+                f"<b>Preferred option:</b> {_raw_app} ({_sc_app:.0f}/100)"
+            ), styles["body"]))
+            if sr.runner_up:
+                story.append(P(rl_safe(
+                    f"<b>Runner-up:</b> {sr.runner_up.scenario_name} "
+                    f"({sr.runner_up.total_score:.0f}/100)"
+                ), styles["body"]))
+            story.append(P(rl_safe(f"<b>Recommendation:</b> {sr.recommendation}"),
+                           styles["body"]))
+            if sr.trade_off:
+                story.append(P(rl_safe(f"<b>Trade-off:</b> {sr.trade_off}"), styles["body"]))
         story.append(Spacer(1, 6))
 
         # Close decision note
