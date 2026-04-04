@@ -73,6 +73,18 @@ class WaterPointInput:
     sludge_kgds_day:    Optional[float] = None
     reactor_volume_m3:  Optional[float] = None
     clarifier_area_m2:  Optional[float] = None
+    # Flow scenario (from page_02b)
+    flow_scenario_type:       Optional[str]  = None
+    flow_adjusted_flow_mld:   Optional[float]= None
+    flow_adjusted_bod_kg_d:   Optional[float]= None
+    flow_hydraulic_capacity:  Optional[float]= None
+    flow_overflow_flag:       bool           = False
+    flow_clarifier_stress:    bool           = False
+    flow_bypass_risk:         bool           = False
+    flow_first_flush_enabled: bool           = False
+    flow_first_flush_duration_hr: Optional[float] = None
+    flow_wet_weather_duration_hr: Optional[float] = None
+    flow_wet_weather_profile: Optional[str]  = None
     # Data quality tracker
     missing_fields: List[str] = field(default_factory=list)
 
@@ -198,6 +210,39 @@ def build_waterpoint_input(
     if not inp.reactor_volume_m3: missing.append("reactor_volume_m3")
     if not inp.effluent_tn_mg_l:  missing.append("effluent_tn_mg_l")
     if not inp.outputs.capex_estimate: missing.append("capex")
+
+    # ── Flow scenario overlay ─────────────────────────────────────────────
+    fs_stored = di.get("flow_scenario") or {}
+    if fs_stored:
+        try:
+            from apps.wastewater_app.flow_scenario_engine import (
+                FlowScenarioInputs, from_domain_inputs_dict, calculate
+            )
+            fsi = FlowScenarioInputs(
+                base_flow_mld  = inp.average_flow_mld or 10.0,
+                base_bod_mg_l  = _g(di, "influent_bod_mg_l") or 250.0,
+                base_tss_mg_l  = _g(di, "influent_tss_mg_l") or 280.0,
+                base_tn_mg_l   = _g(di, "influent_tkn_mg_l") or 45.0,
+                base_tp_mg_l   = _g(di, "influent_tp_mg_l")  or 7.0,
+                base_nh4_mg_l  = _g(di, "influent_nh4_mg_l") or 35.0,
+                hydraulic_capacity_mld = inp.average_flow_mld,
+                clarifier_area_m2      = inp.clarifier_area_m2,
+            )
+            fsi = from_domain_inputs_dict(fs_stored, fsi)
+            fsr = calculate(fsi)
+            inp.flow_scenario_type       = fsr.scenario_type
+            inp.flow_adjusted_flow_mld   = fsr.adjusted_flow_mld
+            inp.flow_adjusted_bod_kg_d   = fsr.adjusted_bod_kg_d
+            inp.flow_hydraulic_capacity  = fsr.hydraulic_capacity_mld
+            inp.flow_overflow_flag       = fsr.overflow_flag
+            inp.flow_clarifier_stress    = fsr.clarifier_stress_flag
+            inp.flow_bypass_risk         = fsr.bypass_risk_flag
+            inp.flow_first_flush_enabled = fsr.first_flush_enabled
+            inp.flow_first_flush_duration_hr = fsr.first_flush_duration_hr
+            inp.flow_wet_weather_duration_hr = fsr.wet_weather_duration_hr
+            inp.flow_wet_weather_profile     = fsr.wet_weather_profile
+        except Exception:
+            pass   # flow scenario enrichment must never break WaterPoint
 
     inp.missing_fields = missing
     return inp

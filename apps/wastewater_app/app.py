@@ -35,6 +35,7 @@ PAGES = {
     "🔖 Version": "00_version",
     "🏠 Project Setup": "01_project_setup",
     "📋 Inputs": "02_inputs",
+    "🌧️ Flow Scenarios": "02b_flow_scenarios",
     "⚙️ Treatment Selection": "03_treatment_selection",
     "📊 Results": "04_results",
     "🔁 Compare Scenarios": "05_comparison",
@@ -72,6 +73,10 @@ elif page_key == "01_project_setup":
 elif page_key == "02_inputs":
     from apps.wastewater_app.pages import page_02_inputs
     page_02_inputs.render()
+
+elif page_key == "02b_flow_scenarios":
+    from apps.wastewater_app.pages import page_02b_flow_scenarios
+    page_02b_flow_scenarios.render()
 
 elif page_key == "03_treatment_selection":
     from apps.wastewater_app.pages import page_03_treatment_selection

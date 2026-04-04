@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z18", "19 Mar 2026", [
+        "Flow Scenario Framework — page 02b: DWA, DWP, AWWF, PWWF scenario types",
+        "flow_scenario_engine.py: pure calculation engine (adjusted flow, concentration, load, hydraulic/biological/clarifier stress)",
+        "AWWF/PWWF inputs: factor, I/I %, dilution factor, duration, hydrograph profile (rise/plateau/recession)",
+        "First flush: optional concentration multiplier phase before main dilution period",
+        "Overflow / bypass / clarifier SOR stress flags with status badges",
+        "WaterPoint adapter extended with 10 flow scenario fields",
+        "All base engineering calculations unchanged; no existing outputs removed",
+        "282/282 benchmark checks pass",
+    ]),
     ("v24Z17", "19 Mar 2026", [
         "WaterPoint Intelligence Layer — additive overlay on existing platform",
         "waterpoint_adapter.py: maps ScenarioModel outputs to WaterPointInput (defensive null checks)",
