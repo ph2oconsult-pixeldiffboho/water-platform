@@ -118,6 +118,13 @@ def render() -> None:
 
     st.subheader(f"Results: {scenario.scenario_name}")
 
+    # ── WaterPoint Intelligence ────────────────────────────────────────────────
+    try:
+        from apps.wastewater_app.waterpoint_ui import render_waterpoint
+        render_waterpoint(scenario, project)
+    except Exception:
+        pass   # WaterPoint must never break the results page
+
     # ── Engineering QA ──────────────────────────────────────────────────────
     if scenario.cost_result:
         try:

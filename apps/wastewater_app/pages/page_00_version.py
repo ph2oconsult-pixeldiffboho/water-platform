@@ -19,6 +19,13 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z17", "19 Mar 2026", [
+        "WaterPoint Intelligence Layer — additive overlay on existing platform",
+        "waterpoint_adapter.py: maps ScenarioModel outputs to WaterPointInput (defensive null checks)",
+        "waterpoint_engine.py: four functions — stress, failure modes, decision layer, compliance risk",
+        "waterpoint_ui.py: Streamlit component rendered above engineering tabs in page_04_results",
+        "Zero existing functionality removed; all 282/282 benchmark checks pass",
+    ]),
     ("v24Z12", "19 Mar 2026", [
         "Scoring page (page_12): Feasibility Status panel, fixed scenarios in scoring, confidence adj column",
         "Scoring page: auto-computes hydraulic stress + remediation if not in session state",
