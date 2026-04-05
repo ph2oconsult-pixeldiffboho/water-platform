@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z20", "19 Mar 2026", [
+        "WaterPoint surgical calibration — 5 targeted patches, no rewrites",
+        "Patch 1: hydraulic pre-stress narrative band (1.3–1.5×) — adds soft rationale note, does NOT escalate state",
+        "Patch 2: _stress_rationale() differentiated — AWWF=sustained/resilience language, PWWF=acute/hydraulic/compliance language, DWA unchanged",
+        "Patch 3: failure mode severity re-weighting by scenario (AWWF promotes biological modes, PWWF promotes hydraulic modes); modes sorted High→Medium→Low",
+        "Patch 4: decision layer split by scenario — AWWF=process stability/resilience, PWWF=storm-mode/overflow/emergency; all three tiers differentiated",
+        "Patch 5: compliance breach types differentiated — AWWF=sustained nutrient degradation, PWWF=acute/notifiable/bypass language",
+        "Dry weather (DWA): 16/16 non-regression checks pass; state, rationale, and actions unchanged",
+        "282/282 benchmark checks pass",
+    ]),
     ("v24Z19", "19 Mar 2026", [
         "WaterPoint wet weather calibration — 10 targeted edits to waterpoint_engine.py",
         "New hydraulic stress domain: flow_ratio ≤1.5 Normal / 1.5–2.0 Elevated / >2.0 Overload",
