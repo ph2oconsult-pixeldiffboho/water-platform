@@ -281,10 +281,19 @@ _PROFILES: Dict[str, _TechProfile] = {
             "Selective wasting via hydrocyclone — compact addition to MBR process.",
             "Permeability improvement typically visible within 4–8 weeks of commissioning.",
             "Dependent on correct hydrocyclone operation and split ratio control.",
+            # ── MBR architecture context (v24Z41) ───────────────────────────────
+            "MBR architecture energy note: membrane scouring and permeate pumping add "
+            "0.3–0.8 kWh/m³ vs conventional BNR — the dominant OPEX driver for MBR plants.",
+            "MBR operations: regular CIP cleaning (weekly maintenance + biannual intensive), "
+            "fouling monitoring, and permeate flux management are ongoing requirements.",
+            "MBR membrane lifecycle: replacement typically required every 8–10 years "
+            "— OEM supply continuity must be verified before procurement.",
         ],
         risks=[
             "Hydrocyclone split ratio must be calibrated to mixed liquor characteristics.",
             "Specialist supplier required for hydrocyclone sizing and commissioning.",
+            "MBR energy penalty: higher operating cost than conventional BNR — "
+            "energy-constrained plants should evaluate the OPEX trade-off explicitly.",
         ],
     ),
 

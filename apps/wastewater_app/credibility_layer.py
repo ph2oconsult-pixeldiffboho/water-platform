@@ -48,6 +48,7 @@ from apps.wastewater_app.stack_generator import (
     _TECH_DISPLAY, _make_stage,
 )
 from apps.wastewater_app.feasibility_layer import FeasibilityReport, FS_HIGH, FS_MEDIUM, FS_LOW
+from apps.wastewater_app.mbr_layer import assess_mbr_applicability, MBR_STRONG, MBR_MODERATE, MBR_WEAK
 
 
 # ── Result dataclasses ─────────────────────────────────────────────────────────
@@ -421,6 +422,33 @@ def _check_compatibility(
             "denitrification regardless of methanol dose. Assess secondary effluent DO profile "
             "before filter sizing."
         )
+
+    # ── MBR architecture notes (v24Z41) ───────────────────────────────────────
+    if is_mbr:
+        mbr_report = assess_mbr_applicability(plant_context)
+        # Architecture role and fit level
+        fit_prefix = {MBR_STRONG: "Strong fit", MBR_MODERATE: "Moderate fit",
+                      MBR_WEAK: "Weak fit"}.get(mbr_report.fit_level, "")
+        fit_note = (
+            f"MBR architecture ({fit_prefix}): {mbr_report.architecture_role} "
+            f"{mbr_report.energy_note} "
+            f"{mbr_report.operations_note} "
+            f"{mbr_report.lifecycle_note}"
+        )
+        flags.append(fit_note)
+        # Existing MBR guidance
+        if mbr_report.existing_mbr_note:
+            flags.append(mbr_report.existing_mbr_note)
+        # Weak fit warning
+        if mbr_report.weak_fit_factors:
+            flags.append(
+                "MBR weak-fit factors for this scenario: "
+                + " ".join(mbr_report.weak_fit_factors)
+            )
+        # MABR differentiation — always include when is_mbr to prevent confusion
+        flags.append(mbr_report.mabr_differentiation)
+        # Decision tension
+        flags.append(mbr_report.decision_tension)
 
     return flags
 

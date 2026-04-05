@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z41", "5 Apr 2026", [
+        "MBR Applicability & Architecture Layer Production V1 — new module apps/wastewater_app/mbr_layer.py",
+        "MbrApplicabilityReport dataclass: fit_level (Strong/Moderate/Weak), fit_factors, weak_fit_factors, architecture_role, not_a (3 items), energy_note (kWh quantified), operations_note (CIP), lifecycle_note (8-10yr), mabr_differentiation, decision_tension, credibility_notes, existing_mbr_note",
+        "Fit logic: Strong = >=2 strong signals (reuse, footprint, high effluent, clarifier overload, industrial influent); Weak = energy_constrained or remote or small scale or SBR",
+        "credibility_layer.py: _check_compatibility extended — when is_mbr=True, calls assess_mbr_applicability and appends architecture note, existing MBR guidance, weak-fit factors, MABR differentiation, and decision tension to compatibility_flags",
+        "feasibility_layer.py: memDENSE profile extended with MBR energy penalty note (0.3-0.8 kWh/m3), CIP ops note, membrane lifecycle note, and energy risk",
+        "MABR differentiation always present: 'MBR provides filtration/solids separation; MABR provides membrane-based oxygen transfer'",
+        "Non-MBR plants get zero MBR architecture notes (guard confirmed)",
+        "22/22 validation checks; 282/282 benchmark tests; no stack logic modified",
+    ]),
     ("v24Z40", "5 Apr 2026", [
         "Integrated Biological & Technology Expert Logic Layer Production V1 — stack_generator.py",
         "Fix 1: BioMag clarifier_util guard — BioMag only fires when high_load AND (clarifier_util>=1.0 OR overflow/wet weather). V3 Nit+poor SVI now produces inDENSE+Hybas (correct) not BioMag.",
