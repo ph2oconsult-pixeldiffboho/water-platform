@@ -90,6 +90,10 @@ def analyse(wp: WaterPointInput) -> WaterPointResult:
     Routes to Nereda-specific model when wp.nereda_enabled == True.
     Returns WaterPointResult.  Never raises.
     """
+    # ── MABR OxyFAS / OxyFILM pathway ────────────────────────────────
+    if getattr(wp, "mabr_enabled", False):
+        return _analyse_mabr(wp)
+
     # ── MOB Intensified SBR pathway ───────────────────────────────────
     if getattr(wp, "mob_enabled", False):
         return _analyse_mob(wp)
@@ -121,6 +125,69 @@ def analyse(wp: WaterPointInput) -> WaterPointResult:
         decision_layer  = decision,
         compliance_risk = compliance,
     )
+
+
+def _analyse_mabr(wp: WaterPointInput) -> WaterPointResult:
+    """MABR OxyFAS/OxyFILM analysis pipeline."""
+    try:
+        from apps.wastewater_app.waterpoint_mabr import (
+            calculate_mabr_stress, detect_mabr_failure_modes,
+            generate_mabr_decisions, assess_mabr_compliance,
+        )
+        mabr   = calculate_mabr_stress(wp)
+        m_modes= detect_mabr_failure_modes(wp, mabr)
+        m_dec  = generate_mabr_decisions(wp, mabr, m_modes)
+        m_comp = assess_mabr_compliance(wp, mabr, m_modes)
+
+        fm_items = [FailureMode(title=m.title, description=m.description,
+                                severity=m.severity) for m in m_modes]
+        if any(m.severity == "High"    for m in fm_items): overall = "High"
+        elif any(m.severity == "Medium" for m in fm_items): overall = "Medium"
+        elif fm_items:                                       overall = "Low"
+        else:                                                overall = "Low"
+        failure = FailureModes(items=fm_items, overall_severity=overall)
+
+        stress = SystemStress(
+            state              = mabr.state,
+            proximity_percent  = mabr.proximity,
+            primary_constraint = mabr.primary_constraint,
+            rate               = mabr.rate,
+            time_to_breach     = mabr.t2b,
+            confidence         = mabr.confidence,
+            rationale          = mabr.rationale,
+        )
+        decision = DecisionLayer(
+            short_term        = m_dec["short_term"],
+            medium_term       = m_dec["medium_term"],
+            long_term         = m_dec["long_term"],
+            capex_range       = m_dec["capex_range"],
+            risk_if_no_action = m_dec["risk_if_no_action"],
+        )
+        compliance = ComplianceRisk(
+            compliance_risk     = m_comp["compliance_risk"],
+            likely_breach_type  = m_comp["likely_breach_type"],
+            regulatory_exposure = m_comp["regulatory_exposure"],
+            reputational_risk   = m_comp["reputational_risk"],
+        )
+        return WaterPointResult(
+            system_stress   = stress,
+            failure_modes   = failure,
+            decision_layer  = decision,
+            compliance_risk = compliance,
+        )
+    except Exception as _mabr_exc:
+        _fb = SystemStress(
+            state="Unknown", proximity_percent=0.,
+            primary_constraint="MABR model error",
+            rate="Unknown", time_to_breach="Not available", confidence="Low",
+            rationale=f"MABR analysis failed: {_mabr_exc}",
+        )
+        return WaterPointResult(
+            system_stress   = _fb,
+            failure_modes   = FailureModes(),
+            decision_layer  = DecisionLayer(risk_if_no_action="MABR analysis error."),
+            compliance_risk = _fallback_compliance(),
+        )
 
 
 def _analyse_mob(wp: WaterPointInput) -> WaterPointResult:

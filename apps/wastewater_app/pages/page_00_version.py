@@ -19,6 +19,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z26", "19 Mar 2026", [
+        "MABR OxyFAS/OxyFILM WaterPoint module — OxyMem + Kawana modelling calibrated",
+        "New file: waterpoint_mabr.py — 5 stress domains, 8 failure modes, MABR-specific decisions",
+        "technology_code='mabr_oxyfas' activates mabr_enabled pathway; OxyFILM stub ready",
+        "23 new WaterPointInput fields: MABR module/membrane/O2/mixing/control flags + hybrid system context",
+        "5 MABR stress domains: membrane O2 delivery, biofilm fouling, substrate mixing, hybrid AS integration, carbon/denitrification balance",
+        "8 MABR failure modes: O2 delivery limit, biofilm fouling, substrate delivery, hybrid integration, carbon-limited denitrification, clarifier limitation, air imbalance, wet weather instability",
+        "Key calibration: NHx and TN compliance assessed separately — NHx resilience != TN solution (Kawana finding)",
+        "Module-normalised O2 proxy: 4 modules @ DWF = Stable (util=0.50); 2 modules = Failure Risk (util=1.0)",
+        "NHx margin adjustment: adequate margin reduces load factor; near-limit margin increases it",
+        "Decision layer: MABR-first (membrane area, biofilm control, recycle/carbon) before civil expansion",
+        "Long-term: expand OxyFAS modules, shift nitrification load, add carbon management before new tanks",
+        "6 test cases MB1-MB6 all passing; BNR, Nereda, MOB confirmed unchanged; 282/282 tests",
+    ]),
     ("v24Z25", "19 Mar 2026", [
         "MOB Intensified SBR WaterPoint module — miGRATE + inDENSE (Lang Lang calibrated)",
         "New file: waterpoint_mob.py — cycle throughput, settling/solids retention, biofilm nitrification, selector domains",

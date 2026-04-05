@@ -85,6 +85,30 @@ class WaterPointInput:
     flow_first_flush_duration_hr: Optional[float] = None
     flow_wet_weather_duration_hr: Optional[float] = None
     flow_wet_weather_profile: Optional[str]  = None
+    # MABR OxyFAS/OxyFILM fields (technology_code == "mabr_oxyfas" / "mabr_oxyfilm")
+    mabr_enabled:               bool           = False
+    mabr_mode:                  Optional[str]   = None   # "oxyfas" or "oxyfilm"
+    mabr_module_count:          Optional[int]   = None
+    mabr_membrane_area_m2:      Optional[float] = None
+    mabr_oxygen_capacity_kgod:  Optional[float] = None
+    mabr_airflow_nm3h:          Optional[float] = None
+    mabr_enriched_air_enabled:  bool           = False
+    mabr_pure_oxygen_enabled:   bool           = False
+    mabr_blowers_pressure_mbar: Optional[float] = None
+    mabr_biofilm_control_enabled: bool         = True
+    mabr_scour_control_enabled: bool           = True
+    mabr_mixing_mode:           Optional[str]   = None   # "airlift" / "supplemental" / "none"
+    mabr_hybrid_with_as:        bool           = True    # OxyFAS = hybrid
+    mabr_clarifier_dependent:   bool           = True
+    mabr_shrouded_modules:      bool           = True
+    # Hybrid system context (shared by MABR, MOB, future technologies)
+    mlss_mgL:                   Optional[float] = None
+    clarifier_available:        bool           = True
+    clarifier_stress_flag:      bool           = False
+    ras_ratio:                  Optional[float] = None
+    internal_recycle_ratio:     Optional[float] = None
+    cod_to_n_ratio:             Optional[float] = None
+    external_carbon_dosing_ld:  Optional[float] = None
     # MOB Intensified SBR fields (technology_code == "migrate_indense")
     mob_enabled:          bool           = False
     migrate_enabled:      bool           = False
