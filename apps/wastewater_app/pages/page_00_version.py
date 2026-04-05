@@ -19,6 +19,17 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z22", "19 Mar 2026", [
+        "Final calibration patch — 6 fixes, 1 file modified, 17/17 checks, 282/282 tests",
+        "C-NEW-1: AWWF no-overflow regulatory_exposure now uses chronic planning language (no show-cause / formal investigation)",
+        "W-NEW-1: DWA baseline no longer includes 'suspended solids carryover' in breach type when clarifier is Low-severity only",
+        "W-NEW-2: DWP at exact design peak now shows 'Clarifier at design operating point [Low]' not 'Clarifier overload [Medium]'",
+        "W-NEW-3: Low-severity failure modes suppressed when 3+ High modes dominate (filter moved after first-flush severity promotion)",
+        "W-NEW-5: First flush actions use active-event wording when overflow_flag=True; pre-event wording preserved when overflow_flag=False",
+        "W-NEW-7: Unknown/sparse data now returns compliance_risk=Unknown and 'Insufficient data to assess compliance risk'",
+        "W-NEW-4: confirmed already correct in adapter — fsr.overflow_flag propagated at build_waterpoint_input",
+        "All 11 previously confirmed fixes (v24Z21) intact",
+    ]),
     ("v24Z21", "19 Mar 2026", [
         "Consolidated calibration patch — 10 fixes, 2 files modified, 28/28 validation checks",
         "C1: DWP false overflow fixed — hydraulic_capacity = base×dwp_factor; bio_ratio vs design peak load",

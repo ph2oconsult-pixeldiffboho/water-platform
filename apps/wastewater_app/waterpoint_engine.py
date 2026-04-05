@@ -397,7 +397,14 @@ def detect_failure_modes(wp: WaterPointInput, stress: SystemStress) -> FailureMo
         if sor > _SOR_WARN_M_HR:
             # Distinguish design operating point from genuine overload
             _is_dry_wx_baseline = not (wp.flow_scenario_type or "")
-            _at_design_point = (_is_dry_wx_baseline and
+            # W-NEW-2: also treat DWP at its exact design factor as design-point
+            _is_dwp_at_design = False
+            if wp.flow_scenario_type == _SCENARIO_DWP and wp.average_flow_mld:
+                _adj = wp.flow_adjusted_flow_mld or 0.0
+                _dwp_ratio = _adj / wp.average_flow_mld if wp.average_flow_mld else 0.0
+                # Within 5% of design peak factor (e.g. 1.5 ± 0.075)
+                _is_dwp_at_design = (0.95 <= _dwp_ratio <= 1.05 * 1.5 + 0.01)
+            _at_design_point = ((_is_dry_wx_baseline or _is_dwp_at_design) and
                                 _SOR_WARN_M_HR < sor <= _SOR_LIMIT_M_HR)
             if _at_design_point:
                 modes.append(FailureMode(
@@ -650,6 +657,12 @@ def detect_failure_modes(wp: WaterPointInput, stress: SystemStress) -> FailureMo
     elif wp.flow_first_flush_enabled and overall == "Low" and modes:
         overall = "Medium"
 
+    # ── W-NEW-3: Suppress Low-severity modes when dominated by High-severity ──
+    # Run AFTER all severity promotions so High count is final before filtering.
+    _high_count_final = sum(1 for m in modes if m.severity == "High")
+    if _high_count_final >= 3:
+        modes = [m for m in modes if m.severity != "Low"]
+
     return FailureModes(items=modes, overall_severity=overall)
 
 
@@ -688,23 +701,39 @@ def generate_decision_layer(
     base_flow = wp.average_flow_mld or 1.0
     flow_ratio = adj_flow / base_flow if base_flow > 0 else 1.0
 
-    # ── W6: First flush actions prepended before all other short-term ─────
+    # ── W6 / W-NEW-5: First flush actions — pre-event or active depending on overflow ─
     if wp.flow_first_flush_enabled and fst in (_SCENARIO_AWWF, _SCENARIO_PWWF):
-        short.append(
-            "Pre-dose coagulant / ferric before first flush arrival"
-            " to manage shock TSS and TP load — confirm chemical feed rate and injection point."
-        )
-        short.append(
-            "Confirm dosing system availability and chemical inventory before event."
-        )
-        short.append(
-            "Prepare primary treatment assets for elevated solids and phosphorus load"
-            " during the first flush phase."
-        )
-        short.append(
-            "Increase influent monitoring frequency for TSS and TP"
-            " during the first flush phase."
-        )
+        if wp.flow_overflow_flag:
+            # W-NEW-5: overflow active — use present-tense active-event wording
+            short.append(
+                "Manage ongoing first flush shock load under active overflow conditions —"
+                " confirm coagulant dosing response is active and chemical feed is adequate."
+            )
+            short.append(
+                "Confirm dosing response and solids capture performance"
+                " during active overflow / first flush conditions."
+            )
+            short.append(
+                "Stabilise treatment response during current first flush / overflow event —"
+                " increase TSS and TP monitoring frequency at influent and effluent."
+            )
+        else:
+            # Pre-event preparation (no confirmed overflow)
+            short.append(
+                "Pre-dose coagulant / ferric before first flush arrival"
+                " to manage shock TSS and TP load — confirm chemical feed rate and injection point."
+            )
+            short.append(
+                "Confirm dosing system availability and chemical inventory before event."
+            )
+            short.append(
+                "Prepare primary treatment assets for elevated solids and phosphorus load"
+                " during the first flush phase."
+            )
+            short.append(
+                "Increase influent monitoring frequency for TSS and TP"
+                " during the first flush phase."
+            )
 
     if fst == _SCENARIO_AWWF:
         # AWWF: process stability through sustained event
@@ -918,6 +947,17 @@ def assess_compliance_risk(
     titles = {m.title for m in failure.items}
     sev    = failure.overall_severity
 
+    # ── W-NEW-7: Unknown state / sparse data → return Unknown compliance ──
+    _missing_count = len(wp.missing_fields) if wp.missing_fields else 0
+    if state == "Unknown" or _missing_count > 4:
+        return ComplianceRisk(
+            compliance_risk     = "Unknown",
+            likely_breach_type  = "Insufficient data",
+            regulatory_exposure = "Insufficient data to assess compliance risk.",
+            reputational_risk   = "Unknown — insufficient data.",
+        )
+
+
     # ── Overall compliance risk ───────────────────────────────────────────
     if state in ("Failure Risk",) or sev == "High":
         risk_level = "High"
@@ -942,7 +982,14 @@ def assess_compliance_risk(
         breach_parts.append("TN / ammonia exceedance")
     if "Phosphorus" in str(titles):
         breach_parts.append("TP licence breach")
-    if "Clarifier" in str(titles) or "Hydraulic" in str(titles):
+    # W-NEW-1: only add carryover when clarifier is genuinely overloaded (Medium+)
+    # "Clarifier at design operating point" is Low — not a carryover condition
+    _clarifier_genuinely_overloaded = any(
+        ("Clarifier" in m.title or "Hydraulic" in m.title)
+        and m.severity in ("Medium", "High")
+        for m in failure.items
+    )
+    if _clarifier_genuinely_overloaded:
         breach_parts.append("suspended solids carryover at peak flow")
     # Wet weather specific breaches — scenario-differentiated
     if is_awwf:
@@ -983,6 +1030,15 @@ def assess_compliance_risk(
             reg_exp = (
                 "Sustained AWWF overflow condition — regulatory exposure elevated. "
                 "Notify regulator and document bypass duration and receiving environment exposure."
+            )
+        elif is_awwf and not wp.flow_overflow_flag:
+            # C-NEW-1: AWWF without overflow — chronic planning language, not acute incident
+            reg_exp = (
+                "Sustained wet weather loading presents elevated risk of treatment performance "
+                "exceedance over the event duration. "
+                "Prepare a corrective action plan for nutrient and solids management "
+                "under AWWF conditions. "
+                "Regulator engagement is recommended if compliance margins are persistently narrow."
             )
         else:
             reg_exp = (
