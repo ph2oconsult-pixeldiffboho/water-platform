@@ -20,6 +20,17 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
     ("v24Z42", "6 Apr 2026", [
+        "BNR Strategy & Future-Proofing Layer Production V1 — apps/wastewater_app/bnr_strategy_layer.py",
+        "Section 1: BNR configuration matrix — MLE / A2O / 4-stage Bardenpho / 5-stage Bardenpho+DNF mapped to TN and TP targets with design parameters",
+        "Section 2: 5 safe harbour assumptions — carbon availability (COD:TN<4), phosphorus buffer (EBPR~1mg/L), temperature+aeration (11C+constrained->MABR), hydraulic variability (>=3x->infrastructure), DNF prerequisite (NH4<1mg/L gate)",
+        "Section 3: 4-stage future-proofing upgrade sequence with gate conditions between stages",
+        "Section 4: 7 engineering red flags — Hydraulic, Sequencing (DNF), Chemistry (sludge), Safety (methanol), Temperature, Carbon, N2O accounting; severity-rated, triggered only when relevant",
+        "Section 5: Stack alignment checker — validates MABR vs IFAS choice, DNF sequencing, CoMag role, Tertiary P placement",
+        "Section 6: Decision tension standard sentence",
+        "Validation flags: bardenpho_without_dnf_for_tn5, dnf_after_biology_for_tn3, carbon_flag_for_low_cod, mabr_for_cold_constrained, hydraulic_flag_for_high_peaks",
+        "26/26 checks; 282/282 tests; zero stack selection logic changed",
+    ]),
+    ("v24Z42", "6 Apr 2026", [
         "IFAS / MBBR Technology Enhancement Layer Production V1",
         "tech_positioning.py: Single IFAS/Hybas/MBBR entry split into two: IFAS/Hybas (hybrid BNR retrofit, code=IFAS) and MBBR standalone (industrial/pre-treatment, code=MBBR) with distinct primary roles, best_used_when, not_appropriate_when",
         "tech_positioning.py: IFAS not_appropriate_when now explicitly lists aeration at max (MABR preferred), settling instability (MOB/inDENSE preferred), hydraulic overload",
