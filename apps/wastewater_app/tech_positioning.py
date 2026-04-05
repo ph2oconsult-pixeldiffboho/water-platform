@@ -210,16 +210,22 @@ def get_full_matrix() -> List[TechPosition]:
                 "Long-term view: 25\u201330 year asset with no requirement to retain existing infrastructure.",
                 "Capital is available for full conversion including civil decommissioning.",
                 "Sustained granule stability can be demonstrated for the specific influent.",
+                "Operator capability and control infrastructure are in place to manage a "
+                "batch-process (SBR) platform with advanced automation.",
             ],
             not_appropriate_when=[
                 "Brownfield staged upgrade is required and existing assets must be retained.",
                 "CAPEX is constrained in the short to medium term.",
                 "A sequenced intensification approach is preferred over full conversion.",
-                "Short-duration wet weather peaks dominate \u2014 granule shear risk under extreme "
-                "hydraulic events must be assessed.",
-                "The plant serves an industrial catchment with non-typical influent \u2014 "
-                "granule stability is sensitive to influent composition.",
+                "Short-duration wet weather peaks dominate \u2014 granule shear under extreme "
+                "hydraulic events can cause temporary biomass loss and performance decline.",
+                "The plant serves an industrial or highly variable catchment \u2014 toxic or "
+                "shock loads can destabilise granule formation; recovery is slower than "
+                "conventional activated sludge.",
                 "Operational disruption during transition cannot be accepted.",
+                "The utility requires procurement flexibility \u2014 Nereda is a proprietary "
+                "process with a single technology provider; process control and design "
+                "parameters are not fully open.",
             ],
             strengths=[
                 "Compact footprint: typically 30\u201350% smaller footprint than conventional BNR.",
@@ -227,28 +233,59 @@ def get_full_matrix() -> List[TechPosition]:
                 "High effluent quality: TN < 10 mg/L and TP < 1 mg/L routinely achievable.",
                 "Reduced sludge production per unit of BOD removed.",
                 "No secondary clarifiers required \u2014 settling integrated within the reactor.",
+                "Strong international reference base with demonstrated performance across "
+                "multiple climatic regions and catchment types.",
             ],
             limitations=[
-                "High CAPEX: full conversion requires decommissioning and rebuilding the biological "
-                "treatment process.",
-                "Operational disruption: cannot be commissioned incrementally alongside existing process.",
-                "Granule stability sensitivity: cold temperatures, high lipid loads, and industrial "
-                "influents can destabilise granule formation.",
-                "Wet weather performance: extreme hydraulic peaks can cause granule shear and loss.",
+                # Biological risk
+                "Biological risk: process performance depends on maintaining stable aerobic granules. "
+                "Granule breakdown can lead to biomass washout and temporary loss of treatment "
+                "performance. Recovery from biological upset may be slower than conventional "
+                "activated sludge systems.",
+                # Shock load sensitivity
+                "Sensitive to toxic or industrial shock loads and extreme influent variability. "
+                "Process recovery may require re-establishment of granular biomass, which can "
+                "take weeks to months.",
+                # Operational complexity
+                "Operational complexity: batch-operated (SBR) system requiring advanced control "
+                "and automation. Performance relies on correct sequencing of fill, react, settle, "
+                "and decant phases. Limited ability to operate manually if control systems or "
+                "sensors fail.",
+                # Startup / commissioning risk
+                "Startup risk: extended commissioning may be required to establish stable granules. "
+                "Seeding with granular biomass may be needed to accelerate startup. Full "
+                "performance may not be achieved immediately after commissioning.",
+                # Supplier / commercial risk
+                "Supplier dependency: proprietary technology with reliance on a single technology "
+                "provider. Process control systems and design parameters may not be fully open. "
+                "Long-term dependency on supplier for upgrades, support, and troubleshooting. "
+                "Procurement flexibility is limited compared to conventional technologies.",
+                # Conversion scope
+                "High CAPEX: full conversion requires decommissioning and rebuilding the "
+                "biological treatment process \u2014 cannot be commissioned incrementally "
+                "alongside the existing plant.",
                 "Not applicable as a brownfield intensification step \u2014 it replaces, not augments.",
             ],
             key_engineering_truth=(
-                "Nereda consistently ranks highly in brownfield upgrade scoring tools because it "
-                "addresses clarifier, biological, and footprint constraints simultaneously. "
-                "However, this score reflects long-term conversion potential \u2014 not suitability "
-                "for staged brownfield intensification. A high Nereda ranking alongside a CoMag + "
-                "MABR stack recommendation are not contradictory: they address different planning "
-                "horizons and different risk profiles."
+                "Nereda consistently ranks highly in brownfield scoring tools because it addresses "
+                "clarifier, biological, and footprint constraints simultaneously. This score reflects "
+                "long-term conversion potential \u2014 not suitability for staged brownfield "
+                "intensification. Where Nereda is genuinely appropriate, three risk categories "
+                "must be explicitly assessed before commitment: (1) Biological risk \u2014 "
+                "granule stability under the specific influent, wet weather regime, and temperature "
+                "profile; (2) Operational risk \u2014 advanced control and automation dependency, "
+                "slower recovery from upset than conventional AS; (3) Supplier/commercial risk "
+                "\u2014 single-source proprietary process with limited procurement flexibility. "
+                "These risks are manageable but are important inputs to the decision, particularly "
+                "for utilities with limited specialist operator capacity or remote locations. "
+                "The decision is between a compact, high-performance proprietary process and more "
+                "conventional open-process upgrade pathways, trading footprint and integration "
+                "benefits against biological sensitivity and supplier dependency."
             ),
             typical_stack_position="Replacement pathway (not a brownfield intensification step)",
             capex_class="High",
             complexity="High",
-            supply_dependency="Medium",
+            supply_dependency="High",
         ),
 
         # ── 4. IFAS / Hybas / MBBR ────────────────────────────────────────────
@@ -602,7 +639,7 @@ def get_scenario_alignment(pathway, feasibility) -> ScenarioAlignment:
     # Build excluded notes for notable technologies NOT in the stack
     excluded_notes = []
 
-    # Nereda — always explain why not selected for brownfield
+    # Nereda — always explain why not selected for brownfield, with full risk context
     excluded_notes.append(StackAlignmentNote(
         technology="Nereda\u00ae (aerobic granular sludge)",
         in_stack=False,
@@ -613,7 +650,18 @@ def get_scenario_alignment(pathway, feasibility) -> ScenarioAlignment:
             "For this plant, which requires staged brownfield intensification with retention "
             "of existing infrastructure, Nereda is not appropriate in the current planning horizon. "
             "It should be reconsidered if catchment flows exhaust the intensification envelope "
-            "and full conversion becomes necessary."
+            "and full conversion becomes necessary.\n\n"
+            "Where Nereda is reconsidered at that horizon, three risk categories require "
+            "explicit assessment before commitment: (1) Biological risk \u2014 granule stability "
+            "must be confirmed for this influent, wet weather profile, and temperature regime; "
+            "granule breakdown leads to biomass washout and recovery is slower than conventional "
+            "activated sludge. (2) Operational risk \u2014 advanced batch control and automation "
+            "are required; manual operation capability is limited if control systems fail. "
+            "(3) Supplier/commercial risk \u2014 Nereda is a proprietary single-source process; "
+            "long-term dependency on the supplier for support, upgrades, and troubleshooting "
+            "must be assessed against the utility\u2019s procurement and operational strategy. "
+            "These risks are manageable with appropriate planning but are material inputs to "
+            "the long-term asset decision."
         ),
         constraint_link="Full conversion strategy \u2014 not brownfield staged upgrade",
     ))
@@ -696,7 +744,14 @@ def get_scenario_alignment(pathway, feasibility) -> ScenarioAlignment:
         "management review. It is excluded here because this engagement requires staged "
         "brownfield intensification within existing assets \u2014 a problem that Nereda does "
         "not solve (it replaces the existing process rather than augmenting it). "
-        "The technology is the right answer for the wrong planning horizon."
+        "The technology is the right answer for the wrong planning horizon.\n\n"
+        "Where the 15-year review does revisit Nereda, the primary decision is between a "
+        "compact, high-performance proprietary process (Nereda) and more conventional "
+        "open-process upgrade pathways, trading footprint efficiency and integration benefits "
+        "against biological sensitivity (granule stability), operational complexity (advanced "
+        "batch control), and supplier dependency (single-source proprietary process). "
+        "These risks are manageable but must be explicitly assessed against the utility\u2019s "
+        "operator capacity, influent characteristics, and long-term procurement strategy."
     )
 
     return ScenarioAlignment(
