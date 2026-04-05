@@ -19,6 +19,23 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z31", "5 Apr 2026", [
+        "Technology Stack Generator — sequenced multi-technology upgrade pathways",
+        "New: build_technology_stack() in intensification_intelligence.py (~450 lines)",
+        "New constants: CT_WET_WEATHER, MECH_BALLASTED, TI_COMAG, TI_BIOMAG",
+        "New dataclasses: ActiveConstraint (severity+priority), StackStage (stage+purpose+prereq), TechnologyStack",
+        "5-stage sequence: hydraulic stabilisation → settling → biological capacity → process optimisation → advanced polishing",
+        "Stage 1: CoMag for acute overflow/peak, EQ basin for sustained hydraulic constraint",
+        "Stage 2: MOB/inDENSE for SBR; memDENSE for MBR; BioMag for high-load; inDENSE for CAS/BNR",
+        "Stage 3: Hybas (with settling stage) or IFAS (standalone) for nitrification SRT decoupling",
+        "Stage 4: Bardenpho (after biofilm) or recycle optimisation (standalone) for TN/TP",
+        "Stage 5: memDENSE or zone reconfiguration for EBPR/membrane polish",
+        "Redundancy rules: CoMag+BioMag→keep CoMag; IFAS+MBBR→keep IFAS; MOB covers settling+nitrification",
+        "Alternative stacks: civil expansion, simplified biofilm, hydraulic-only interim",
+        "Wired into rank_upgrade_pathways: technology_stack on UpgradeRankingResult",
+        "Engineering notes embedded: CoMag 3-5x DWA; BioMag ballast+biofilm; inDENSE prerequisite; MBBR R=2; Bardenpho HRT; memDENSE filaments+PAO",
+        "30/30 checks; 282/282 tests; all existing modules unchanged",
+    ]),
     ("v24Z30", "5 Apr 2026", [
         "Brownfield Intensification Intelligence Layer — new module intensification_intelligence.py",
         "Constraint classification: settling | nitrification | biological | membrane | hydraulic | multi",

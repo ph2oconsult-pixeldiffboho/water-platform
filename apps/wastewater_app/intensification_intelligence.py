@@ -864,3 +864,657 @@ def build_intensification_plan(
         hydraulic_expansion_required = hyd_required,
         multi_constraint   = len(active) >= 2,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TECHNOLOGY STACK GENERATOR
+# ══════════════════════════════════════════════════════════════════════════════
+# Produces sequenced multi-technology upgrade stacks from active constraints.
+# Replaces single-technology recommendations with ordered stage-by-stage pathways.
+#
+# New constants added:
+#   CT_WET_WEATHER    — peak wet weather / overflow event constraint
+#   MECH_BALLASTED    — ballasted settling / high-rate clarification
+#   TI_COMAG          — CoMag high-rate clarification
+#   TI_BIOMAG         — BioMag ballasted-MBBR hybrid
+#
+# New dataclasses:
+#   ActiveConstraint  — constraint with severity + priority
+#   StackStage        — one stage in the upgrade sequence
+#   TechnologyStack   — full ordered stack with rationale + alternatives
+#
+# Main entry point:
+#   build_technology_stack(profile, waterpoint_fields) -> TechnologyStack
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Additional constants ───────────────────────────────────────────────────────
+CT_WET_WEATHER   = "wet_weather_peak"
+MECH_BALLASTED   = "ballasted_settling"
+
+TI_COMAG  = "CoMag"
+TI_BIOMAG = "BioMag"
+
+# Priority order — lower number = address first
+_CONSTRAINT_PRIORITY: Dict[str, int] = {
+    CT_HYDRAULIC:    1,
+    CT_WET_WEATHER:  1,
+    CT_SETTLING:     2,
+    CT_NITRIFICATION:3,
+    CT_BIOLOGICAL:   4,
+    CT_MEMBRANE:     5,
+    CT_MULTI:        3,
+    CT_UNKNOWN:      9,
+}
+
+_SEVERITY_WEIGHT: Dict[str, int] = {"High": 0, "Medium": 1, "Low": 2}
+
+# Stage label names
+_STAGE_NAMES = {
+    1: "Stage 1 — Hydraulic stabilisation",
+    2: "Stage 2 — Settling stabilisation",
+    3: "Stage 3 — Biological capacity unlock",
+    4: "Stage 4 — Process optimisation",
+    5: "Stage 5 — Advanced / polishing",
+}
+
+
+# ── New dataclasses ────────────────────────────────────────────────────────────
+
+@dataclass
+class ActiveConstraint:
+    """A single active constraint with severity and resolved priority."""
+    constraint_type: str       # CT_* constant
+    label:           str       # human-readable label
+    severity:        str       # High / Medium / Low
+    priority:        int       # 1 = highest priority (address first)
+
+    def __lt__(self, other: "ActiveConstraint") -> bool:
+        if self.priority != other.priority:
+            return self.priority < other.priority
+        return _SEVERITY_WEIGHT.get(self.severity, 1) < _SEVERITY_WEIGHT.get(other.severity, 1)
+
+
+@dataclass
+class StackStage:
+    """One ordered stage in a technology upgrade stack."""
+    stage_number:  int
+    stage_name:    str
+    technology:    str          # TI_* code
+    tech_display:  str          # human-readable name
+    mechanism:     str          # MECH_* constant
+    purpose:       str          # engineering reason (1–2 sentences)
+    addresses:     List[str]    # constraint types this stage resolves
+    capex_class:   str          # Low / Medium / High
+    complexity:    str          # Low / Medium / High
+    prerequisite:  str = ""     # what must be in place before this stage
+
+
+@dataclass
+class TechnologyStack:
+    """Full ordered technology upgrade stack."""
+    # Inputs
+    active_constraints:  List[ActiveConstraint]   # sorted by priority + severity
+    # Stack
+    stages:              List[StackStage]         # ordered upgrade sequence
+    # Narrative
+    stack_rationale:     str    # "Why this stack works"
+    constraint_to_mech:  str    # constraint → mechanism linkage explanation
+    alternative_stacks:  List[Dict]  # list of {"label": str, "stages": list, "when": str}
+    engineering_notes:   List[str]   # key engineering facts applied
+    # Summary
+    primary_driver:      str    # dominant constraint in plain English
+    expected_outcome:    str    # what the plant achieves after full stack
+    residual_risk:       str    # what remains after the stack is implemented
+    capex_class_overall: str    # Low / Medium / High (worst stage)
+    complexity_overall:  str    # Low / Medium / High (worst stage)
+
+
+# ── Technology display names for new codes ─────────────────────────────────────
+_NEW_TECH_NAMES = {
+    TI_COMAG:  "CoMag® (high-rate magnetic ballasted clarification)",
+    TI_BIOMAG: "BioMag® (ballasted MBBR-activated sludge hybrid)",
+}
+
+_ALL_TECH_NAMES = {
+    TI_INDENSE:    "inDENSE® (gravimetric biomass selection)",
+    TI_MEMDENSE:   "memDENSE® (MBR biomass selection)",
+    TI_HYBAS:      "Hybas™ (IFAS / integrated biofilm)",
+    TI_MBBR:       "MBBR / MBBR-Bardenpho",
+    TI_IFAS:       "IFAS (integrated fixed-film activated sludge)",
+    TI_BARDENPHO:  "Bardenpho / process zone optimisation",
+    TI_RECYCLE_OPT:"Recycle ratio optimisation",
+    TI_ZONE_RECONF:"Zone reconfiguration / EBPR optimisation",
+    TI_EQ_BASIN:   "Equalisation / flow balancing basin",
+    TI_STORM_STORE:"Storm storage / attenuation infrastructure",
+    TI_PARALLEL:   "Parallel treatment train",
+    TI_MIGINDENSE: "MOB (miGRATE™ + inDENSE®) — SBR intensification",
+    TI_COMAG:      "CoMag® (high-rate magnetic ballasted clarification)",
+    TI_BIOMAG:     "BioMag® (ballasted MBBR-activated sludge hybrid)",
+}
+
+_TECH_CAPEX   = {TI_INDENSE:"Low", TI_MEMDENSE:"Low", TI_HYBAS:"Medium", TI_MBBR:"Medium",
+                 TI_IFAS:"Low", TI_BARDENPHO:"Low", TI_RECYCLE_OPT:"Low",
+                 TI_ZONE_RECONF:"Low", TI_EQ_BASIN:"High", TI_STORM_STORE:"High",
+                 TI_PARALLEL:"High", TI_MIGINDENSE:"Medium", TI_COMAG:"Medium", TI_BIOMAG:"Medium"}
+_TECH_COMPLEX = {TI_INDENSE:"Low", TI_MEMDENSE:"Low", TI_HYBAS:"Medium", TI_MBBR:"Medium",
+                 TI_IFAS:"Low", TI_BARDENPHO:"Low", TI_RECYCLE_OPT:"Low",
+                 TI_ZONE_RECONF:"Medium", TI_EQ_BASIN:"Medium", TI_STORM_STORE:"Medium",
+                 TI_PARALLEL:"High", TI_MIGINDENSE:"Medium", TI_COMAG:"Medium", TI_BIOMAG:"High"}
+
+_SEVERITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
+_CAPEX_ORDER    = {"Low": 0, "Medium": 1, "High": 2}
+
+
+# ── Step 1-2: Collect and sort active constraints ──────────────────────────────
+
+def _collect_active_constraints(
+    profile, wf: Dict
+) -> List[ActiveConstraint]:
+    """
+    Derive all active constraints with severity and priority.
+
+    Returns list sorted by (priority asc, severity asc).
+    """
+    result: List[ActiveConstraint] = []
+
+    def _add(ct: str, sev: str) -> None:
+        result.append(ActiveConstraint(
+            constraint_type = ct,
+            label           = _CT_LABELS.get(ct, ct),
+            severity        = sev,
+            priority        = _CONSTRAINT_PRIORITY.get(ct, 9),
+        ))
+
+    # Hydraulic / overflow — highest priority
+    if profile.hydraulic_flag or wf.get("overflow_risk") or wf.get("flow_ratio_above_1p5"):
+        flow_ratio = wf.get("flow_ratio", 1.0) or 1.0
+        sev = "High" if (wf.get("overflow_risk") or flow_ratio >= 2.0) else "Medium"
+        _add(CT_HYDRAULIC, sev)
+
+    # Wet weather peak (distinct from chronic hydraulic)
+    if wf.get("wet_weather_peak") or wf.get("pwwf_active"):
+        _add(CT_WET_WEATHER, "High" if wf.get("overflow_risk") else "Medium")
+
+    # Settling
+    if profile.clarifier_flag or profile.solids_flag or wf.get("high_mlss") or wf.get("solids_carryover"):
+        clar_u = wf.get("clarifier_util", 0.0) or 0.0
+        sev = "High" if clar_u >= 1.0 or wf.get("solids_carryover") else "Medium"
+        _add(CT_SETTLING, sev)
+
+    # Nitrification
+    if profile.nitrification_flag or profile.aeration_flag or wf.get("nh4_near_limit") or wf.get("srt_pressure"):
+        sev = "High" if wf.get("nh4_near_limit") else "Medium"
+        _add(CT_NITRIFICATION, sev)
+
+    # Biological performance (TN / TP / EBPR)
+    if profile.carbon_limit_flag or profile.denitrification_flag or wf.get("tn_at_limit") or wf.get("tp_at_limit") or wf.get("ebpr_poor"):
+        sev = "High" if wf.get("tn_at_limit") else "Medium"
+        _add(CT_BIOLOGICAL, sev)
+
+    # Membrane
+    if wf.get("membrane_fouling") or wf.get("high_cleaning_frequency") or wf.get("low_permeability"):
+        sev = "High" if wf.get("membrane_fouling") and wf.get("high_cleaning_frequency") else "Medium"
+        _add(CT_MEMBRANE, sev)
+
+    # Sort by priority then severity
+    result.sort(key=lambda c: (c.priority, _SEVERITY_WEIGHT.get(c.severity, 1)))
+    return result
+
+
+# ── Step 3-4: Map constraints to stages ───────────────────────────────────────
+
+def _build_stages(
+    constraints: List[ActiveConstraint],
+    wf: Dict,
+) -> List[StackStage]:
+    """
+    Build the ordered stage sequence from prioritised constraints.
+
+    Rules:
+    - Stage 1: hydraulic/wet weather → CoMag or EQ basin (FIRST if present)
+    - Stage 2: settling → inDENSE / BioMag / MOB
+    - Stage 3: nitrification → IFAS / MBBR / Hybas
+    - Stage 4: biological → Bardenpho / recycle optimisation
+    - Stage 5: membrane → memDENSE (or advanced polishing)
+    - No redundancies: IFAS and MBBR not combined; CoMag and BioMag not combined
+    """
+    is_sbr   = bool(wf.get("is_sbr", False))
+    is_mbr   = bool(wf.get("is_mbr", False))
+    is_mabr  = bool(wf.get("is_mabr", False))
+    high_load= bool(wf.get("high_load", False))       # elevated load → favour BioMag over inDENSE
+    ww_peak  = bool(wf.get("wet_weather_peak", False))
+    overflow = bool(wf.get("overflow_risk", False))
+
+    stages: List[StackStage] = []
+    used_stage_numbers: set = set()
+    used_tech_codes: set = set()
+
+    def _add_stage(
+        stage_num: int, tech: str, mech: str, purpose: str,
+        addresses: List[str], prereq: str = ""
+    ) -> None:
+        if stage_num in used_stage_numbers: return
+        if tech in used_tech_codes: return
+        used_stage_numbers.add(stage_num)
+        used_tech_codes.add(tech)
+        stages.append(StackStage(
+            stage_number = stage_num,
+            stage_name   = _STAGE_NAMES.get(stage_num, f"Stage {stage_num}"),
+            technology   = tech,
+            tech_display = _ALL_TECH_NAMES.get(tech, tech),
+            mechanism    = mech,
+            purpose      = purpose,
+            addresses    = addresses,
+            capex_class  = _TECH_CAPEX.get(tech, "Medium"),
+            complexity   = _TECH_COMPLEX.get(tech, "Medium"),
+            prerequisite = prereq,
+        ))
+
+    constraint_types = {c.constraint_type for c in constraints}
+
+    # ── Stage 1: Hydraulic / wet weather ──────────────────────────────────────
+    if CT_HYDRAULIC in constraint_types or CT_WET_WEATHER in constraint_types:
+        hyd_con = next((c for c in constraints
+                        if c.constraint_type in (CT_HYDRAULIC, CT_WET_WEATHER)), None)
+        if hyd_con and (overflow or ww_peak or hyd_con.severity == "High"):
+            # CoMag for acute peak / overflow (high-rate clarification)
+            _add_stage(1, TI_COMAG, MECH_BALLASTED,
+                "High-rate magnetic ballasted clarification provides rapid solids removal "
+                "under peak wet weather flows, protecting the downstream biological process "
+                "from hydraulic and solids shock loads. "
+                "CoMag is effective at 3–5× DWA without requiring new secondary tanks.",
+                [CT_HYDRAULIC, CT_WET_WEATHER])
+        else:
+            # EQ basin for sustained hydraulic constraint
+            _add_stage(1, TI_EQ_BASIN, MECH_HYD_EXP,
+                "Equalisation basin attenuates peak inflow before secondary treatment. "
+                "Target attenuation to ≤ 2× DWA at inlet to secondary process. "
+                "No process intensification can substitute for hydraulic attenuation "
+                "under extreme peak wet weather flows.",
+                [CT_HYDRAULIC, CT_WET_WEATHER])
+
+    # ── Stage 2: Settling ──────────────────────────────────────────────────────
+    if CT_SETTLING in constraint_types:
+        set_con = next((c for c in constraints if c.constraint_type == CT_SETTLING), None)
+        if is_sbr:
+            _add_stage(2, TI_MIGINDENSE, MECH_BIOMASS_SEL,
+                "MOB (inDENSE + miGRATE) stabilises settling and unlocks cycle capacity "
+                "in the existing SBR without new reactor volume. "
+                "inDENSE is the settling prerequisite; miGRATE provides biological optimisation. "
+                "Install inDENSE first, then miGRATE after settling is confirmed stable.",
+                [CT_SETTLING, CT_NITRIFICATION],
+                prereq="SBR operational with stable feed characteristics")
+        elif is_mbr:
+            _add_stage(2, TI_MEMDENSE, MECH_MEMBRANE_SEL,
+                "memDENSE removes filamentous and light biomass from MBR mixed liquor, "
+                "reducing clarifier/membrane loading and improving permeability. "
+                "Dense, active biomass is selectively retained.",
+                [CT_SETTLING, CT_MEMBRANE])
+        elif high_load and CT_HYDRAULIC not in constraint_types:
+            # BioMag preferred when settling + high biological load but no acute hydraulic
+            _add_stage(2, TI_BIOMAG, MECH_BALLASTED,
+                "BioMag combines ballasted settling with biofilm carriers, "
+                "improving both hydraulic throughput and biological treatment capacity. "
+                "Magnetic microspheres improve sludge density and settling velocity. "
+                "Suitable where MLSS is elevated and conventional settling is marginal.",
+                [CT_SETTLING, CT_NITRIFICATION],
+                prereq="Ballast recovery and recycling infrastructure available")
+        else:
+            _add_stage(2, TI_INDENSE, MECH_BIOMASS_SEL,
+                "inDENSE gravimetric selection removes light and filamentous biomass, "
+                "improving settling velocity and reducing sludge volume index. "
+                "Clarifier loading and overflow risk decrease without adding tank volume.",
+                [CT_SETTLING])
+
+    # ── Stage 3: Nitrification ─────────────────────────────────────────────────
+    if CT_NITRIFICATION in constraint_types:
+        # Skip if MOB already covers nitrification (SBR case above)
+        if TI_MIGINDENSE not in used_tech_codes:
+            if is_mabr:
+                # MABR already handles nitrification — no additional biofilm needed
+                pass
+            elif TI_INDENSE in used_tech_codes or TI_BIOMAG in used_tech_codes:
+                # Hybas pairs well with settling remediation
+                _add_stage(3, TI_HYBAS, MECH_BIOFILM_RET,
+                    "Hybas biofilm carriers decouple nitrification SRT from hydraulic SRT. "
+                    "Nitrifying biofilm accumulates on carriers independent of WAS rate, "
+                    "enabling longer effective sludge age without increasing tank volume. "
+                    "Suspended MLSS decreases, further reducing clarifier loading.",
+                    [CT_NITRIFICATION],
+                    prereq="Stage 2 settling stabilisation complete")
+            else:
+                # IFAS for standalone nitrification — simpler than full Hybas
+                _add_stage(3, TI_IFAS, MECH_BIOFILM_RET,
+                    "IFAS carriers retain nitrifying biofilm in the existing aeration zone, "
+                    "decoupling effective nitrification SRT from hydraulic SRT. "
+                    "No new tank volume required. Media retention screens installed at zone outlets.",
+                    [CT_NITRIFICATION])
+
+    # ── Stage 4: Biological performance (TN / TP) ──────────────────────────────
+    if CT_BIOLOGICAL in constraint_types:
+        if TI_HYBAS in used_tech_codes or TI_IFAS in used_tech_codes or TI_MBBR in used_tech_codes:
+            # Bardenpho pairs with biofilm — synergistic TN optimisation
+            _add_stage(4, TI_BARDENPHO, MECH_PROC_OPT,
+                "Bardenpho zone configuration maximises denitrification using the "
+                "elevated nitrate load from biofilm nitrification. "
+                "Second anoxic zone significantly reduces effluent TN. "
+                "Optimal internal recycle R ≈ 2; anaerobic HRT 2–2.5h for EBPR.",
+                [CT_BIOLOGICAL],
+                prereq="Biofilm stage (Stage 3) commissioned and stable")
+        else:
+            # Process optimisation without biofilm — recycle + zone reconfiguration
+            _add_stage(4, TI_RECYCLE_OPT, MECH_PROC_OPT,
+                "Internal recycle ratio optimisation improves denitrification efficiency "
+                "without capital spend. R ≈ 2 recovers ~67% of nitrate; R=4 recovers ~80%. "
+                "Diminishing returns above R=4 due to dissolved oxygen carry-over.",
+                [CT_BIOLOGICAL])
+            # Add zone reconfiguration if EBPR is also an issue
+            if wf.get("ebpr_poor") or wf.get("tp_at_limit"):
+                _add_stage(5, TI_ZONE_RECONF, MECH_PROC_OPT,
+                    "Zone reconfiguration establishes a true anaerobic zone (no nitrate, no O₂) "
+                    "for PAO selection and EBPR. Anaerobic volume 10–15% of total bioreactor volume. "
+                    "Minimise nitrate return to the anaerobic zone.",
+                    [CT_BIOLOGICAL],
+                    prereq="Recycle optimisation (Stage 4) complete")
+
+    # ── Stage 5: Membrane ──────────────────────────────────────────────────────
+    if CT_MEMBRANE in constraint_types and TI_MEMDENSE not in used_tech_codes:
+        _add_stage(5, TI_MEMDENSE, MECH_MEMBRANE_SEL,
+            "memDENSE removes filaments and light biomass from MBR mixed liquor. "
+            "Membrane permeability improves, cleaning frequency reduces, "
+            "and PAO retention is enhanced for improved biological P removal.",
+            [CT_MEMBRANE])
+
+    # Sort stages by stage number
+    stages.sort(key=lambda s: s.stage_number)
+    return stages
+
+
+# ── Redundancy removal ─────────────────────────────────────────────────────────
+
+def _remove_redundancies(stages: List[StackStage]) -> List[StackStage]:
+    """
+    Apply deduplication rules:
+    - Not both CoMag AND BioMag
+    - Not both IFAS AND MBBR
+    - Prefer simplest viable combination
+    """
+    tech_codes = [s.technology for s in stages]
+
+    # Rule 1: CoMag and BioMag — keep CoMag (hydraulic first)
+    if TI_COMAG in tech_codes and TI_BIOMAG in tech_codes:
+        stages = [s for s in stages if s.technology != TI_BIOMAG]
+
+    # Rule 2: IFAS and MBBR — keep IFAS (simpler)
+    if TI_IFAS in tech_codes and TI_MBBR in tech_codes:
+        stages = [s for s in stages if s.technology != TI_MBBR]
+
+    # Rule 3: MOB already covers both settling + nitrification in SBR
+    if TI_MIGINDENSE in tech_codes:
+        stages = [s for s in stages
+                  if s.technology not in (TI_INDENSE, TI_IFAS, TI_MBBR, TI_HYBAS)
+                  or s.technology == TI_MIGINDENSE]
+
+    # Renumber stages sequentially
+    for i, stage in enumerate(sorted(stages, key=lambda s: s.stage_number), 1):
+        stage.stage_number = i
+        stage.stage_name = _STAGE_NAMES.get(i, f"Stage {i}")
+
+    return stages
+
+
+# ── Alternative stack generator ────────────────────────────────────────────────
+
+def _build_alternatives(
+    constraints: List[ActiveConstraint],
+    primary_stages: List[StackStage],
+    wf: Dict,
+) -> List[Dict]:
+    """Generate 1–2 alternative pathways."""
+    alts: List[Dict] = []
+    ct_set = {c.constraint_type for c in constraints}
+    primary_techs = [s.technology for s in primary_stages]
+    is_sbr = bool(wf.get("is_sbr", False))
+
+    # Alternative 1: Civil expansion (last resort)
+    if len(primary_stages) >= 2:
+        alts.append({
+            "label": "Conventional civil expansion",
+            "stages": ["Secondary clarifier expansion", "New bioreactor volume", "Additional blower capacity"],
+            "when": (
+                "When the intensification envelope is demonstrably exhausted and "
+                "process optimisation has failed to achieve compliance targets. "
+                "Should only be pursued after all intensification options are evaluated."
+            ),
+            "capex_class": "High",
+            "notes": "Addresses capacity by volume addition rather than process efficiency.",
+        })
+
+    # Alternative 2: Simpler single-technology option
+    if len(primary_stages) >= 3 and CT_NITRIFICATION in ct_set:
+        bio_opt = TI_MBBR if TI_IFAS in primary_techs else TI_IFAS
+        alts.append({
+            "label": f"Simplified biofilm pathway ({_ALL_TECH_NAMES.get(bio_opt, bio_opt)})",
+            "stages": [
+                _ALL_TECH_NAMES.get(s.technology, s.technology)
+                for s in primary_stages if s.technology not in (TI_IFAS, TI_HYBAS, TI_MBBR)
+            ] + [_ALL_TECH_NAMES.get(bio_opt, bio_opt)],
+            "when": (
+                "When capital is constrained and a simpler technology pathway is preferred. "
+                f"{_ALL_TECH_NAMES.get(bio_opt, bio_opt)} provides similar nitrification "
+                "capacity to the primary stack with a different operational profile."
+            ),
+            "capex_class": "Medium",
+            "notes": "Slightly different operational characteristics — confirm with site-specific modelling.",
+        })
+
+    # Alternative 3: Hydraulic-first only (defer biology)
+    if CT_HYDRAULIC in ct_set and len(primary_stages) >= 2:
+        alts.append({
+            "label": "Hydraulic-only interim (defer biological upgrade)",
+            "stages": [
+                _ALL_TECH_NAMES.get(s.technology, s.technology)
+                for s in primary_stages if s.mechanism in (MECH_HYD_EXP, MECH_BALLASTED)
+            ] or ["EQ basin only"],
+            "when": (
+                "When hydraulic compliance is the immediate driver and biological "
+                "performance is within tolerance. Defer the biological stage until "
+                "hydraulic infrastructure is commissioned and flows are characterised."
+            ),
+            "capex_class": "High",
+            "notes": "Biological stage must follow — hydraulic solution alone is not a complete upgrade.",
+        })
+
+    return alts[:2]   # return max 2 alternatives
+
+
+# ── Narrative generators ───────────────────────────────────────────────────────
+
+def _stack_rationale(
+    constraints: List[ActiveConstraint],
+    stages: List[StackStage],
+    wf: Dict,
+) -> str:
+    """Generate 'Why this stack works' explanation."""
+    if not stages:
+        return "Insufficient constraint data to generate stack rationale."
+
+    parts = []
+    for stage in stages:
+        mech_label = _MECH_LABELS.get(stage.mechanism, stage.mechanism)
+        parts.append(
+            f"Stage {stage.stage_number} ({stage.tech_display}) addresses "
+            f"{', '.join(stage.addresses)} via {mech_label.lower()}."
+        )
+
+    return (
+        "This stack is sequenced to address the highest-priority constraint first, "
+        "with each stage unlocking the next. "
+        + " ".join(parts)
+        + " Technologies are selected to avoid functional overlap and to stack efficiently "
+        "within existing tank volume wherever possible."
+    )
+
+
+def _constraint_to_mech_explanation(constraints: List[ActiveConstraint]) -> str:
+    """Generate constraint → mechanism → solution linkage."""
+    lines = []
+    for c in constraints:
+        mech = {
+            CT_HYDRAULIC:    MECH_BALLASTED + " / " + MECH_HYD_EXP,
+            CT_WET_WEATHER:  MECH_BALLASTED,
+            CT_SETTLING:     MECH_BIOMASS_SEL,
+            CT_NITRIFICATION:MECH_BIOFILM_RET,
+            CT_BIOLOGICAL:   MECH_PROC_OPT,
+            CT_MEMBRANE:     MECH_MEMBRANE_SEL,
+        }.get(c.constraint_type, "process_optimisation")
+
+        tech_label = {
+            CT_HYDRAULIC:    "CoMag / EQ basin",
+            CT_WET_WEATHER:  "CoMag",
+            CT_SETTLING:     "inDENSE / MOB / BioMag",
+            CT_NITRIFICATION:"Hybas / IFAS / MBBR",
+            CT_BIOLOGICAL:   "Bardenpho / recycle optimisation",
+            CT_MEMBRANE:     "memDENSE",
+        }.get(c.constraint_type, "process optimisation")
+
+        explanation = {
+            CT_HYDRAULIC:    "Hydraulic constraint is the primary failure driver — high-rate clarification or storage is required before biological upgrades can be effective.",
+            CT_WET_WEATHER:  "Peak wet weather flows exceed biological process capacity — high-rate clarification (CoMag) protects the downstream process without new secondary tanks.",
+            CT_SETTLING:     "Settling limitation indicates biomass selection is required to stabilise MLSS and prevent solids washout.",
+            CT_NITRIFICATION:"Nitrification is constrained by sludge age — biofilm systems decouple SRT from HRT, unlocking nitrification capacity within fixed volume.",
+            CT_BIOLOGICAL:   "Biological performance is limited by zone configuration or carbon availability — process optimisation extracts more performance from existing volume.",
+            CT_MEMBRANE:     "Membrane performance is constrained by biomass quality — selective wasting improves permeability and reduces fouling.",
+        }.get(c.constraint_type, f"Constraint: {c.label}")
+
+        lines.append(
+            f"[{c.severity}] {c.label} → {_MECH_LABELS.get(mech.split('/')[0].strip(), mech)} ({tech_label}): {explanation}"
+        )
+    return "\n".join(lines)
+
+
+def _engineering_notes_for_stack(stages: List[StackStage]) -> List[str]:
+    """Return key engineering facts applied in this stack."""
+    notes = []
+    tech_codes = {s.technology for s in stages}
+    if TI_COMAG in tech_codes:
+        notes.append("CoMag can treat 3–5× DWA without new secondary tanks; requires ballast recovery and recycling infrastructure.")
+    if TI_BIOMAG in tech_codes:
+        notes.append("BioMag combines ballasted settling with attached growth; magnetic microspheres improve sludge density and settling velocity.")
+    if TI_INDENSE in tech_codes or TI_MIGINDENSE in tech_codes:
+        notes.append("inDENSE is the settling prerequisite before miGRATE; miGRATE alone does not consistently improve SVI (Lang Lang + Army Bay finding).")
+    if TI_HYBAS in tech_codes or TI_IFAS in tech_codes:
+        notes.append("Biofilm carriers decouple SRT from HRT — nitrifiers accumulate on media independent of WAS rate.")
+    if TI_MBBR in tech_codes:
+        notes.append("MBBR biofilm contributes ~80% of nitrification in hybrid configuration. Optimal R ≈ 2; anaerobic HRT 2–2.5h for EBPR.")
+    if TI_BARDENPHO in tech_codes:
+        notes.append("Bardenpho 5-stage: second anoxic zone significantly reduces effluent TN. Anaerobic HRT 2–2.5h optimal for PAO selection.")
+    if TI_MEMDENSE in tech_codes:
+        notes.append("memDENSE selective wasting removes filaments, improves permeability, reduces aeration demand, and enhances PAO retention.")
+    if TI_EQ_BASIN in tech_codes:
+        notes.append("EQ basin: target attenuation to ≤ 2× DWA at inlet to secondaries. No process intensification substitutes for hydraulic attenuation.")
+    return notes
+
+
+def _overall_class(stages: List[StackStage], attr: str) -> str:
+    order = {"Low": 0, "Medium": 1, "High": 2}
+    vals = [getattr(s, attr) for s in stages]
+    if not vals: return "Low"
+    return max(vals, key=lambda v: order.get(v, 0))
+
+
+# ── Main entry point ───────────────────────────────────────────────────────────
+
+def build_technology_stack(
+    profile,
+    waterpoint_fields: Optional[Dict] = None,
+) -> TechnologyStack:
+    """
+    Build a sequenced multi-technology upgrade stack from a ConstraintProfile.
+
+    Parameters
+    ----------
+    profile : ConstraintProfile
+        Output of _derive_constraint_profile() from brownfield_upgrade_ranking.
+
+    waterpoint_fields : dict, optional
+        Additional signals:
+          is_sbr, is_mbr, is_mabr, high_load
+          overflow_risk, wet_weather_peak, pwwf_active, flow_ratio
+          high_mlss, solids_carryover, clarifier_util
+          nh4_near_limit, srt_pressure
+          tn_at_limit, tp_at_limit, ebpr_poor
+          membrane_fouling, high_cleaning_frequency, low_permeability
+
+    Returns
+    -------
+    TechnologyStack
+    """
+    wf = waterpoint_fields or {}
+
+    # ── Step 1-2: Collect and sort constraints ─────────────────────────────────
+    constraints = _collect_active_constraints(profile, wf)
+
+    # ── Steps 3-4: Map to stages ───────────────────────────────────────────────
+    stages = _build_stages(constraints, wf)
+
+    # ── Step 5: Remove redundancies ────────────────────────────────────────────
+    stages = _remove_redundancies(stages)
+
+    if not stages:
+        # Fallback: at least one stage
+        stages = [StackStage(
+            stage_number=1,
+            stage_name="Stage 1 — Process review",
+            technology=TI_RECYCLE_OPT,
+            tech_display=_ALL_TECH_NAMES[TI_RECYCLE_OPT],
+            mechanism=MECH_PROC_OPT,
+            purpose="No dominant constraint identified — review recycle ratios and zone configuration as first step.",
+            addresses=[CT_BIOLOGICAL],
+            capex_class="Low",
+            complexity="Low",
+        )]
+
+    # ── Steps 6-7: Narrative ───────────────────────────────────────────────────
+    alt_stacks     = _build_alternatives(constraints, stages, wf)
+    stack_rat      = _stack_rationale(constraints, stages, wf)
+    c2m            = _constraint_to_mech_explanation(constraints)
+    eng_notes      = _engineering_notes_for_stack(stages)
+
+    # Primary driver
+    primary_driver = (
+        constraints[0].label if constraints
+        else "No dominant constraint identified"
+    )
+
+    # Expected outcome
+    addressed = list({addr for s in stages for addr in s.addresses})
+    expected = (
+        f"After full stack implementation: {', '.join(a.replace('_limitation','').replace('_',' ') for a in addressed)} "
+        f"constraints are addressed. Plant can operate within the intensified envelope "
+        f"without major civil expansion."
+    )
+
+    # Residual risk
+    residual_parts = []
+    ct_set = {c.constraint_type for c in constraints}
+    if CT_HYDRAULIC in ct_set or CT_WET_WEATHER in ct_set:
+        residual_parts.append("Extreme wet weather (> 3× DWA) may still require additional storage or sewer-level attenuation.")
+    if CT_BIOLOGICAL in ct_set and TI_BARDENPHO not in {s.technology for s in stages}:
+        residual_parts.append("TN / TP compliance may require external carbon dosing if COD/N ratio is below 4.")
+    residual_parts.append("Stack performance should be confirmed by staged commissioning and effluent monitoring before proceeding to next stage.")
+    residual = " ".join(residual_parts)
+
+    return TechnologyStack(
+        active_constraints  = constraints,
+        stages              = stages,
+        stack_rationale     = stack_rat,
+        constraint_to_mech  = c2m,
+        alternative_stacks  = alt_stacks,
+        engineering_notes   = eng_notes,
+        primary_driver      = primary_driver,
+        expected_outcome    = expected,
+        residual_risk       = residual,
+        capex_class_overall = _overall_class(stages, "capex_class"),
+        complexity_overall  = _overall_class(stages, "complexity"),
+    )

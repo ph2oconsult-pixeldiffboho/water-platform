@@ -234,6 +234,7 @@ class UpgradeRankingResult:
     data_confidence_note:   str
     engineering_summary:    str    # one paragraph executive summary
     intensification_plan:   Optional[Any] = None   # IntensificationPlan (lazy import)
+    technology_stack:       Optional[Any] = None   # TechnologyStack (lazy import)
 
 
 # ── Main ranking function ──────────────────────────────────────────────────────
@@ -374,6 +375,13 @@ def rank_upgrade_pathways(
     except Exception:
         _ii_plan = None
 
+    # Build technology stack (stack generator layer)
+    try:
+        from apps.wastewater_app.intensification_intelligence import build_technology_stack
+        _tech_stack = build_technology_stack(profile, waterpoint_fields)
+    except Exception:
+        _tech_stack = None
+
     return UpgradeRankingResult(
         constraint_profile    = profile,
         ranked_options        = options,
@@ -385,6 +393,7 @@ def rank_upgrade_pathways(
         data_confidence_note  = conf_note,
         engineering_summary   = eng_summary,
         intensification_plan  = _ii_plan,
+        technology_stack      = _tech_stack,
     )
 
 
