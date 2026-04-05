@@ -57,6 +57,9 @@ class MOBStressResult:
     migrate_active:         bool  = False
     indense_active:         bool  = False
     selector_operational:   bool  = True
+    upgrade_stage:          str   = "none"  # none|indense_only|migrate_only|full_mob
+    cycle_compression_risk: bool  = False   # cycle < 4h without inDENSE
+    solids_carryover_risk:  bool  = False   # high MLSS + rising load, no settling
     # State
     state:      str = "Stable"
     rate:       str = "Stable"
@@ -111,6 +114,23 @@ def calculate_mob_stress(wp) -> MOBStressResult:
     result.migrate_active      = migrate_on
     result.indense_active      = indense_on
     result.selector_operational= selector_ok
+
+    # V2: Upgrade stage — determines dependency and rationale logic
+    if migrate_on and indense_on:    stage = "full_mob"
+    elif indense_on:                 stage = "indense_only"
+    elif migrate_on:                 stage = "migrate_only"
+    else:                            stage = "none"
+    result.upgrade_stage = stage
+
+    # V2: Cycle compression risk — cycle < 4h without inDENSE
+    result.cycle_compression_risk = (cycle_normal < 4.0 and not indense_on)
+
+    # V2: Solids carry-over risk proxy
+    mlss_val   = getattr(wp, "mlss_mgL", None) or 0.0
+    result.solids_carryover_risk = (
+        not indense_on and (mlss_val > 4000 or flow_ratio > 1.2)
+    )
+
 
     # ── Domain A: Cycle throughput — ADWF-anchored (Patch 1) ──────────────
     # util = flow_ratio / intensification_factor (ADWF-normalised)
@@ -278,7 +298,7 @@ def calculate_mob_stress(wp) -> MOBStressResult:
     # ── Rationale ─────────────────────────────────────────────────────────────
     result.rationale = _mob_rationale(
         state, throughput_util, migrate_on, indense_on, selector_ok,
-        storm_required, flow_ratio
+        storm_required, flow_ratio, stage
     )
 
     # Constraint label
@@ -291,39 +311,44 @@ def calculate_mob_stress(wp) -> MOBStressResult:
 
 
 def _mob_rationale(state, thru_util, migrate, indense, selector_ok,
-                   storm, flow_ratio) -> str:
-    tech = []
-    if migrate: tech.append("miGRATE biofilm")
-    if indense: tech.append("inDENSE gravimetric selection")
-    tech_str = " and ".join(tech) if tech else "baseline SBR"
+                   storm, flow_ratio, stage="full_mob") -> str:
+    """Generate rationale text using V2 upgrade-stage logic (Army Bay sequencing)."""
+    stage_prefix = {
+        "none":         "The baseline SBR is operating without process intensification.",
+        "indense_only": ("inDENSE gravimetric selection has been installed, stabilising settling "
+                         "and enabling shorter or more productive cycle operation. "
+                         "Biological optimisation (miGRATE) is the next step."),
+        "migrate_only": ("miGRATE biofilm carriers are improving nitrification resilience and "
+                         "biological performance. However, miGRATE does not replace the need for "
+                         "enhanced settling — inDENSE remains the settling prerequisite."),
+        "full_mob":     ("The full MOB sequence (inDENSE settling stabilisation + miGRATE biological "
+                         "optimisation) is in place. Capacity is being extended through process "
+                         "intensification rather than additional tank volume."),
+    }.get(stage, "")
 
     if state == "Stable":
-        return (
-            f"Capacity is being extended through {tech_str} rather than additional tank volume. "
-            f"Throughput utilisation {thru_util*100:.0f}% is within the intensified operating envelope."
-        )
+        return (f"{stage_prefix} "
+                f"Throughput utilisation {thru_util*100:.0f}% is within the intensified operating envelope. "
+                "MOB can unlock practical throughput by improving settling and biology, "
+                "but does not fully resolve extreme wet weather hydraulics.")
     if state == "Tightening":
         extra = " Storm cycle operation is now required." if storm else ""
-        return (
-            f"Throughput at {thru_util*100:.0f}% of intensified capacity.{extra} "
-            f"{tech_str} is maintaining compliance but margin is reducing."
-        )
+        return (f"{stage_prefix}{extra} "
+                f"Throughput at {thru_util*100:.0f}% of intensified capacity — margin is reducing. "
+                "The practical upgrade sequence is: inDENSE first, then miGRATE, then cycle intensification.")
     if state == "Fragile":
         sel_note = " Selector underperformance is reducing the inDENSE benefit." if (indense and not selector_ok) else ""
-        return (
-            f"Intensified SBR is under pressure at {thru_util*100:.0f}% throughput utilisation.{sel_note} "
-            f"Storm cycle compression is reducing treatment margin."
-        )
+        return (f"The plant is under pressure at {thru_util*100:.0f}% throughput utilisation.{sel_note} "
+                f"{stage_prefix} "
+                "Some flow attenuation or storage remains necessary under peak-day events.")
     # Failure Risk
     if flow_ratio > 2.0:
-        return (
-            f"Extreme hydraulic loading ({flow_ratio:.1f}\u00d7 ADWF) has exceeded the intensified "
-            f"SBR envelope. Overflow and treatment instability are immediate risks."
-        )
-    return (
-        f"Required throughput at {thru_util*100:.0f}% of intensified capacity. "
-        f"Reliable compliance under current loading is no longer assured."
-    )
+        return (f"Extreme hydraulic loading ({flow_ratio:.1f}× ADWF) has exceeded the intensified "
+                "SBR envelope. Even with full MOB intensification, extreme peak wet weather "
+                "requires balancing, storage, or attenuation — process intensification alone "
+                "cannot resolve extreme hydraulic events.")
+    return (f"Required throughput at {thru_util*100:.0f}% of intensified capacity. "
+            f"{stage_prefix} Reliable compliance under current loading is no longer assured.")
 
 
 # ── MOB failure modes ──────────────────────────────────────────────────────────
@@ -331,9 +356,14 @@ def _mob_rationale(state, thru_util, migrate, indense, selector_ok,
 def detect_mob_failure_modes(wp, mob: MOBStressResult) -> List[MOBFailureMode]:
     """Return MOB-specific failure modes (technology-specific, no clarifier language)."""
     modes: List[MOBFailureMode] = []
-    fst   = wp.flow_scenario_type or ""
-    state = mob.state
-    tu    = mob.throughput_util
+    fst         = wp.flow_scenario_type or ""
+    state       = mob.state
+    tu          = mob.throughput_util
+    base_flow   = wp.average_flow_mld or 1.0
+    adj_flow    = wp.flow_adjusted_flow_mld or base_flow
+    flow_ratio  = adj_flow / base_flow if base_flow > 0 else 1.0
+    cycle_normal= getattr(wp, "cycle_time_normal_hr", None) or 3.0
+
 
     # 1. Cycle throughput saturation
     if tu >= 0.92:
@@ -459,6 +489,83 @@ def detect_mob_failure_modes(wp, mob: MOBStressResult) -> List[MOBFailureMode]:
                 severity="Medium",
             ))
 
+    # ── V2: Army Bay failure modes ────────────────────────────────────────
+    stage = getattr(mob, "upgrade_stage", "none")
+    fst   = wp.flow_scenario_type or ""
+
+    # V2-1: Settling constraint — inDENSE required as gateway upgrade
+    # Fires when settling is the bottleneck and inDENSE is not installed
+    if not mob.indense_active and (flow_ratio > 1.2 or mob.solids_carryover_risk):
+        modes.append(MOBFailureMode(
+            title="Settling constraint — inDENSE required",
+            description=(
+                "Solids carry-over risk is active because settling enhancement is not installed. "
+                "The Army Bay process modelling confirms that inDENSE is required in the short term "
+                "to enable continued compliance and to unlock the practical hydraulic capacity "
+                "available from the cycle calculations. "
+                "Install inDENSE before adding miGRATE or attempting shorter cycle operation."
+            ),
+            severity="High" if flow_ratio > 1.5 else "Medium",
+        ))
+
+    # V2-2: Solids carry-over risk at elevated MLSS / rising load
+    if mob.solids_carryover_risk and not mob.indense_active:
+        modes.append(MOBFailureMode(
+            title="Solids carry-over risk at elevated MLSS",
+            description=(
+                "Elevated MLSS under rising load increases the risk of solids washout "
+                "and compliance failure. Without settling enhancement (inDENSE), "
+                "solids carry-over risk increases with MLSS and rising load, "
+                "even near current design flows."
+            ),
+            severity="Medium",
+        ))
+
+    # V2-3: Cycle compression without settling support
+    if mob.cycle_compression_risk:
+        modes.append(MOBFailureMode(
+            title="Cycle compression without settling support",
+            description=(
+                f"A {cycle_normal:.1f}-hour cycle is being attempted without inDENSE. "
+                "A 3-hour cycle is credible only with inDENSE installed; "
+                "without settling support the shorter settle/decant period is not operationally credible. "
+                "Install inDENSE to validate cycle compression."
+            ),
+            severity="Medium",
+        ))
+
+    # V2-4: Biological optimisation not yet installed (inDENSE only, no miGRATE)
+    if stage == "indense_only":
+        # Check if TN or nitrification pressure is present
+        _tn_pressure = (wp.effluent_tn_mg_l is not None and wp.tn_target_mg_l is not None
+                        and wp.effluent_tn_mg_l > wp.tn_target_mg_l * 0.80)
+        if _tn_pressure or tu > 0.60:
+            modes.append(MOBFailureMode(
+                title="Biological optimisation not yet installed",
+                description=(
+                    "Settling has been stabilised by inDENSE, but TN performance, aerobic mass fraction, "
+                    "and nitrification optimisation remain limited. "
+                    "Adding miGRATE will further reduce TN by reducing the required aerobic mass fraction "
+                    "and/or solids inventory while maintaining nitrification."
+                ),
+                severity="Low",
+            ))
+
+    # V2-5: Extreme peak-flow attenuation required
+    from apps.wastewater_app.flow_scenario_engine import SCENARIO_AWWF, SCENARIO_PWWF
+    if fst in (SCENARIO_AWWF, SCENARIO_PWWF) and flow_ratio >= 2.0:
+        _has_balancing = getattr(wp, "nereda_has_flow_balancing", True)  # proxy
+        modes.append(MOBFailureMode(
+            title="Extreme peak-flow attenuation required",
+            description=(
+                f"Extreme wet weather flow ({flow_ratio:.1f}× ADWF) exceeds what process "
+                "intensification alone can address. Even with full MOB intensification, "
+                "extreme peak wet weather requires balancing, storage, or flow attenuation "
+                "upstream. MOB cannot substitute for hydraulic attenuation infrastructure."
+            ),
+            severity="High" if flow_ratio >= 3.0 else "Medium",
+        ))
+
     return modes
 
 
@@ -553,38 +660,81 @@ def generate_mob_decisions(
             "Monitor DO, ammonia, and sludge settleability under intensified operation."
         )
 
-    # ── Medium-term — intensify before expand ─────────────────────────────────
-    medium.append(
-        "Optimise inDENSE pressure, underflow split, and wasting strategy "
-        "to improve solids retention and maximise densified biomass benefit."
-    )
-    medium.append(
-        "Review carrier inventory and retention screen performance to maintain "
-        "biofilm contribution to nitrification and capacity."
-    )
-    medium.append(
-        "Validate storm cycle timing against real diurnal and wet weather fill "
-        "patterns — confirm 2.5h cycle is achievable without treatment compromise."
-    )
-    medium.append(
-        "Optimise DO control to reduce over-aeration and improve TN/TP removal "
-        "under intensified mixed liquor conditions."
-    )
-    if state in ("Fragile", "Failure Risk"):
+    # ── Medium-term — V2 staged upgrade sequence (Army Bay logic) ─────────────
+    stage = getattr(mob, "upgrade_stage", "full_mob")
+
+    if stage == "none":
+        # Baseline: inDENSE is the first and mandatory upgrade
         medium.append(
-            "Commission independent review of the intensified SBR operating envelope "
-            "to confirm maximum reliable throughput before considering civil expansion."
+            "Install inDENSE to stabilise settling, reduce solids carry-over risk, "
+            "and enable shorter or more productive cycle operation. "
+            "inDENSE is the gateway upgrade — do not attempt cycle compression or "
+            "carrier addition before settling resilience is established."
         )
-    if not mob.migrate_active:
         medium.append(
-            "Evaluate activation of miGRATE carrier programme to augment nitrification "
-            "resilience and support further capacity increase within existing tank volume."
+            "After inDENSE is commissioned and stable, evaluate miGRATE to further "
+            "reduce TN by lowering the required aerobic mass fraction and improving "
+            "nitrification resilience."
         )
-    if not mob.indense_active:
         medium.append(
-            "Evaluate inDENSE installation to achieve settling improvement and "
-            "solids retention benefit not available from miGRATE alone."
+            "Validate cycle time reduction to 3h only after inDENSE is operational "
+            "and settling performance is confirmed under the shorter cycle."
         )
+
+    elif stage == "migrate_only":
+        # miGRATE installed, inDENSE missing — settling is still the problem
+        medium.append(
+            "Install inDENSE as the immediate priority. "
+            "miGRATE is improving biology, but settling and solids carry-over risk "
+            "remains active without inDENSE. "
+            "inDENSE is the settling prerequisite — install before attempting cycle compression."
+        )
+        medium.append(
+            "Once inDENSE is operational, validate cycle timing and carrier retention "
+            "together to confirm the combined MOB envelope."
+        )
+
+    elif stage == "indense_only":
+        # inDENSE installed, miGRATE not yet added — biological optimisation next
+        medium.append(
+            "Add miGRATE to improve nitrification resilience, reduce TN, "
+            "and reduce the required solids inventory and aerobic mass fraction. "
+            "miGRATE is the biological optimisation layer that follows settling stabilisation."
+        )
+        medium.append(
+            "Optimise inDENSE selector pressure, underflow split, and wasting strategy "
+            "to consolidate settling benefit before adding biofilm carriers."
+        )
+        medium.append(
+            "Validate 3-hour cycle or equivalent intensified operation once miGRATE "
+            "is commissioned and biological performance is confirmed."
+        )
+
+    else:  # full_mob
+        # Both installed — optimise the combined system, defer civil expansion
+        medium.append(
+            "Optimise inDENSE pressure, underflow split, and wasting strategy "
+            "to maximise densified biomass benefit and settling resilience."
+        )
+        medium.append(
+            "Review carrier inventory and screen performance to maintain "
+            "biofilm contribution to nitrification and TN performance."
+        )
+        medium.append(
+            "Validate 3-hour cycle against real diurnal and wet weather fill patterns "
+            "— confirm cycle is achievable without treatment compromise."
+        )
+        medium.append(
+            "Optimise DO control to reduce over-aeration and improve TN/TP removal "
+            "under intensified mixed liquor conditions."
+        )
+        if state in ("Fragile", "Failure Risk"):
+            medium.append(
+                "Commission independent process review to confirm the intensified operating "
+                "envelope before considering civil expansion. "
+                "Extreme peak wet weather still requires balancing or storage attenuation."
+            )
+
 
     # ── Long-term — intensify first, build later ──────────────────────────────
     long_.append(

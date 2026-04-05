@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z30", "5 Apr 2026", [
+        "Brownfield Intensification Intelligence Layer — new module intensification_intelligence.py",
+        "Constraint classification: settling | nitrification | biological | membrane | hydraulic | multi",
+        "Mechanism mapping: biomass_selection | biofilm_retention | process_optimisation | membrane_biomass_selection | hydraulic_expansion | multi",
+        "10 technology options with embedded engineering truths: inDENSE, memDENSE, Hybas, MBBR, IFAS, Bardenpho, recycle optimisation, zone reconfiguration, EQ basin, storm storage, MOB",
+        "Key truths: memDENSE removes filaments/improves PAO; Hybas decouples SRT from HRT; MBBR ~80% nitrification, R=2, anaerobic HRT 2-2.5h; inDENSE is SBR intensification prerequisite",
+        "Stacking logic: inDENSE+Hybas, MOB sequence, Hybas+Bardenpho, memDENSE+zone reconfig, EQ+intensification",
+        "Hydraulic rule: EQ basin/storm storage is primary for hydraulic limitation; process intensification is complementary not substitutive",
+        "Wired into rank_upgrade_pathways: IntensificationPlan attached to UpgradeRankingResult.intensification_plan",
+        "ConstraintProfile extended: constraint_type and mechanism fields populated from intelligence layer",
+        "6 test cases validated: clarifier stress, NH3/SRT, carbon-limited TN, MBR fouling, wet weather, multi-constraint SBR",
+        "22/22 checks; 282/282 tests; BNR/Nereda/MOB/MABR modules unchanged",
+    ]),
     ("v24Z29", "19 Mar 2026", [
         "MOB calibration patch — 3 targeted fixes from validation report; 10/10 checks; 282/282 tests",
         "Patch 1 (Critical): Throughput domain replaced with ADWF-anchored model: util = flow_ratio / intensification_factor",

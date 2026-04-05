@@ -111,14 +111,19 @@ _CAPABILITY_MAP: Dict[str, Dict[str, List[str]]] = {
         "helps":        [_DENITRIFICATION, _AERATION],
         "mismatches":   [_HYDRAULIC],   # does not address hydraulic throughput
         "contradicts":  [],
-        "primary_benefit": "Increases biological capacity and solids retention in existing tanks "
-                           "through carrier biofilm (miGRATE) and densified sludge (inDENSE). "
-                           "No new reactor volume required.",
-        "key_limitation":  "Does NOT address hydraulic capacity constraints. "
-                           "inDENSE is the key settling enabler — miGRATE alone does not "
-                           "consistently improve SVI (Lang Lang finding).",
-        "residual":        "Hydraulic constraint remains if peak flow exceeds tank throughput. "
-                           "Selector performance must be maintained for the inDENSE benefit to persist.",
+        "primary_benefit": "Delivers a sequenced brownfield upgrade: inDENSE first stabilises "
+                           "settling and enables cycle compression; miGRATE then improves TN, "
+                           "reduces aerobic mass fraction, and lowers solids inventory. "
+                           "No new reactor volume required. Practical capacity uplift is "
+                           "achieved by unlocking the hydraulic potential already in the plant.",
+        "key_limitation":  "MOB is a sequenced pathway, not a single binary option. "
+                           "inDENSE must be installed first (settling gateway). "
+                           "miGRATE alone does not solve settling (Lang Lang + Army Bay finding). "
+                           "Extreme peak wet weather still requires balancing/storage attenuation "
+                           "regardless of intensification level.",
+        "residual":        "Hydraulic attenuation/storage still required under extreme peak wet weather. "
+                           "Selector performance must be sustained for inDENSE benefit to persist. "
+                           "Full MOB benefit requires both stages to be commissioned and stable.",
         "capex_class":     "Medium",
         "complexity":      "Medium",
     },
@@ -193,6 +198,9 @@ class ConstraintProfile:
     primary_constraint:   str  = "Unknown"
     secondary_constraints: List[str] = field(default_factory=list)
     data_confidence:      str  = "Medium"
+    # Intelligence layer fields (populated by build_intensification_plan)
+    constraint_type:      str  = "unknown"   # CT_* constant
+    mechanism:            str  = ""           # MECH_* constant
 
 
 @dataclass
@@ -225,6 +233,7 @@ class UpgradeRankingResult:
     residual_warning:       str    # carbon limitation etc
     data_confidence_note:   str
     engineering_summary:    str    # one paragraph executive summary
+    intensification_plan:   Optional[Any] = None   # IntensificationPlan (lazy import)
 
 
 # ── Main ranking function ──────────────────────────────────────────────────────
@@ -358,6 +367,13 @@ def rank_upgrade_pathways(
     # ── Step 10: Engineering summary ──────────────────────────────────────────
     eng_summary = _engineering_summary(profile, recommended, secondary, residual_warning)
 
+    # Build intensification plan (intelligence layer)
+    try:
+        from apps.wastewater_app.intensification_intelligence import build_intensification_plan
+        _ii_plan = build_intensification_plan(profile, waterpoint_fields)
+    except Exception:
+        _ii_plan = None
+
     return UpgradeRankingResult(
         constraint_profile    = profile,
         ranked_options        = options,
@@ -368,6 +384,7 @@ def rank_upgrade_pathways(
         residual_warning      = residual_warning,
         data_confidence_note  = conf_note,
         engineering_summary   = eng_summary,
+        intensification_plan  = _ii_plan,
     )
 
 
@@ -448,7 +465,11 @@ def _derive_constraint_profile(
             if label not in secondaries:
                 secondaries.append(label)
 
-    return ConstraintProfile(
+    # Derive constraint_type + mechanism via intelligence layer
+    from apps.wastewater_app.intensification_intelligence import (
+        classify_constraint,
+    )
+    _cp_proto = ConstraintProfile(
         hydraulic_flag       = hyd_flag,
         aeration_flag        = aer_flag,
         clarifier_flag       = clar_flag,
@@ -462,6 +483,10 @@ def _derive_constraint_profile(
         secondary_constraints= secondaries,
         data_confidence      = confidence,
     )
+    _ct, _mech, _ = classify_constraint(_cp_proto, wf)
+    _cp_proto.constraint_type = _ct
+    _cp_proto.mechanism       = _mech
+    return _cp_proto
 
 
 # ── Technology scoring ─────────────────────────────────────────────────────────
