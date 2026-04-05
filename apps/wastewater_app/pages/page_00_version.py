@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z39", "5 Apr 2026", [
+        "Minor audit fixes confirmed: Fix 3 (Bardenpho EF reduction 0.20) and Fix 4 (credibility Info note at >=3x ADWF with CoMag) both already in codebase — 10/10 validation checks pass",
+        "UI Layer: waterpoint_ui.py extended from 157 to 450 lines",
+        "E1 Recommended Stack: stage cards with purpose / basis / prerequisite / feasibility icon, credibility notes + consistency flags inline",
+        "E2 Alternatives: alternative pathways with stages and when-preferred",
+        "E3 Feasibility: 6-dimension metric grid, key risks, mitigations, lower-risk alternative",
+        "E4 Carbon & Uncertainty: 5 uncertainty dimension metrics, 3-band carbon table (IPCC AR6), top sensitivity drivers, decision tension",
+        "E5 Stabilisation: low-cost options with capital classification icons, why / not-solve / cost / timeline",
+        "E6 Risk & Mitigation: per-stage 4-category risk tables with level colour coding",
+        "_build_context(): maps scenario/project fields to plant_context dict for all synthesis layers",
+        "_render_synthesis_layers(): fails gracefully — any layer error shows warning without breaking page",
+        "282/282 tests; syntax OK",
+    ]),
     ("v24Z38", "5 Apr 2026", [
         "Unified Risk & Mitigation Layer Production V1 — apps/wastewater_app/risk_layer.py",
         "4-category structure (Technical, Operational, Commercial, Financial) applied consistently to ALL technologies in any stack",
