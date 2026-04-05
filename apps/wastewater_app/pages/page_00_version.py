@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z40", "5 Apr 2026", [
+        "Brownfield vs Greenfield Strategic Assessment Layer Production V1 — apps/wastewater_app/bf_gf_layer.py",
+        "7-dimension scoring model: constraint count, constraint severity, stack complexity, licence stringency, feasibility overhead, flow ratio, footprint",
+        "Three categories: Strong Brownfield (0-4), Balanced (5-9), Strong Replacement (10+)",
+        "Brownfield pathway: mirrors actual recommended stack with staged benefits and stacking risks",
+        "Replacement pathway: Nereda AGS always primary; MBR only when reuse_quality flag active",
+        "Tipping point: explicit triggers that would shift category (always from recommendation → adjacent)",
+        "Interacting constraint pairs: 5 known pairs that amplify each other — scored separately from count",
+        "Nereda validation: never in brownfield pathway, always in replacement — nereda_in_replacement_only flag",
+        "Scores monotonically correct: S1 isolated-nit=4 (Strong BF) < S2 Metro-BNR-5ct=14 < S3 Extreme=18",
+        "Decision tension standard sentence always appended",
+        "17/17 checks; 282/282 tests",
+    ]),
     ("v24Z39", "5 Apr 2026", [
         "Minor audit fixes confirmed: Fix 3 (Bardenpho EF reduction 0.20) and Fix 4 (credibility Info note at >=3x ADWF with CoMag) both already in codebase — 10/10 validation checks pass",
         "UI Layer: waterpoint_ui.py extended from 157 to 450 lines",
