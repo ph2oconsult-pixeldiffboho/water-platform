@@ -13,6 +13,11 @@ from typing import List, Optional, Tuple
 
 from apps.wastewater_app.waterpoint_adapter import WaterPointInput
 
+# Wet weather scenario type constants (imported lazily to avoid circular import)
+_SCENARIO_AWWF = "Average Wet Weather Flow (AWWF)"
+_SCENARIO_PWWF = "Peak Wet Weather Flow (PWWF)"
+_SCENARIO_DWP  = "Dry Weather Peak (Diurnal)"
+
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
 
@@ -152,6 +157,27 @@ def calculate_system_stress(wp: WaterPointInput) -> SystemStress:
     # Omitted: design_capacity.biological_kg_d mirrors current_load.bod_kg_d
     # from the adapter — the ratio is always 1.0. Not a meaningful stress signal.
 
+    # ── Wet weather hydraulic domain ─────────────────────────────────────
+    # Only meaningful when flow_scenario is active (not a circular ratio like DWA).
+    fst = wp.flow_scenario_type or ""
+    if fst in (_SCENARIO_AWWF, _SCENARIO_PWWF, _SCENARIO_DWP):
+        adj_flow = wp.flow_adjusted_flow_mld or 0.0
+        base_flow = wp.average_flow_mld or 0.0
+        if adj_flow > 0 and base_flow > 0:
+            flow_ratio = adj_flow / base_flow
+            # Map flow_ratio to utilisation: ≤1.5 = Normal, 1.5–2.0 = Elevated, >2.0 = Overload
+            # Normalise so that ratio=2.0 → util=1.0 (capacity boundary)
+            ww_util = min(flow_ratio / 2.0, 1.2)   # cap at 1.2 so it can show Failure Risk
+            if flow_ratio > 1.5:   # only add as stress domain if genuinely elevated
+                band = ("Normal Peak" if flow_ratio <= 1.5
+                        else "Elevated Hydraulic Stress" if flow_ratio <= 2.0
+                        else "Hydraulic Overload")
+                domains.append((
+                    f"Wet weather hydraulic loading ({band})",
+                    ww_util,
+                    f"{adj_flow:.1f} MLD ({flow_ratio:.1f}× DWA)",
+                ))
+
     # ── Pick most constrained domain ──────────────────────────────────────
     if not domains:
         return _fallback_stress()
@@ -188,6 +214,32 @@ def calculate_system_stress(wp: WaterPointInput) -> SystemStress:
         confidence = "Low"
 
     rationale = _stress_rationale(domain_name, state, wp)
+
+    # ── Wet weather state escalation ──────────────────────────────────────
+    fst = wp.flow_scenario_type or ""
+    _escalation_note = ""
+    # overflow_flag forces Failure Risk regardless of domains
+    if wp.flow_overflow_flag:
+        state = "Failure Risk"
+        rate  = "Accelerating"
+        t2b   = "< 12 months — action required"
+        _escalation_note = " [Overflow flag: Failure Risk forced]"
+    elif fst == _SCENARIO_PWWF and state not in ("Failure Risk",):
+        # PWWF biases state up one level
+        _escalation_map = {
+            "Stable":       ("Tightening", "Tightening",   "3–5 years"),
+            "Tightening":   ("Fragile",    "Accelerating", "12–24 months"),
+            "Fragile":      ("Failure Risk","Accelerating","< 12 months — action required"),
+        }
+        if state in _escalation_map:
+            state, rate, t2b = _escalation_map[state]
+            _escalation_note = " [PWWF: state escalated one level]"
+    # clarifier_stress_flag adds to rationale but not state (already captured in SOR domain)
+    if wp.flow_clarifier_stress and _escalation_note == "":
+        _escalation_note = " [Clarifier SOR elevated under wet weather flow]"
+
+    if _escalation_note:
+        rationale = rationale.rstrip(".") + "." + _escalation_note
 
     return SystemStress(
         state              = state,
@@ -341,6 +393,76 @@ def detect_failure_modes(wp: WaterPointInput, stress: SystemStress) -> FailureMo
                 severity = "Low",
             ))
 
+    # ── Wet weather failure modes ─────────────────────────────────────────
+    fst = wp.flow_scenario_type or ""
+    adj_flow  = wp.flow_adjusted_flow_mld or 0.0
+    base_flow = wp.average_flow_mld or 1.0
+    flow_ratio = adj_flow / base_flow if base_flow > 0 else 1.0
+
+    if fst in (_SCENARIO_AWWF, _SCENARIO_PWWF, _SCENARIO_DWP):
+
+        # Hydraulic overload / bypass risk
+        if wp.flow_overflow_flag or flow_ratio > 2.0:
+            modes.append(FailureMode(
+                title       = "Hydraulic overload / bypass risk",
+                description = (
+                    f"Adjusted flow {adj_flow:.1f} MLD ({flow_ratio:.1f}× DWA) exceeds hydraulic capacity. "
+                    "Bypass event or uncontrolled overflow is probable. "
+                    "Emergency flow management protocol required."
+                ),
+                severity = "High",
+            ))
+
+        # Clarifier washout risk
+        if wp.flow_clarifier_stress or flow_ratio > 1.8:
+            modes.append(FailureMode(
+                title       = "Clarifier washout risk",
+                description = (
+                    f"High hydraulic loading ({flow_ratio:.1f}× DWA) creates risk of sludge blanket rise "
+                    "and activated sludge washout from secondary clarifiers. "
+                    "RAS rate and blanket depth must be pre-adjusted before the event."
+                ),
+                severity = "High" if wp.flow_clarifier_stress else "Medium",
+            ))
+
+        # Sludge blanket instability
+        if flow_ratio > 1.5:
+            modes.append(FailureMode(
+                title       = "Sludge blanket instability",
+                description = (
+                    f"Rapid hydraulic loading increase ({flow_ratio:.1f}× DWA) compresses sludge blanket. "
+                    "Secondary clarifier solids carryover risk is elevated. "
+                    "Increase WAS rate before event to reduce MLSS and improve settling."
+                ),
+                severity = "Medium" if flow_ratio < 2.0 else "High",
+            ))
+
+        # First flush shock loading
+        if wp.flow_first_flush_enabled:
+            ff_hr = wp.flow_first_flush_duration_hr or 2.0
+            modes.append(FailureMode(
+                title       = "First flush shock loading",
+                description = (
+                    f"First flush phase ({ff_hr:.0f}h) delivers elevated pollutant concentrations "
+                    "before dilution dominates. BOD and TSS loads are transiently higher than steady-state wet weather. "
+                    "Biological process and clarifier performance may be transiently impaired."
+                ),
+                severity = "Medium",
+            ))
+
+        # Wet weather duration — long events increase biological impact
+        ww_dur = wp.flow_wet_weather_duration_hr or 0.0
+        if ww_dur > 24 and fst == _SCENARIO_AWWF:
+            modes.append(FailureMode(
+                title       = "Extended wet weather biological impact",
+                description = (
+                    f"AWWF event duration {ww_dur:.0f}h exceeds 24 hours. "
+                    "Sustained dilution reduces biological loading but protracts hydraulic stress. "
+                    "Monitor SRT closely — extended high flows may cause inadvertent sludge loss."
+                ),
+                severity = "Medium",
+            ))
+
     # ── Fragile / Failure Risk catch-all ──────────────────────────────────
     if state in ("Fragile", "Failure Risk") and not modes:
         modes.append(FailureMode(
@@ -362,6 +484,12 @@ def detect_failure_modes(wp: WaterPointInput, stress: SystemStress) -> FailureMo
     else:
         overall = "Low"
 
+    # First flush increases overall severity by one notch (biological stress weighting)
+    if wp.flow_first_flush_enabled and overall == "Medium":
+        overall = "High"
+    elif wp.flow_first_flush_enabled and overall == "Low" and modes:
+        overall = "Medium"
+
     return FailureModes(items=modes, overall_severity=overall)
 
 
@@ -379,6 +507,26 @@ def generate_decision_layer(
     short:  List[str] = []
     medium: List[str] = []
     long:   List[str] = []
+
+    # ── Wet weather short-term actions (prepended when active) ──────────
+    fst = wp.flow_scenario_type or ""
+    adj_flow  = wp.flow_adjusted_flow_mld or 0.0
+    base_flow = wp.average_flow_mld or 1.0
+    flow_ratio = adj_flow / base_flow if base_flow > 0 else 1.0
+
+    if fst in (_SCENARIO_AWWF, _SCENARIO_PWWF, _SCENARIO_DWP):
+        short.append(
+            f"Activate storm mode operation: pre-adjust RAS rates and sludge blanket depth "
+            f"before {fst} event ({adj_flow:.1f} MLD, {flow_ratio:.1f}× DWA)."
+        )
+        short.append(
+            "Increase WAS rate 12–24 hours before event to reduce MLSS and maximise clarifier capacity."
+        )
+        if wp.flow_overflow_flag or flow_ratio > 2.0:
+            short.append(
+                "Implement flow diversion / storm tank routing immediately. "
+                "Notify regulator of potential overflow or bypass event."
+            )
 
     # ── Short-term: process control and operational optimisation ──────────
     short.append("Review and optimise aeration DO setpoints to reduce energy and improve nitrification stability.")
@@ -403,6 +551,18 @@ def generate_decision_layer(
     if state in ("Tightening", "Fragile", "Failure Risk"):
         medium.append("Commission concept-level capacity expansion study with 20-year demand projections.")
 
+    # Wet weather medium-term actions
+    if fst in (_SCENARIO_AWWF, _SCENARIO_PWWF):
+        medium.append(
+            "Evaluate flow equalisation basin or storm storage tank "
+            "to attenuate peak wet weather flows before secondary treatment."
+        )
+        if wp.flow_clarifier_stress or flow_ratio > 1.8:
+            medium.append(
+                "Assess secondary clarifier hydraulic capacity upgrade or parallel unit "
+                "to handle AWWF/PWWF peak SOR without sludge washout risk."
+            )
+
     # ── Long-term: technology upgrade and major capital ───────────────────
     if tc in ("bnr", "ifas_mbbr"):
         long.append("Evaluate full process intensification — MABR retrofit or IFAS upgrade — for improved N removal at current footprint.")
@@ -410,6 +570,17 @@ def generate_decision_layer(
         long.append("Plan FBT / balancing volume review to manage peak flow: confirm 4-reactor configuration is sized for growth.")
     long.append("Develop a 30-year capital investment plan aligned with population growth and tightening licence conditions.")
     long.append("Assess future water reuse potential — advanced treatment train to meet Class A+ requirements.")
+
+    # Wet weather long-term actions
+    if fst in (_SCENARIO_AWWF, _SCENARIO_PWWF):
+        long.append(
+            "Plan hydraulic expansion of plant to accommodate growth in wet weather I/I — "
+            "confirm catchment-wide I/I reduction programme and residual design factor."
+        )
+        long.append(
+            "Evaluate real-time control (RTC) for wet weather management: "
+            "dynamic RAS, WAS, and aeration response to live flow monitoring."
+        )
 
     # ── Capex range (soft planning estimate) ─────────────────────────────
     capex_str = ""
@@ -461,6 +632,14 @@ def assess_compliance_risk(
     else:
         risk_level = "Low"
 
+    # ── Wet weather compliance escalation ────────────────────────────────
+    fst = wp.flow_scenario_type or ""
+    is_ww = fst in (_SCENARIO_AWWF, _SCENARIO_PWWF)
+    if is_ww and (wp.flow_overflow_flag or wp.flow_bypass_risk):
+        # Overflow or bypass is a direct licence breach in most jurisdictions
+        if risk_level != "High":
+            risk_level = "High"
+
     # ── Likely breach type ────────────────────────────────────────────────
     breach_parts = []
     if "nitrogen" in str(titles).lower() or "Nitrification" in str(titles):
@@ -469,17 +648,33 @@ def assess_compliance_risk(
         breach_parts.append("TP licence breach")
     if "Clarifier" in str(titles) or "Hydraulic" in str(titles):
         breach_parts.append("suspended solids carryover at peak flow")
+    # Wet weather specific breaches
+    if is_ww:
+        if wp.flow_overflow_flag:
+            breach_parts.append("wet weather discharge / bypass event")
+        if "washout" in str(titles).lower() or "Clarifier washout" in str(titles):
+            breach_parts.append("solids carryover risk during PWWF")
+        if not any("carryover" in b or "bypass" in b for b in breach_parts):
+            breach_parts.append("wet weather process exceedance under high I/I loading")
     if not breach_parts:
         breach_parts = ["process performance deterioration under growth or peak load"]
     likely_breach = "; ".join(breach_parts)
 
     # ── Regulatory exposure ───────────────────────────────────────────────
     if risk_level == "High":
-        reg_exp = (
-            "Non-compliant event with regulator notification obligation. "
-            "Formal investigation and show-cause requirement likely. "
-            "Proactive engagement with Environment Agency recommended before breach occurs."
-        )
+        if is_ww and wp.flow_overflow_flag:
+            reg_exp = (
+                "Wet weather overflow or bypass event is a notifiable incident under most licence conditions. "
+                "Immediate regulator notification required. "
+                "Discharge monitoring data must be collected and retained. "
+                "Proactive community communication recommended."
+            )
+        else:
+            reg_exp = (
+                "Non-compliant event with regulator notification obligation. "
+                "Formal investigation and show-cause requirement likely. "
+                "Proactive engagement with Environment Agency recommended before breach occurs."
+            )
     elif risk_level == "Medium":
         reg_exp = (
             "Elevated risk of compliance margin exceedance during peak load or seasonal conditions. "

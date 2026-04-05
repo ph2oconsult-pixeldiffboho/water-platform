@@ -19,6 +19,18 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z19", "19 Mar 2026", [
+        "WaterPoint wet weather calibration — 10 targeted edits to waterpoint_engine.py",
+        "New hydraulic stress domain: flow_ratio ≤1.5 Normal / 1.5–2.0 Elevated / >2.0 Overload",
+        "PWWF escalates system state one level (Stable→Tightening, Tightening→Fragile, Fragile→Failure Risk)",
+        "overflow_flag forces Failure Risk; clarifier_stress_flag noted in rationale",
+        "5 new wet weather failure modes: hydraulic overload/bypass, clarifier washout, sludge blanket instability, first flush shock loading, extended AWWF biological impact",
+        "First flush increases overall failure severity by one notch",
+        "Storm-mode short-term actions; flow equalisation / clarifier capacity medium-term; I/I RTC long-term",
+        "PWWF + overflow elevates compliance risk to High; bypass = notifiable incident text in regulatory exposure",
+        "Dry weather behaviour unchanged — DWA state: Stable (non-regression confirmed)",
+        "282/282 benchmark checks pass",
+    ]),
     ("v24Z18", "19 Mar 2026", [
         "Flow Scenario Framework — page 02b: DWA, DWP, AWWF, PWWF scenario types",
         "flow_scenario_engine.py: pure calculation engine (adjusted flow, concentration, load, hydraulic/biological/clarifier stress)",
