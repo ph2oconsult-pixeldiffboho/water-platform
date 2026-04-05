@@ -19,6 +19,17 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z38", "5 Apr 2026", [
+        "Unified Risk & Mitigation Layer Production V1 — apps/wastewater_app/risk_layer.py",
+        "4-category structure (Technical, Operational, Commercial, Financial) applied consistently to ALL technologies in any stack",
+        "15 technology-specific profiles: CoMag, BioMag, MABR, inDENSE, MOB/miGRATE+inDENSE, memDENSE, IFAS/Hybas/MBBR, Bardenpho, Recycle opt, DNF, Tertiary P, EQ basin + generic fallback",
+        "Every risk paired with a practical mitigation — never risk without solution",
+        "Low-risk technologies (Bardenpho, recycle opt, IFAS) rated accurately; not artificially elevated",
+        "High-risk technologies (DNF: all 4 categories Medium-High; BioMag: Operational=High) rated accurately",
+        "Standard decision tension sentence appended to all reports",
+        "Stack-level summary reflects overall risk posture from per-stage profiles",
+        "30/30 checks; 282/282 tests; stack selection unchanged",
+    ]),
     ("v24Z42", "5 Apr 2026", [
         "memDENSE Dual-Role Enhancement Production V2 — mbr_layer.py + stack_generator.py + credibility_layer.py",
         "MbrApplicabilityReport gains 5 new fields: memdense_role (existing_optimisation/new_enhancement/not_applicable), memdense_benefits (4), memdense_risks (4), memdense_decision_tension (TOTEX trade-off), memdense_note",
