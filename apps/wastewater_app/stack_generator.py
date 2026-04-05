@@ -263,6 +263,18 @@ def _classify_from_failure_modes(
     def _sev_int(s: str) -> int:
         return {"High": 3, "Medium": 2, "Low": 1}.get(s, 1)
 
+    # ── Clarifier utilisation guard (Fix 1 + 2) ──────────────────────────────
+    # context signals that confirm a real settling problem exists
+    _ctx_settling_signals = (
+        plant_context.get("high_mlss", False)
+        or plant_context.get("svi_elevated", False)
+        or plant_context.get("svi_unknown", False)
+        or plant_context.get("solids_carryover", False)
+        or (plant_context.get("clarifier_util", 0.0) or 0.0) >= 1.0
+    )
+    # is_sbr is always a real settling context
+    _is_sbr = bool(plant_context.get("is_sbr", False))
+
     for mode in (failure_modes.items if failure_modes else []):
         title_lower = mode.title.lower()
         desc_lower  = (mode.description or "").lower()
@@ -271,6 +283,25 @@ def _classify_from_failure_modes(
         for keywords, ct, sev_rule in _TITLE_MAP:
             if any(kw in combined for kw in keywords):
                 sev = mode.severity if sev_rule == "use_mode" else sev_rule
+
+                # ── Fix 2: Low-severity suppression ───────────────────────
+                # Low-severity signals inform; they do NOT drive design.
+                # Suppress CT_SETTLING entirely when severity is Low and no
+                # context signal confirms a real settling problem.
+                if ct == CT_SETTLING and sev == "Low" and not (_ctx_settling_signals or _is_sbr):
+                    break  # skip — informational only, not a design constraint
+
+                # ── Fix 1: Clarifier utilisation guard ────────────────────
+                # "Clarifier overload" fires when SOR > advisory threshold,
+                # which happens under PWWF even when clarifiers are healthy.
+                # When no context signal confirms actual overload:
+                #   - High severity → suppress entirely (not a real constraint)
+                #   - Medium/Low severity → suppress (SOR advisory, not clinical)
+                # This prevents SOR-based settling from outranking genuine
+                # nitrification or TN constraints in the stack generator.
+                if ct == CT_SETTLING and not (_ctx_settling_signals or _is_sbr):
+                    break   # suppress — no confirmed overload from context signals
+
                 if ct not in found:
                     found[ct] = Constraint(
                         constraint_type = ct,

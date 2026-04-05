@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z37", "5 Apr 2026", [
+        "Final Combined Logic Patch — 4 surgical fixes across 3 modules",
+        "Fix 1 (stack_generator.py): _classify_from_failure_modes — CT_SETTLING fully suppressed when no context-level signal (high_mlss/svi_elevated/svi_unknown/solids_carryover/clarifier_util>=1.0). Stress-engine SOR alone no longer creates a settling constraint.",
+        "Fix 2 (stack_generator.py): Low-severity signals suppressed independently. 'Clarifier at design operating point' (Low) no longer generates CT_SETTLING or drives inDENSE as Stage 1.",
+        "Fix 3 (uncertainty_layer.py): Bardenpho ef_reduction increased from 0.10 to 0.20 — recognises N2O reduction from complete denitrification (literature: reduced incomplete NO3 -> N2O reduction).",
+        "Fix 4 (credibility_layer.py): Mandatory Info note when flow_ratio >= 3.0 AND CoMag/BioMag in stack AND no EQ basin/storm storage. Note is informational (applied=False) and never suppressible.",
+        "Before: S2 nitrification CAS -> BioMag Stage 1 (WRONG). After: MABR Stage 1 (CORRECT).",
+        "Before: S3 TN-only Bardenpho -> inDENSE Stage 1 (WRONG). After: Recycle optimisation Stage 1 (CORRECT).",
+        "16/16 validation checks; 282/282 benchmark tests; Metro BNR non-regression PASS.",
+    ]),
     ("v24Z36", "5 Apr 2026", [
         "Stabilisation Layer Production V1 — apps/wastewater_app/stabilisation_layer.py",
         "5 option types: inDENSE trial, recycle optimisation, DO/aeration audit, COD fractionation audit, monitoring/trial programme",

@@ -137,6 +137,28 @@ def _check_rule_consistency(
     tech_in_stack= {s.technology for s in pathway.stages}
 
     # Rule: hydraulic attenuation required above 3× DWA
+    # Fix 4: fire when flow_ratio >= 3.0 regardless of whether CoMag is in stack.
+    # If CoMag IS present: emit Info note (not Warning) — CoMag provides relief but
+    # does not eliminate the need for upstream attenuation at extreme peaks.
+    # If CoMag is absent: emit Warning + generate EQ basin alternative (existing logic).
+    _has_attenuation = TI_EQ_BASIN in tech_in_stack or TI_STORM_STORE in tech_in_stack
+    _has_comag       = TI_COMAG in tech_in_stack or TI_BIOMAG in tech_in_stack
+
+    if flow_ratio >= 3.0 and not _has_attenuation and _has_comag:
+        # CoMag is present but extreme peaks still need complementary attenuation
+        notes.append(CredibilityNote(
+            category="Rule Consistency",
+            severity="Info",
+            message=(
+                f"Peak flows exceed {flow_ratio:.1f}\u00d7 ADWF (above the \u223c3\u00d7 threshold). "
+                "While high-rate clarification (CoMag / BioMag) provides significant hydraulic relief, "
+                "extreme events may still require upstream attenuation (EQ basin, storm storage, "
+                "or I/I reduction programme). Include attenuation infrastructure in the 15-year "
+                "asset management plan."
+            ),
+            applied=False,   # informational — does not modify stack
+        ))
+
     if flow_ratio >= 3.0 and TI_EQ_BASIN not in tech_in_stack and TI_COMAG not in tech_in_stack:
         notes.append(CredibilityNote(
             category="Rule Consistency",

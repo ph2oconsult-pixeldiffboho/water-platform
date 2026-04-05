@@ -354,16 +354,20 @@ def _build_carbon_uncertainty(
     tn_rem_upg  = (tn_in - tn_out_upg) / 1000. * flow_m3y
 
     # EF reduction factor from stack
-    # MABR: 30–50% EF reduction (biofilm reduces anoxic zones)
-    # Bardenpho: complete denitrification reduces incomplete reduction to N2O
+    # MABR: 30–50% EF reduction (biofilm SND reduces anoxic hot spots — literature)
+    # Bardenpho: complete denitrification reduces incomplete NO3→N2O reduction (+10%)
+    # IFAS/Hybas: biofilm partial SND benefit (+15%)
+    # Baseline BNR with full nitrification: 10% reduction vs uncontrolled
     if TI_MABR in tech_set and TI_BARDENPHO in tech_set:
-        ef_reduction = 0.35   # 35% central; used for all bands
+        ef_reduction = 0.35   # 35%: MABR SND (25%) + Bardenpho complete DN (10%)
     elif TI_MABR in tech_set:
         ef_reduction = 0.30
     elif TI_IFAS in tech_set or TI_HYBAS in tech_set:
         ef_reduction = 0.15
+    elif TI_BARDENPHO in tech_set or TI_RECYCLE_OPT in tech_set:
+        ef_reduction = 0.20   # Fix 3: Bardenpho complete DN recognised (+10% vs baseline)
     else:
-        ef_reduction = 0.10   # Bardenpho or biological optimisation alone
+        ef_reduction = 0.10   # Baseline BNR full nitrification vs uncontrolled
 
     # Energy contribution (same for all N2O bands)
     aeration_kwh_d = ctx.get("aeration_kwh_day", 10000.) or 10000.
