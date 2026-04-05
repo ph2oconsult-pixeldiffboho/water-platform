@@ -85,6 +85,11 @@ class WaterPointInput:
     flow_first_flush_duration_hr: Optional[float] = None
     flow_wet_weather_duration_hr: Optional[float] = None
     flow_wet_weather_profile: Optional[str]  = None
+    # Nereda-specific fields (populated when technology_code == "granular_sludge")
+    nereda_enabled:      bool           = False
+    nereda_fbt_m3:       Optional[float] = None   # balance tank volume
+    nereda_dwf_cycle_min: Optional[float]= None   # DWF cycle time (minutes)
+    nereda_n_reactors:   Optional[int]   = None   # number of reactors
     # Data quality tracker
     missing_fields: List[str] = field(default_factory=list)
 
@@ -210,6 +215,13 @@ def build_waterpoint_input(
     if not inp.reactor_volume_m3: missing.append("reactor_volume_m3")
     if not inp.effluent_tn_mg_l:  missing.append("effluent_tn_mg_l")
     if not inp.outputs.capex_estimate: missing.append("capex")
+
+    # ── Nereda-specific fields ────────────────────────────────────────────
+    if inp.technology_code == "granular_sludge":
+        inp.nereda_enabled      = True
+        inp.nereda_fbt_m3       = _g(tp_sc, "fbt_volume_m3") or _g(tp_sc, "fbt_provided_m3")
+        inp.nereda_dwf_cycle_min = (_g(tp_sc, "cycle_time_hours") or 5.0) * 60.0
+        inp.nereda_n_reactors   = int(tp_sc.get("n_reactors") or 2)
 
     # ── Flow scenario overlay ─────────────────────────────────────────────
     fs_stored = di.get("flow_scenario") or {}

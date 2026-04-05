@@ -87,8 +87,13 @@ _SOR_LIMIT_M_HR = 1.5
 def analyse(wp: WaterPointInput) -> WaterPointResult:
     """
     Run the full WaterPoint analysis pipeline.
+    Routes to Nereda-specific model when wp.nereda_enabled == True.
     Returns WaterPointResult.  Never raises.
     """
+    # ── Nereda pathway ────────────────────────────────────────────────
+    if getattr(wp, "nereda_enabled", False):
+        return _analyse_nereda(wp)
+
     try:
         stress  = calculate_system_stress(wp)
     except Exception:
@@ -112,6 +117,77 @@ def analyse(wp: WaterPointInput) -> WaterPointResult:
         decision_layer  = decision,
         compliance_risk = compliance,
     )
+
+
+def _analyse_nereda(wp: WaterPointInput) -> WaterPointResult:
+    """Nereda AGS analysis pipeline — replaces clarifier logic with FBT + cycle domains."""
+    try:
+        from apps.wastewater_app.waterpoint_nereda import (
+            calculate_nereda_stress, detect_nereda_failure_modes,
+            generate_nereda_decisions, assess_nereda_compliance,
+            NeredaFailureMode,
+        )
+
+        nereda   = calculate_nereda_stress(wp)
+        n_modes  = detect_nereda_failure_modes(wp, nereda)
+        n_dec    = generate_nereda_decisions(wp, nereda, n_modes)
+        n_comp   = assess_nereda_compliance(wp, nereda, n_modes)
+
+        # Convert NeredaFailureMode list → FailureModes dataclass
+        fm_items = [FailureMode(title=m.title, description=m.description,
+                                severity=m.severity) for m in n_modes]
+        if any(m.severity == "High"   for m in fm_items):  overall = "High"
+        elif any(m.severity == "Medium" for m in fm_items): overall = "Medium"
+        elif fm_items:                                       overall = "Low"
+        else:                                                overall = "Low"
+        failure = FailureModes(items=fm_items, overall_severity=overall)
+
+        stress = SystemStress(
+            state              = nereda.state,
+            proximity_percent  = nereda.proximity,
+            primary_constraint = nereda.primary_constraint,
+            rate               = nereda.rate,
+            time_to_breach     = nereda.t2b,
+            confidence         = nereda.confidence,
+            rationale          = nereda.rationale,
+        )
+
+        decision = DecisionLayer(
+            short_term        = n_dec["short_term"],
+            medium_term       = n_dec["medium_term"],
+            long_term         = n_dec["long_term"],
+            capex_range       = n_dec["capex_range"],
+            risk_if_no_action = n_dec["risk_if_no_action"],
+        )
+
+        compliance = ComplianceRisk(
+            compliance_risk     = n_comp["compliance_risk"],
+            likely_breach_type  = n_comp["likely_breach_type"],
+            regulatory_exposure = n_comp["regulatory_exposure"],
+            reputational_risk   = n_comp["reputational_risk"],
+        )
+
+        return WaterPointResult(
+            system_stress   = stress,
+            failure_modes   = failure,
+            decision_layer  = decision,
+            compliance_risk = compliance,
+        )
+
+    except Exception as _nereda_exc:
+        # Fallback: run standard pipeline if Nereda model fails
+        _fb_stress = _fallback_stress()
+        _fb_stress = SystemStress(
+            state="Unknown", proximity_percent=0., primary_constraint="Nereda model error",
+            rate="Unknown", time_to_breach="Not available", confidence="Low",
+            rationale=f"Nereda analysis failed: {_nereda_exc}",
+        )
+        return WaterPointResult(
+            system_stress   = _fb_stress,
+            failure_modes   = FailureModes(),
+            decision_layer  = DecisionLayer(risk_if_no_action="Nereda analysis error."),
+            compliance_risk = _fallback_compliance(),
+        )
 
 
 # ── 1. System stress ──────────────────────────────────────────────────────────

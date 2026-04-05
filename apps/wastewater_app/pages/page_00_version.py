@@ -19,6 +19,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z23", "19 Mar 2026", [
+        "Nereda AGS WaterPoint model — surgical addition, no existing logic changed",
+        "New file: waterpoint_nereda.py — balance tank (FBT) + cycle compression + aeration + hydraulic overload domains",
+        "Cycle compression calibrated to Longwarry: cr = 0.15*(flow_ratio-1), capped 0.50",
+        "State escalation: Stable/Tightening/Fragile/Failure Risk based on compression_ratio and FBT fill rate",
+        "5 Nereda failure modes: balance tank overflow, decant solids carryover, cycle compression, granule instability, extended biological stress",
+        "Nereda decisions: FBT protection, cycle timing adjustment, reactor-specific medium/long-term actions",
+        "Compliance: decant carryover language (not clarifier SOR) — overflow = notifiable incident",
+        "Proximity uncapped for extreme events: 8× ADWF → 233%",
+        "Adapter: nereda_enabled, nereda_fbt_m3, nereda_dwf_cycle_min, nereda_n_reactors populated from granular_sludge TP",
+        "Engine: analyse() routes to _analyse_nereda() when nereda_enabled=True",
+        "Success criteria: DWA→Stable, DWP→Stable, AWWF 3×→Fragile, PWWF 5×→Failure Risk, 8×→prox>200%",
+        "Non-regression: BNR pathway unchanged; 282/282 benchmark checks pass",
+    ]),
     ("v24Z22", "19 Mar 2026", [
         "Final calibration patch — 6 fixes, 1 file modified, 17/17 checks, 282/282 tests",
         "C-NEW-1: AWWF no-overflow regulatory_exposure now uses chronic planning language (no show-cause / formal investigation)",
