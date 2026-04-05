@@ -94,8 +94,10 @@ def analyse(wp: WaterPointInput) -> WaterPointResult:
     if getattr(wp, "mabr_enabled", False):
         return _analyse_mabr(wp)
 
-    # ── MOB Intensified SBR pathway ───────────────────────────────────
-    if getattr(wp, "mob_enabled", False):
+    # ── MOB Intensified SBR pathway (also handles SBR baseline) ──────
+    # Patch 2: SBR technology always uses MOB engine so settling/cycle
+    # domains are visible even before intensification is enabled.
+    if getattr(wp, "mob_enabled", False) or wp.technology_code == "sbr":
         return _analyse_mob(wp)
 
     # ── Nereda pathway ────────────────────────────────────────────────

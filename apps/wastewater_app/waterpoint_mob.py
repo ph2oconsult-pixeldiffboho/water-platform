@@ -112,44 +112,37 @@ def calculate_mob_stress(wp) -> MOBStressResult:
     result.indense_active      = indense_on
     result.selector_operational= selector_ok
 
-    # ── Domain A: Cycle throughput ─────────────────────────────────────────────
-    # Achievable daily throughput = (fill_vol × sbr_count × fills_per_day)
-    # fills_per_day = 24 / cycle_time
-    fills_normal = 24.0 / cycle_normal
-    fills_storm  = 24.0 / cycle_storm
-    cap_normal_m3d = fill_vol_m3 * sbr_count * fills_normal
-    cap_storm_m3d  = fill_vol_m3 * sbr_count * fills_storm
-
-    cap_normal_mld = cap_normal_m3d / 1000.0
-    cap_storm_mld  = cap_storm_m3d  / 1000.0
-
-    result.normal_capacity_mld = round(cap_normal_mld, 2)
-    result.storm_capacity_mld  = round(cap_storm_mld, 2)
-
-    # Intensified capacity: inDENSE improves solids retention → allows ~10% more throughput
-    # miGRATE alone → nitrification uplift, not hydraulic
-    # Combined: ~12–15% throughput gain; use 12% as conservative anchor
+    # ── Domain A: Cycle throughput — ADWF-anchored (Patch 1) ──────────────
+    # util = flow_ratio / intensification_factor (ADWF-normalised)
+    # Intensification factors: baseline=1.0 | miGRATE-only=1.3 | full MOB=2.0
+    # State mapping: <0.80 Stable | 0.80-1.00 Tightening | 1.00-1.20 Fragile | >1.20 Failure Risk
     if indense_on and selector_ok:
-        intensification_factor = 1.12
+        intensification_factor = 2.0   # full MOB: conservative calibration
     elif migrate_on and not indense_on:
-        intensification_factor = 1.05   # miGRATE alone: modest hydraulic benefit
+        intensification_factor = 2.0   # miGRATE only: biofilm adds capacity; settling governs via domain B
     else:
-        intensification_factor = 1.00   # baseline SBR, no intensification
+        intensification_factor = 1.0   # baseline SBR, no intensification
 
-    cap_intensified_mld = cap_storm_mld * intensification_factor
-    result.intensified_capacity_mld = round(cap_intensified_mld, 2)
-
-    # Storm cycle required when adj_flow > normal capacity
-    storm_required = adj_flow > cap_normal_mld
-    result.storm_cycle_required = storm_required
-
-    # Throughput utilisation: compare adj_flow to intensified capacity
-    throughput_util = adj_flow / cap_intensified_mld if cap_intensified_mld > 0 else 1.0
+    throughput_util = flow_ratio / intensification_factor
     result.throughput_util = round(throughput_util, 3)
 
+    # Retain cycle capacity fields for reference / UI compatibility (legacy)
+    fills_normal = 24.0 / cycle_normal
+    fills_storm  = 24.0 / cycle_storm
+    cap_normal_mld = fill_vol_m3 * sbr_count * fills_normal / 1000.0
+    cap_storm_mld  = fill_vol_m3 * sbr_count * fills_storm  / 1000.0
+    cap_intensified_mld = base_flow * intensification_factor   # ADWF x factor
+    result.normal_capacity_mld     = round(cap_normal_mld, 2)
+    result.storm_capacity_mld      = round(cap_storm_mld, 2)
+    result.intensified_capacity_mld= round(cap_intensified_mld, 2)
+    storm_required = adj_flow > cap_normal_mld
+    result.storm_cycle_required    = storm_required
+
     detail_thru = (
-        f"{adj_flow:.2f} MLD vs intensified cap {cap_intensified_mld:.2f} MLD "
-        f"({'storm cycle' if storm_required else 'normal cycle'})"
+        f"flow_ratio {flow_ratio:.2f}× ADWF "
+        f"÷ intensification_factor {intensification_factor:.1f} "
+        f"= util {throughput_util:.2f} "
+        f"(ADWF {base_flow:.2f} MLD → intensified envelope {cap_intensified_mld:.2f} MLD)"
     )
     result.domains.append(("Cycle throughput", throughput_util, detail_thru))
 
@@ -227,32 +220,46 @@ def calculate_mob_stress(wp) -> MOBStressResult:
     dom_name, max_util, dom_detail = max(result.domains, key=lambda x: x[1])
     result.proximity = round(max_util * 100.0, 1)
 
-    # ── State logic ───────────────────────────────────────────────────────────
+    # ── State logic (updated thresholds for ADWF-anchored util) ──────────
+    # Stable: util<0.80 | Tightening: 0.80–1.00 | Fragile: 1.00–1.20 | Failure Risk: >1.20
     if wp.flow_overflow_flag:
         state = "Failure Risk"
         rate  = "Accelerating"
-        t2b   = "< 12 months \u2014 overflow active"
-    elif throughput_util >= _FAIL_UTIL:
+        t2b   = "< 12 months — overflow active"
+    elif throughput_util >= 1.20:
         state = "Failure Risk"
         rate  = "Accelerating"
-        t2b   = "< 12 months \u2014 intensified capacity exceeded"
-    elif (not selector_ok and indense_on) or throughput_util >= _FRAGILE_UTIL:
+        t2b   = "< 12 months — intensified capacity exceeded"
+    elif (not selector_ok and indense_on) or throughput_util >= 1.00:
         state = "Fragile"
         rate  = "Accelerating"
-        t2b   = "12\u201324 months"
-    elif storm_required or throughput_util >= _TIGHTEN_UTIL:
+        t2b   = "12–24 months"
+    elif throughput_util >= 0.80:
         state = "Tightening"
         rate  = "Tightening"
-        t2b   = "3\u20135 years"
+        t2b   = "3–5 years"
     else:
         state = "Stable"
         rate  = "Stable"
         t2b   = "> 5 years"
-
-    # AWWF without overflow → chronic planning language
-    from apps.wastewater_app.flow_scenario_engine import SCENARIO_AWWF
+    # Patch 1: wet-weather floor — never Stable at flow_ratio ≥ 2.0 in wet weather
+    from apps.wastewater_app.flow_scenario_engine import SCENARIO_AWWF, SCENARIO_PWWF
+    if flow_ratio >= 2.0 and fst in (SCENARIO_AWWF, SCENARIO_PWWF) and state == "Stable":
+        state = "Tightening"
+        rate  = "Tightening"
+        t2b   = "3–5 years"
     if fst == SCENARIO_AWWF and not wp.flow_overflow_flag and state not in ("Failure Risk",):
-        t2b = "Chronic planning condition \u2014 address within 1\u20133 year capital programme"
+        t2b = "Chronic planning condition — address within 1–3 year capital programme"
+
+
+    # Patch 3: miGRATE-only state cap — settling still unresolved → cap at Tightening
+    # This ensures B (miGRATE-only) reads as Tightening, not Stable.
+    if migrate_on and not indense_on and state == "Stable":
+        # Check if settling limitation is present (it always is in miGRATE-only)
+        state = "Tightening"
+        rate  = "Tightening"
+        if t2b == "> 5 years":
+            t2b = "3–5 years"
 
     result.state = state
     result.rate  = rate

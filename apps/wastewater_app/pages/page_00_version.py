@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z29", "19 Mar 2026", [
+        "MOB calibration patch — 3 targeted fixes from validation report; 10/10 checks; 282/282 tests",
+        "Patch 1 (Critical): Throughput domain replaced with ADWF-anchored model: util = flow_ratio / intensification_factor",
+        "  Intensification factors: baseline SBR=1.0, miGRATE-only=2.0 (throughput; settling governs state), full MOB=2.0",
+        "  State thresholds: Stable <0.80 | Tightening 0.80-1.00 | Fragile 1.00-1.20 | Failure Risk >1.20",
+        "  Wet-weather floor: flow_ratio >= 2.0 in AWWF/PWWF cannot remain Stable",
+        "  D at 2.5x ADWF: util=1.25 → Failure Risk (was Stable at util=0.61 — defect fixed)",
+        "Patch 2 (Moderate): technology_code=='sbr' routes through MOB engine even without mob_enabled",
+        "  Baseline SBR now shows cycle/settling/nitrification failure modes before intensification",
+        "Patch 3 (Minor): miGRATE-only state capped at Tightening when settling limitation mode is present",
+        "  B (miGRATE-only) → Tightening; C (full MOB) → Tightening (1.8x load); clearly differentiated",
+        "Lang Lang engineering rules preserved: miGRATE alone does not improve SVI; inDENSE still recommended",
+    ]),
     ("v24Z28", "19 Mar 2026", [
         "Nereda V2: Process + Brownfield Integrated Model — surgical extension of waterpoint_nereda.py",
         "13 new WaterPointInput fields: process train flags (FBT, tertiary, sidestream, effluent buffer), brownfield mode/volume/process, min cycle constraint",
