@@ -258,7 +258,12 @@ def calculate(fsi: FlowScenarioInputs) -> FlowScenarioResult:
         load_assumption = "diluted load (I/I dominant)"
 
     # ── 4. Hydraulic stress ───────────────────────────────────────────────
-    hyd_cap  = fsi.hydraulic_capacity_mld or base_flow
+    # For DWP: hydraulic capacity is the PEAK design capacity (base × dwp_factor),
+    # not the average flow. A plant sized for 1.5× peak is not 'in overflow' at 1.5×.
+    if st == SCENARIO_DWP:
+        hyd_cap = (fsi.hydraulic_capacity_mld or base_flow) * fsi.dwp_factor
+    else:
+        hyd_cap  = fsi.hydraulic_capacity_mld or base_flow
     hyd_util = (adj_flow / hyd_cap * 100) if hyd_cap > 0 else None
     if hyd_util is None:
         hyd_status = "Unknown"
@@ -292,7 +297,15 @@ def calculate(fsi: FlowScenarioInputs) -> FlowScenarioResult:
             clar_stress_status = f"OK — SOR {sor:.2f} m/hr"
 
     # ── 6. Biological stress ──────────────────────────────────────────────
-    bio_ratio = round(adj_bod_kg / base_bod_kg, 2) if base_bod_kg > 0 else 1.0
+    # For DWP: compare against design peak load (base × dwp_factor), not DWA load.
+    # DWP concentration is unchanged (dil_factor=1.0) so adj_bod = base_bod.
+    # bio_ratio at standard 1.5× DWP should be 1.0 (at design, not above it).
+    if st == SCENARIO_DWP:
+        design_peak_bod_kg = round(fsi.base_bod_mg_l * base_flow * fsi.dwp_factor, 1)
+        bio_ref_kg = design_peak_bod_kg if design_peak_bod_kg > 0 else base_bod_kg
+    else:
+        bio_ref_kg = base_bod_kg
+    bio_ratio = round(adj_bod_kg / bio_ref_kg, 2) if bio_ref_kg > 0 else 1.0
     if bio_ratio <= 1.10:
         bio_status = "OK"
     elif bio_ratio <= 1.40:

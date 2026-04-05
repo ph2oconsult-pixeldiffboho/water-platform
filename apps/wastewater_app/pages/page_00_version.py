@@ -19,6 +19,21 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z21", "19 Mar 2026", [
+        "Consolidated calibration patch — 10 fixes, 2 files modified, 28/28 validation checks",
+        "C1: DWP false overflow fixed — hydraulic_capacity = base×dwp_factor; bio_ratio vs design peak load",
+        "W3: AWWF medium-term reordered — process resilience leads; PWWF medium-term — flow eq leads",
+        "W4: AWWF without overflow → chronic planning language in time_to_breach",
+        "W5: PWWF regulatory exposure split — 'risk of overflow' vs 'active overflow' language",
+        "W6: First flush → 4 specific short-term actions prepended to decision list",
+        "W7: AWWF > 48h → SRT compression failure mode + WAS setpoint action + 6-24 month horizon",
+        "W8: Proximity gradient — Extreme/Catastrophic exceedance label on extreme events",
+        "W9: PWWF overflow_flag=True → active incident language replaces pre-event storm mode",
+        "W10: Unknown state / sparse data → single prompt, empty medium/long-term lists",
+        "Baseline W1: Clarifier at design operating point → Low severity (not Medium) in DWA",
+        "Baseline W2: TN at exact licence limit → limited compliance margin (not breach wording)",
+        "Dry weather non-regression confirmed: DWA Stable, rationale unchanged, 282/282 tests pass",
+    ]),
     ("v24Z20", "19 Mar 2026", [
         "WaterPoint surgical calibration — 5 targeted patches, no rewrites",
         "Patch 1: hydraulic pre-stress narrative band (1.3–1.5×) — adds soft rationale note, does NOT escalate state",
