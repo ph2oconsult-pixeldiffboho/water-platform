@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z27", "19 Mar 2026", [
+        "Brownfield Upgrade Pathway Ranking Engine — new module brownfield_upgrade_ranking.py",
+        "Ranks 5 upgrade pathways: Nereda, MOB (miGRATE+inDENSE), MABR (OxyFAS), IFAS, MBBR",
+        "Constraint-matched scoring: +3 direct resolve, +2 secondary, +1 partial, -2 mismatch, -3 contradiction",
+        "Hard rules: hydraulic constraint penalises biological-only solutions; carbon limit adds residual warning",
+        "Footprint constraint upgrades Nereda and MABR scores; data confidence Low = 80% score multiplier",
+        "Output: UpgradeRankingResult with ranked_options, recommended, secondary, rationale, residual_warning, engineering_summary",
+        "5 scenarios validated: clarifier-limited, aeration-limited, carbon-limited, multi-constraint, biological volume",
+        "Scenario A: Nereda 7.7/10 vs MABR 0.8/10 for clarifier constraint (correct penalty)",
+        "Scenario B: MBBR 7.7/10, MABR 6.9/10 for aeration constraint (correct matching)",
+        "Scenario C: Carbon residual warning issued; all biological pathways equally scored",
+        "Greenfield mode, BNR, Nereda, MOB, MABR engines confirmed unchanged; 282/282 tests",
+    ]),
     ("v24Z26", "19 Mar 2026", [
         "MABR OxyFAS/OxyFILM WaterPoint module — OxyMem + Kawana modelling calibrated",
         "New file: waterpoint_mabr.py — 5 stress domains, 8 failure modes, MABR-specific decisions",
