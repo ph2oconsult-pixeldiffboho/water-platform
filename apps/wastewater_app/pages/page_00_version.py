@@ -19,6 +19,22 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z42", "6 Apr 2026", [
+        "IFAS / MBBR Technology Enhancement Layer Production V1",
+        "tech_positioning.py: Single IFAS/Hybas/MBBR entry split into two: IFAS/Hybas (hybrid BNR retrofit, code=IFAS) and MBBR standalone (industrial/pre-treatment, code=MBBR) with distinct primary roles, best_used_when, not_appropriate_when",
+        "tech_positioning.py: IFAS not_appropriate_when now explicitly lists aeration at max (MABR preferred), settling instability (MOB/inDENSE preferred), hydraulic overload",
+        "tech_positioning.py: MBBR not_appropriate_when: prefer IFAS for BNR intensification; tight TN/TP without additional stages",
+        "tech_positioning.py: Both entries include microplastic degradation risk in limitations and key_engineering_truth",
+        "tech_positioning.py: Tier 1 (OEM), Tier 2 (commodity), Tier 3 (organic/advanced) supplier strategy in both entries",
+        "tech_positioning.py: Carrier media constraints in IFAS limitations: specific gravity ~0.95-0.98, PSA, screen gap, FOG tolerance",
+        "feasibility_layer.py: IFAS, Hybas, MBBR profiles updated with aeration headroom prerequisite, microplastic risk, media engineering constraints, supplier tier strategy",
+        "feasibility_layer.py: MBBR notes include Tier 3 organic media with reduced microplastic risk and emerging performance profile",
+        "risk_layer.py: _profile_ifas_mbbr_hybas split into _profile_ifas_hybas + _profile_mbbr, with dispatcher routing on technology name",
+        "risk_layer.py: IFAS Technical risk now includes microplastic, aeration headroom note (context-aware), specific gravity and PSA",
+        "risk_layer.py: MBBR Technical risk includes solids separation obligation + microplastic; Commercial risk includes Tier 3 organic media trade-off sentence",
+        "Arbitration confirmed: Case A (blower OK) → IFAS; Case B (aer constrained) → MABR; Case D (settling) → inDENSE; 38/38 checks; 282/282 tests",
+        "No core selection logic changed",
+    ]),
     ("v24Z41", "5 Apr 2026", [
         "CoMag / BioMag Positioning & PSD Risk Enhancement — Production V1",
         "tech_positioning.py: CoMag category renamed 'Hydraulic / Clarification'; primary_role clarified as high-rate clarification + hydraulic relief + TP/TSS polishing (not biological); typical_stack_position now includes Stage 3 for tertiary P polishing",

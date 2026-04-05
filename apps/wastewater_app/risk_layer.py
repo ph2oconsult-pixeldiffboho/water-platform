@@ -383,43 +383,123 @@ def _profile_memdense(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCa
     )
 
 
-def _profile_ifas_mbbr_hybas(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:
-    tech = sf.technology
-    name = ("Hybas™" if "Hybas" in tech else "MBBR" if "MBBR" in tech else "IFAS")
+def _profile_ifas_hybas(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:
+    """IFAS / Hybas™ — hybrid attached-growth for BNR nitrification intensification."""
+    aer_constrained = bool(ctx.get("aeration_constrained", False))
+    fog_risk        = bool(ctx.get("high_fog", False))
+    remote          = ctx.get("location_type", "metro") == "remote"
+    aer_note = (
+        " Aeration blowers are near-constrained for this plant — confirm blower "
+        "headroom (≥15% spare) before IFAS is committed; MABR is the correct "
+        "response if headroom is insufficient."
+        if aer_constrained else "")
     return (
-        f"Low overall risk. {name} is a well-established retrofit technology with a broad "
-        "international reference base. The primary risks relate to media retention "
-        "screen maintenance — the technology itself is mature and predictable.",
+        "Low overall risk for a well-specified IFAS deployment. Primary risk drivers are "
+        "media degradation / microplastic generation and aeration headroom confirmation."
+        + (" Remote location adds supplier logistics risk for specialist media." if remote else ""),
         [
             RiskCategory("Technical", RL_LOW,
-                f"Carrier media must be fluidised uniformly across the aeration zone. "
-                f"Non-uniform distribution reduces effective biofilm surface area. "
-                f"Biofilm establishment takes 4–8 weeks after media installation. "
-                f"Media retention screens must prevent carrier loss to downstream processes.",
-                "Confirm aeration distribution and mixing adequacy at commissioning. "
-                "Install screen fouling monitoring and cleaning protocol. "
-                "Adjust WAS rate during biofilm establishment to maintain optimal SRT."),
+                "Carrier media must be fluidised uniformly. Biofilm establishment takes "
+                "4–8 weeks — avoid cold-weather commissioning where possible."
+                + aer_note
+                + " Media degradation risk: mechanical collision and shear can fragment "
+                "carriers, generating plastic slivers that may escape retention screens. "
+                "Biofilm shear contributes to particulate microplastic release. "
+                "Carrier specific gravity (~0.95–0.98 g/cm³), protected surface "
+                "area (PSA), and screen gap compatibility must be verified at design stage."
+                + (" FOG-tolerant media required — fine pore structures blind under "
+                   "high lipid loads." if fog_risk else ""),
+                "Confirm blower headroom via site aeration audit before commitment. "
+                "Verify aeration distribution and carrier fluidisation at commissioning. "
+                "Specify carrier media with proven durability; require supplier to provide "
+                "5-year abrasion loss and specific gravity stability data. "
+                "Inspect screens weekly for first 3 months, monthly thereafter. "
+                "Consider tertiary capture (CoMag or filtration) where microplastic "
+                "discharge sensitivity is high."),
             RiskCategory("Operational", RL_LOW,
-                "Modest additional operational requirement relative to conventional "
-                "activated sludge. Main ongoing task is media retention screen "
-                "inspection and cleaning. No additional chemical requirements.",
-                "Include media retention screen in weekly maintenance schedule. "
-                "Inspect at 4-week intervals for first 6 months, then monthly. "
-                "Train operators on biofilm visual assessment."),
+                "Main ongoing tasks: media retention screen inspection and cleaning; "
+                "periodic biofilm assessment; WAS rate management (IFAS is a hybrid "
+                "— suspended growth fraction still requires sludge age management).",
+                "Screen inspection weekly for first 3 months, then monthly. "
+                "Train operators on biofilm visual assessment and WAS rate interaction "
+                "with biofilm fraction. Define screen failure response protocol."),
             RiskCategory("Commercial", RL_LOW,
-                "Multiple media suppliers available — commercial risk is low. "
-                "Media retention screens are standard engineering components "
-                "with broad supply base.",
-                "Obtain competitive quotes from ≥ 2 media suppliers. "
-                "Confirm media fill fraction and screen design at detailed design."),
+                "Multiple media suppliers: Tier 1 (integrated OEM — bundled process "
+                "and media, lower technical risk, higher CAPEX) and Tier 2 (commodity "
+                "media — lower cost, variable durability). Tier 2 introduces quality "
+                "and durability variability that must be validated against Tier 1 "
+                "reference data before large-scale deployment.",
+                "Obtain competitive quotes from ≥2 suppliers across tiers. "
+                "Require durability data (abrasion loss, specific gravity stability) "
+                "before award. Confirm screen design compatibility with media dimensions."),
             RiskCategory("Financial", RL_LOW,
-                "Low to moderate CAPEX. Minimal OPEX — no chemical input, "
-                "low energy increment, low maintenance cost. "
-                "Long-term financial risk is low.",
-                "Include screen replacement in asset register (expected life 10–15 years). "
-                "Budget for media top-up at 5-year intervals (typically < 5% of initial fill)."),
+                "Low to moderate CAPEX. Minimal OPEX — no chemical input, low energy "
+                "increment. Tier 1 OEM is higher CAPEX but lower lifecycle risk; "
+                "Tier 2 commodity is lower CAPEX but may require earlier media replacement.",
+                "Conduct TOTEX comparison: Tier 1 vs Tier 2 including media replacement "
+                "interval and any tertiary microplastic capture cost. "
+                "Budget for screen replacement (10–15 year life) and media top-up "
+                "(5-year intervals, typically <5% of initial fill)."),
         ]
     )
+
+
+def _profile_mbbr(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:
+    """MBBR standalone — industrial / high-strength / pre-treatment applications."""
+    remote = ctx.get("location_type", "metro") == "remote"
+    return (
+        "Low-Medium overall risk for MBBR in industrial or pre-treatment applications. "
+        "Downstream solids separation obligation and media microplastic risk are the "
+        "primary engineering concerns."
+        + (" Remote location adds supplier logistics risk." if remote else ""),
+        [
+            RiskCategory("Technical", RL_LOW,
+                "MBBR does not clarify — downstream solids separation is mandatory and "
+                "must accommodate increased biofilm solids carryover post-commissioning. "
+                "Media degradation risk: mechanical collision generates plastic slivers "
+                "that may escape retention screens. Biofilm shear contributes to "
+                "particulate microplastic release. Carrier specific gravity, PSA, "
+                "and screen gap must all be verified at design stage.",
+                "Recalculate downstream clarifier SOR and solids loading with updated "
+                "biofilm solids estimate before commissioning. "
+                "Specify carrier media with proven durability (Tier 1 preferred for "
+                "first installations). Inspect screens weekly for first 3 months. "
+                "Consider tertiary capture (CoMag, filtration) where microplastic "
+                "discharge to receiving environment is a compliance concern."),
+            RiskCategory("Operational", RL_LOW,
+                "Simple operation — no RAS management. Main tasks: screen inspection, "
+                "cleaning, and biofilm monitoring. Robust to load variation, but biomass "
+                "inventory cannot be directly controlled via WAS.",
+                "Screen inspection weekly (first 3 months), then monthly. "
+                "Define media inventory check procedure to identify fragmentation or loss. "
+                "Train operators on biofilm visual assessment."),
+            RiskCategory("Commercial", RL_LOW,
+                "Multiple media and system suppliers across Tier 1 (OEM, bundled process), "
+                "Tier 2 (commodity — lower cost, variable durability), and Tier 3 "
+                "(advanced / organic media — plant-based carriers, reduced microplastic "
+                "risk, emerging performance profile). "
+                "Media selection represents a trade-off between cost, durability, "
+                "environmental impact, and supplier support.",
+                "Obtain quotes from ≥2 suppliers across tiers. Where microplastic "
+                "discharge is a sensitivity, evaluate Tier 3 organic media. "
+                "Require 5-year durability data (abrasion loss, specific gravity "
+                "stability) before award."),
+            RiskCategory("Financial", RL_LOW,
+                "Low to moderate CAPEX. Minimal OPEX. Tier 1 OEM: higher CAPEX, lower "
+                "lifecycle risk. Tier 2 commodity: lower CAPEX, variable durability. "
+                "Tier 3 organic: potential premium but reduced microplastic liability.",
+                "TOTEX comparison across supplier tiers including media replacement "
+                "interval, screen maintenance, and any tertiary microplastic capture. "
+                "Budget for screen replacement (10–15 year life) and media top-up."),
+        ]
+    )
+
+
+def _profile_ifas_mbbr_hybas(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:
+    """Dispatcher: route to differentiated IFAS/Hybas or MBBR profile."""
+    if "MBBR" in sf.technology:
+        return _profile_mbbr(sf, ctx)
+    return _profile_ifas_hybas(sf, ctx)
 
 
 def _profile_bardenpho(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:

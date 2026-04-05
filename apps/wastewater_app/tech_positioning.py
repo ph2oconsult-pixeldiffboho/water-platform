@@ -288,59 +288,73 @@ def get_full_matrix() -> List[TechPosition]:
             supply_dependency="High",
         ),
 
-        # ── 4. IFAS / Hybas / MBBR ────────────────────────────────────────────
+        # ── 4a. IFAS / Hybas ──────────────────────────────────────────────────────
         TechPosition(
             code="IFAS",
-            name="IFAS / Hybas\u2122 / MBBR (integrated biofilm systems)",
+            name="IFAS / Hybas™ (integrated fixed-film activated sludge)",
             category="Nitrification",
             primary_role=(
-                "Biofilm retention to increase nitrification capacity within existing aeration "
-                "tanks by decoupling the effective nitrification SRT from the hydraulic SRT. "
-                "Carriers accumulate nitrifying biofilm independently of the WAS rate."
+                "Hybrid attached-growth system that increases nitrification capacity in existing "
+                "BNR plants by retaining a nitrifying biofilm on suspended carriers, decoupling "
+                "effective nitrification SRT from WAS rate. IFAS retains the clarifier and RAS "
+                "system — it is a hybrid process, not a pure biofilm system."
             ),
             best_used_when=[
-                "Nitrification is SRT-limited: WAS rate required for sludge age control is "
-                "washing out nitrifiers.",
-                "Spare basin volume exists or aeration zones can accept carrier media.",
-                "Aeration blowers have headroom \u2014 IFAS does not reduce aeration demand.",
-                "A lower-complexity retrofit is preferred over specialist OEM equipment (MABR).",
+                "Nitrification is SRT-limited and WAS rate required for sludge age control is "
+                "washing out nitrifiers, particularly under cold winter conditions.",
+                "Aeration blowers have confirmed headroom (≥15% spare capacity) — "
+                "IFAS does not improve oxygen transfer efficiency.",
+                "The existing activated sludge process must be retained and upgraded staged "
+                "without major civil works.",
+                "A lower-complexity retrofit is preferred over specialist OEM (MABR) "
+                "where blower capacity permits.",
                 "Media retention screens can be installed at zone outlets.",
-                "TN improvement is a secondary benefit: biofilm nitrification increases the "
-                "nitrate substrate available for Bardenpho denitrification.",
+                "Industrial FOG load is low — fine pore media structures can blind "
+                "in high-lipid environments.",
             ],
             not_appropriate_when=[
-                "Hydraulic or settling constraint is dominant \u2014 IFAS does not address clarifier "
-                "loading or peak flow management.",
-                "Aeration system is at maximum capacity \u2014 MABR is more appropriate where "
-                "blowers cannot be expanded.",
-                "MBR configuration: carrier media must be screened before membrane tanks, "
-                "adding design complexity.",
-                "Energy reduction is a primary goal \u2014 IFAS does not improve oxygen transfer "
-                "efficiency.",
+                "Aeration blowers are at or near maximum capacity — IFAS cannot resolve "
+                "the oxygen constraint; MABR is the correct technology.",
+                "Settling instability dominates — MOB (inDENSE) or BioMag address "
+                "the settling bottleneck; IFAS does not.",
+                "Hydraulic overload is the primary constraint — CoMag or EQ basin are "
+                "required; IFAS does not contribute to hydraulic relief.",
+                "MBR configuration: carrier media must be screened before membrane tanks.",
+                "Energy reduction or N₂O reduction are primary goals — MABR provides "
+                "aeration efficiency and N₂O co-benefit; IFAS does not.",
             ],
             strengths=[
-                "Well-established technology with broad international reference base.",
-                "Retrofit-friendly: drop-in carrier media addition to existing tank.",
-                "Low-complexity installation: media retention screens at zone outlets.",
-                "Decouples nitrification SRT from hydraulic SRT without new tank volume.",
-                "Reduces suspended MLSS as biofilm carries more of the nitrification load, "
-                "providing some clarifier loading relief.",
+                "Well-established with broad international reference base.",
+                "Retrofit-friendly: drop-in carrier addition to existing aeration zone.",
+                "Low civil complexity — no new tanks, no RAS system modification.",
+                "Decouples nitrification SRT from hydraulic SRT without new reactor volume.",
+                "Multiple media suppliers across Tier 1 (OEM) and Tier 2 (commodity) "
+                "— competitive procurement is feasible.",
             ],
             limitations=[
-                "Does not reduce aeration energy demand \u2014 blower capacity remains the constraint.",
-                "Limited impact on hydraulic performance or peak flow handling.",
-                "Media retention screen maintenance is required to prevent carrier loss.",
-                "Biofilm establishment takes 4\u20138 weeks after installation.",
-                "MBBR variant requires downstream solids separation \u2014 clarifier performance "
-                "must accommodate the biofilm solids.",
+                "Does not improve oxygen transfer — blower capacity remains binding "
+                "if aeration is already constrained.",
+                "Does not address hydraulic or settling constraints.",
+                "Biofilm establishment 4–8 weeks — avoid winter commissioning.",
+                "Media degradation risk: mechanical collision and shear can cause carrier "
+                "fragmentation. Plastic slivers may escape retention screens and contribute "
+                "to microplastic release. Select robust, proven media and verify screen "
+                "integrity regularly.",
+                "Media specific gravity (~0.95–0.98 g/cm³) and size must match "
+                "wedge-wire screen gap — incorrect sizing causes loss or screen blinding.",
+                "Tier 2 commodity media introduces variable quality and durability risk.",
             ],
             key_engineering_truth=(
-                "IFAS is the most retrofit-friendly nitrification intensification option and is "
-                "appropriate when the constraint is SRT, not aeration capacity. "
-                "The selection between IFAS and MABR should be driven by a site-specific "
-                "aeration capacity audit: if blowers have headroom, use IFAS; if blowers are "
-                "near maximum, use MABR. Both achieve nitrification SRT decoupling; "
-                "they differ in how they deliver the oxygen."
+                "IFAS is preferred for nitrification intensification when blower headroom is "
+                "confirmed (≥15% spare capacity). Where blowers are near maximum, MABR "
+                "is the correct response — this choice must be driven by the aeration "
+                "capacity audit, not technology preference. "
+                "Media selection is a first-class engineering decision: Tier 1 integrated OEM "
+                "reduces technical risk at higher CAPEX; Tier 2 commodity reduces cost but "
+                "introduces variable durability. "
+                "Mechanical media degradation and microplastic generation are real risks "
+                "requiring design-stage assessment — specify screen integrity and media "
+                "durability as operating KPIs."
             ),
             typical_stack_position="Stage 2",
             capex_class="Low",
@@ -348,6 +362,66 @@ def get_full_matrix() -> List[TechPosition]:
             supply_dependency="Low",
         ),
 
+        # ── 4b. MBBR (standalone) ───────────────────────────────────────────────
+        TechPosition(
+            code="MBBR",
+            name="MBBR (moving bed biofilm reactor — standalone)",
+            category="Nitrification / Pre-treatment",
+            primary_role=(
+                "Pure attached-growth biofilm system with no return sludge (RAS). Operates as "
+                "a standalone biofilm reactor requiring downstream solids separation. Best suited "
+                "to industrial or high-strength wastewater, pre-treatment stages, or applications "
+                "requiring simple, robust operation independent of suspended growth sludge management."
+            ),
+            best_used_when=[
+                "Industrial or high-strength influent where robust operation independent of "
+                "sludge management is required.",
+                "Pre-treatment or dedicated biofilm stage is needed ahead of secondary treatment.",
+                "Simple, modular operation without RAS recycle is preferred.",
+                "Load variability is high and biofilm resilience is valued over suspended "
+                "growth consistency.",
+            ],
+            not_appropriate_when=[
+                "The existing BNR activated sludge process is being intensified — IFAS "
+                "is preferred as it retains the clarifier and RAS system.",
+                "Tight TN or TP compliance (TN < 10 mg/L, TP < 1 mg/L) is required without "
+                "additional dedicated polishing stages.",
+                "Aeration is the binding constraint — MABR is preferred.",
+                "The downstream clarifier cannot accommodate the additional biofilm solids load.",
+            ],
+            strengths=[
+                "No RAS recycle required — simple, independent operation.",
+                "Robust to organic load variation through shock loads.",
+                "Modular — capacity can be added incrementally.",
+                "Well-proven in industrial pre-treatment applications.",
+            ],
+            limitations=[
+                "Requires downstream solids separation for effluent compliance.",
+                "Limited control of biomass inventory.",
+                "Not appropriate for tight nutrient compliance without additional stages.",
+                "Media degradation risk: mechanical collision generates plastic slivers that "
+                "may escape downstream and contribute to microplastic release. Screen design "
+                "and media durability must be specified at procurement.",
+                "Downstream clarifier loading must be reassessed post-commissioning.",
+            ],
+            key_engineering_truth=(
+                "MBBR is appropriate for standalone industrial pre-treatment or high-strength "
+                "applications where RAS is not available. For municipal BNR intensification, "
+                "IFAS is preferred: it retains the clarifier and RAS system and does not "
+                "create a new downstream solids separation obligation. "
+                "In both IFAS and MBBR: Tier 1 OEM suppliers provide bundled process support "
+                "at higher CAPEX; Tier 2 commodity media reduces cost with variable durability; "
+                "Tier 3 advanced / organic media (e.g. plant-based carriers) offers reduced "
+                "microplastic risk with an emerging performance profile. "
+                "Microplastic generation from media degradation must be addressed at design "
+                "stage through media qualification, screen integrity monitoring, and — "
+                "where discharge sensitivity is high — tertiary capture."
+            ),
+            typical_stack_position="Stage 1 or pre-treatment (standalone); Stage 2 in intensification trains",
+            capex_class="Low",
+            complexity="Medium",
+            supply_dependency="Low",
+        ),
         # ── 5. CoMag ──────────────────────────────────────────────────────────
         TechPosition(
             code="COMAG",

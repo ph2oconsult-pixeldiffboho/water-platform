@@ -328,13 +328,19 @@ _PROFILES: Dict[str, _TechProfile] = {
         sludge_impact="Low",
         base_feasibility="High",
         notes=[
-            "Drop-in carrier media addition to existing aeration zone.",
-            "Media retention screens required at zone outlets.",
-            "Retrofit complexity low — no new tanks required.",
+            "Hybas™ is an IFAS variant — hybrid attached-growth retrofit retaining clarifier "
+            "and RAS system. Same blower headroom prerequisite as IFAS applies.",
+            "Media engineering constraints apply: specific gravity ~0.95–0.98 g/cm³, "
+            "PSA for biofilm stability, screen gap matched to media size, FOG tolerance check.",
+            "Aeration distribution audit required to confirm uniform carrier fluidisation "
+            "across the zone before media installation.",
         ],
         risks=[
-            "Media retention screen fouling or failure can cause carrier loss.",
-            "Aeration distribution should be reviewed to ensure carrier fluidisation.",
+            "Aeration headroom prerequisite: if blowers near maximum, MABR is preferred.",
+            "Media degradation and microplastic generation risk as per IFAS — carrier "
+            "fragmentation, screen escape, and downstream microplastic release are real risks. "
+            "Specify durable media and maintain screen integrity monitoring.",
+            "Screen fouling or failure causes carrier loss — weekly inspection in first 3 months.",
         ],
     ),
 
@@ -348,13 +354,30 @@ _PROFILES: Dict[str, _TechProfile] = {
         sludge_impact="Low",
         base_feasibility="High",
         notes=[
-            "Well-established retrofit technology with broad reference base.",
-            "Media retention screens installed at zone outlet — simple mechanical addition.",
-            "Lowest complexity biofilm retention option.",
+            "Hybrid attached-growth retrofit for municipal BNR nitrification intensification. "
+            "Retains clarifier and RAS system — IFAS is a hybrid, not a pure biofilm process.",
+            "Only appropriate when aeration blowers have confirmed headroom (≥15% spare). "
+            "If blowers are near maximum, MABR is the correct technology.",
+            "Media engineering constraints: carrier specific gravity ~0.95–0.98 g/cm³ "
+            "for suspension; internal protected surface area (PSA) required for biofilm stability; "
+            "media size must match wedge-wire screen gap. FOG-tolerant media required "
+            "in high-lipid influent environments.",
+            "Supplier strategy: Tier 1 (integrated OEM — bundled process + media, lower "
+            "technical risk) vs Tier 2 (commodity media — lower CAPEX, variable durability). "
+            "Media selection is a first-class engineering decision, not a procurement afterthought.",
         ],
         risks=[
-            "Screen maintenance required to prevent media loss.",
-            "Biofilm development takes 4–8 weeks after media installation.",
+            "Aeration constraint misidentification: if blowers are at capacity, IFAS will not "
+            "resolve nitrification failure. Blower audit is mandatory before IFAS selection.",
+            "Media degradation and microplastic generation: mechanical collision and shear can "
+            "fragment carriers over time. Plastic slivers may escape retention screens and enter "
+            "the effluent stream. Specify robust media with verified durability; monitor screen "
+            "integrity as an operating KPI. Consider tertiary capture where microplastic "
+            "discharge sensitivity is high.",
+            "Retention screen failure causes immediate carrier loss — screen gap and media "
+            "size must be matched at design; inspect screens weekly for first 3 months.",
+            "Tier 2 commodity media risk: variable quality and durability; supplier performance "
+            "must be validated against Tier 1 reference data before deployment at scale.",
         ],
     ),
 
@@ -368,12 +391,30 @@ _PROFILES: Dict[str, _TechProfile] = {
         sludge_impact="Low",
         base_feasibility="High",
         notes=[
-            "Fixed biofilm — robust to load fluctuations.",
-            "Downstream solids separation constraint remains unless configuration accounts for it.",
+            "Pure attached-growth biofilm system — no RAS. Suited to industrial / high-strength "
+            "pre-treatment or standalone biological stage, not municipal BNR intensification "
+            "(prefer IFAS where clarifier and RAS are retained).",
+            "Downstream solids separation is mandatory — MBBR does not clarify; clarifier "
+            "loading must be recalculated to account for biofilm solids carryover.",
+            "Media engineering constraints: carrier specific gravity, PSA, screen gap matching, "
+            "and FOG tolerance apply as per IFAS. Modular capacity addition is a strength.",
+            "Supplier strategy: Tier 1 OEM (bundled process + media) vs Tier 2 commodity "
+            "(lower cost, variable durability). Tier 3 advanced / organic media (e.g. plant-based "
+            "carriers) offers reduced microplastic risk with emerging performance profile. "
+            "Media selection represents a trade-off between cost, durability, "
+            "environmental impact, and supplier support.",
         ],
         risks=[
-            "Downstream clarifier loading must be reassessed after MBBR commissioning.",
-            "Media fill fraction determines treatment capacity — requires design verification.",
+            "Media degradation and microplastic generation: mechanical collision generates "
+            "plastic slivers that may escape retention screens and enter downstream processes. "
+            "Biofilm shear also contributes to particulate microplastic release. "
+            "Specify robust media; consider tertiary capture where discharge sensitivity is high.",
+            "Downstream clarifier loading increases post-commissioning — verify clarifier "
+            "SOR and solids loading capacity with updated biofilm solids estimate.",
+            "Tier 2 commodity media quality variability: validate against Tier 1 reference "
+            "data for durability and specific gravity stability over time.",
+            "Screen gap / media size mismatch causes loss or blinding — specify at design "
+            "stage and inspect at weekly intervals for first 3 months.",
         ],
     ),
 
