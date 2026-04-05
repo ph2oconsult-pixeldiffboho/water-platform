@@ -19,6 +19,18 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z33", "5 Apr 2026", [
+        "Feasibility Layer Production V1 — new module apps/wastewater_app/feasibility_layer.py",
+        "Evaluates UpgradePathway across 6 dimensions: supply chain, operational complexity, energy/OPEX, sludge/residuals, chemical dependency, integration risk",
+        "16 technology profiles with embedded engineering facts: CoMag magnetite recovery >99.5%; DNF 2.5-3.0 mg MeOH/mg NO3-N; MABR 14 kgO2/kWh; memDENSE 4-8 week permeability improvement",
+        "Location adjustment: remote + specialist tech = High supply risk; <5 MLD magnetite = additional penalty",
+        "Overall feasibility rule: High chem_dep OR high supply_risk caps overall at MEDIUM",
+        "Confidence adjustment: supply_risk=High, chem_dep=High, n_specialist>=3 → downgrade; simple single-stage Low-risk → upgrade",
+        "Lower-risk alternative: CoMag→EQ basin; BioMag→inDENSE; DNF→Bardenpho+carbon management",
+        "Narrative: 6 risk register dimensions, key_risks list (max 6), key_mitigations (max 5)",
+        "Does NOT modify original UpgradePathway — annotation only",
+        "16/16 checks; 282/282 tests; all existing modules unchanged",
+    ]),
     ("v24Z32", "5 Apr 2026", [
         "Technology Stack Generator Production V1 — new module apps/wastewater_app/stack_generator.py",
         "Input: WaterPointResult (direct) + optional plant_context dict — reads existing engine outputs",
