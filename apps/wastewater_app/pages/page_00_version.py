@@ -19,6 +19,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z32", "5 Apr 2026", [
+        "Technology Stack Generator Production V1 — new module apps/wastewater_app/stack_generator.py",
+        "Input: WaterPointResult (direct) + optional plant_context dict — reads existing engine outputs",
+        "New constants: CT_TN_POLISH, CT_TP_POLISH, MECH_TERT_DN, MECH_TERT_P, MECH_AER_INT, TI_DENFILTER, TI_TERT_P, TI_MABR",
+        "New dataclasses: Constraint (source_modes field), PathwayStage (engineering_basis + mechanism_label), UpgradePathway, AlternativePathway",
+        "Step 1: classify_from_failure_modes() — keyword-matching from failure mode titles/descriptions to 9 constraint types",
+        "Step 2: strict priority sort (hydraulic 1 → settling 2 → nitrification 3 → TN 4 → TP 5 → biological 4 → membrane 5)",
+        "Steps 3-4: _build_pathway_stages() — 5 stage slots: hydraulic → settling → nitrification → TN/Bardenpho → TP/membrane",
+        "Step 5: _apply_guardrails() — 4 engineering rules enforced: no DenFilter without nitrification control; no IFAS before hydraulic resolved; no CoMag for nitrification-only; MOB self-contained in SBR",
+        "Step 7: pathway_narrative, constraint_summary, residual_risks, alternatives (Option A lower CAPEX, Option B higher perf)",
+        "Step 8: single-constraint → single-stage stack; multi-constraint → multi-stage (verified)",
+        "Each PathwayStage.engineering_basis contains quantified facts: CoMag SOR 10-20 m/h, MABR 14 kgO2/kWh, Bardenpho R=2 67% NOx recovery",
+        "All existing modules unchanged; 14/14 checks pass; 282/282 tests pass",
+    ]),
     ("v24Z31", "5 Apr 2026", [
         "Technology Stack Generator — sequenced multi-technology upgrade pathways",
         "New: build_technology_stack() in intensification_intelligence.py (~450 lines)",

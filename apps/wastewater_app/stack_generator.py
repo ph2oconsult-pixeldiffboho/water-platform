@@ -1,0 +1,850 @@
+"""
+apps/wastewater_app/stack_generator.py
+
+Technology Stack Generator — Production V1
+==========================================
+
+Converts WaterPoint diagnostics (WaterPointResult) directly into
+engineering-grade, sequenced multi-technology upgrade pathways.
+
+This is a synthesis layer only. It does NOT modify any existing
+calculation engine, stress model, or failure mode engine.
+
+Design principles
+-----------------
+- Deterministic and explainable — every output has a traceable reason
+- Reads WaterPointResult + optional plant_context dict
+- Produces UpgradePathway: a consultant-grade concept design recommendation
+- Failure mode titles and severity drive constraint classification
+- Strict priority ordering: hydraulic → settling → nitrification → TN → TP → optimisation
+- Engineering guardrails enforced before any stage is emitted
+
+New technologies added here (not in prior modules):
+  TI_DENFILTER  — denitrification filter (methanol-dosed tertiary denitrification)
+  TI_TERT_P     — tertiary phosphorus removal (chemical dosing + filtration)
+  MECH_TERT_DN  — tertiary denitrification
+  MECH_TERT_P   — tertiary phosphorus removal
+  MECH_AER_INT  — aeration intensification
+
+All other constants re-imported from intensification_intelligence.py.
+
+Main entry point
+----------------
+  build_upgrade_pathway(wp_result, plant_context) -> UpgradePathway
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
+
+# ── Re-use constants from intelligence layer ───────────────────────────────────
+from apps.wastewater_app.intensification_intelligence import (
+    CT_SETTLING, CT_NITRIFICATION, CT_BIOLOGICAL, CT_MEMBRANE,
+    CT_HYDRAULIC, CT_WET_WEATHER, CT_MULTI, CT_UNKNOWN,
+    MECH_BIOMASS_SEL, MECH_BIOFILM_RET, MECH_PROC_OPT,
+    MECH_MEMBRANE_SEL, MECH_HYD_EXP, MECH_BALLASTED,
+    TI_INDENSE, TI_MEMDENSE, TI_HYBAS, TI_MBBR, TI_IFAS,
+    TI_BARDENPHO, TI_RECYCLE_OPT, TI_ZONE_RECONF,
+    TI_EQ_BASIN, TI_STORM_STORE, TI_MIGINDENSE,
+    TI_COMAG, TI_BIOMAG,
+)
+
+# ── New constants for Production V1 ───────────────────────────────────────────
+CT_TN_POLISH    = "tn_polishing_limitation"
+CT_TP_POLISH    = "tp_polishing_limitation"
+
+MECH_TERT_DN    = "tertiary_denitrification"
+MECH_TERT_P     = "tertiary_phosphorus_removal"
+MECH_AER_INT    = "aeration_intensification"
+
+TI_DENFILTER    = "Denitrification Filter"
+TI_TERT_P       = "Tertiary P removal"
+TI_MABR         = "MABR (OxyFAS retrofit)"
+
+_CT_LABELS_V1 = {
+    CT_HYDRAULIC:    "Hydraulic / throughput limitation",
+    CT_WET_WEATHER:  "Wet weather peak / overflow",
+    CT_SETTLING:     "Settling / solids separation",
+    CT_NITRIFICATION:"Nitrification / SRT limitation",
+    CT_TN_POLISH:    "TN polishing (NOx / carbon-limited denitrification)",
+    CT_TP_POLISH:    "TP polishing (tertiary P removal required)",
+    CT_BIOLOGICAL:   "Biological performance (TN/TP/EBPR)",
+    CT_MEMBRANE:     "Membrane performance limitation",
+    CT_MULTI:        "Multi-constraint",
+    CT_UNKNOWN:      "Unknown",
+}
+
+_MECH_LABELS_V1 = {
+    MECH_BALLASTED:  "Ballasted settling / high-rate clarification",
+    MECH_HYD_EXP:   "Hydraulic expansion / attenuation storage",
+    MECH_BIOMASS_SEL:"Biomass selection",
+    MECH_BIOFILM_RET:"Biofilm retention (SRT decoupling)",
+    MECH_AER_INT:    "Aeration intensification (membrane O₂ delivery)",
+    MECH_TERT_DN:    "Tertiary denitrification",
+    MECH_TERT_P:     "Tertiary phosphorus removal",
+    MECH_PROC_OPT:   "Process optimisation",
+    MECH_MEMBRANE_SEL:"Membrane biomass selection",
+}
+
+_PRIORITY = {
+    CT_HYDRAULIC:    1,
+    CT_WET_WEATHER:  1,
+    CT_SETTLING:     2,
+    CT_NITRIFICATION:3,
+    CT_TN_POLISH:    4,
+    CT_TP_POLISH:    5,
+    CT_BIOLOGICAL:   4,
+    CT_MEMBRANE:     5,
+    CT_MULTI:        3,
+    CT_UNKNOWN:      9,
+}
+
+_SEV_WEIGHT = {"High": 0, "Medium": 1, "Low": 2}
+
+_CAPEX = {
+    TI_COMAG: "Medium", TI_BIOMAG: "Medium", TI_EQ_BASIN: "High",
+    TI_STORM_STORE: "High", TI_INDENSE: "Low", TI_MIGINDENSE: "Medium",
+    TI_MEMDENSE: "Low", TI_HYBAS: "Medium", TI_IFAS: "Low",
+    TI_MBBR: "Medium", TI_MABR: "Medium", TI_BARDENPHO: "Low",
+    TI_RECYCLE_OPT: "Low", TI_ZONE_RECONF: "Low",
+    TI_DENFILTER: "High", TI_TERT_P: "Medium",
+}
+_COMPLEXITY = {
+    TI_COMAG: "Medium", TI_BIOMAG: "High", TI_EQ_BASIN: "Medium",
+    TI_STORM_STORE: "Medium", TI_INDENSE: "Low", TI_MIGINDENSE: "Medium",
+    TI_MEMDENSE: "Low", TI_HYBAS: "Medium", TI_IFAS: "Low",
+    TI_MBBR: "Medium", TI_MABR: "Medium", TI_BARDENPHO: "Low",
+    TI_RECYCLE_OPT: "Low", TI_ZONE_RECONF: "Medium",
+    TI_DENFILTER: "High", TI_TERT_P: "Medium",
+}
+_TECH_DISPLAY = {
+    TI_COMAG:      "CoMag® (high-rate magnetic ballasted clarification)",
+    TI_BIOMAG:     "BioMag® (ballasted MBBR-activated sludge hybrid)",
+    TI_EQ_BASIN:   "Equalisation / flow balancing basin",
+    TI_STORM_STORE:"Storm storage / attenuation infrastructure",
+    TI_INDENSE:    "inDENSE® (gravimetric biomass selection)",
+    TI_MIGINDENSE: "MOB (miGRATE™ + inDENSE®) — SBR intensification",
+    TI_MEMDENSE:   "memDENSE® (MBR biomass selection)",
+    TI_HYBAS:      "Hybas™ (IFAS / integrated biofilm)",
+    TI_IFAS:       "IFAS (integrated fixed-film activated sludge)",
+    TI_MBBR:       "MBBR / MBBR-Bardenpho",
+    TI_MABR:       "MABR OxyFAS® (membrane-aerated biofilm reactor)",
+    TI_BARDENPHO:  "Bardenpho / process zone optimisation",
+    TI_RECYCLE_OPT:"Recycle ratio optimisation",
+    TI_ZONE_RECONF:"Zone reconfiguration / EBPR optimisation",
+    TI_DENFILTER:  "Denitrification filter (methanol-dosed tertiary denitrification)",
+    TI_TERT_P:     "Tertiary phosphorus removal (chemical dosing + filtration)",
+}
+
+
+# ── Result dataclasses ─────────────────────────────────────────────────────────
+
+@dataclass
+class Constraint:
+    """A classified active constraint derived from WaterPoint failure modes."""
+    constraint_type: str
+    label:          str
+    severity:       str    # High / Medium / Low
+    priority:       int
+    source_modes:   List[str] = field(default_factory=list)  # failure mode titles that triggered this
+
+    def __lt__(self, other: "Constraint") -> bool:
+        if self.priority != other.priority:
+            return self.priority < other.priority
+        return _SEV_WEIGHT.get(self.severity, 1) < _SEV_WEIGHT.get(other.severity, 1)
+
+
+@dataclass
+class PathwayStage:
+    """One stage in an upgrade pathway."""
+    stage_number:  int
+    technology:    str          # TI_* code
+    tech_display:  str          # human-readable
+    mechanism:     str          # MECH_* code
+    mechanism_label: str
+    purpose:       str          # what this stage does
+    engineering_basis: str      # why this technology, quantified where possible
+    addresses:     List[str]    # constraint types resolved
+    prerequisite:  str  = ""
+    capex_class:   str  = "Medium"
+    complexity:    str  = "Medium"
+
+
+@dataclass
+class AlternativePathway:
+    """An alternative to the primary stack."""
+    label:          str    # e.g. "Option A — Lower CAPEX"
+    stages:         List[str]   # technology display names in order
+    rationale:      str
+    when_preferred: str
+    capex_class:    str  = "Medium"
+
+
+@dataclass
+class UpgradePathway:
+    """
+    Full consultant-grade upgrade pathway recommendation.
+
+    Produced by build_upgrade_pathway() from a WaterPointResult.
+    """
+    # Inputs summary
+    system_state:       str    # Stable / Tightening / Fragile / Failure Risk
+    proximity_pct:      float
+    plant_type:         str
+    flow_scenario:      str
+
+    # Classified constraints
+    constraints:        List[Constraint]   # sorted by priority + severity
+    primary_constraint: Constraint
+    secondary_constraints: List[Constraint]
+
+    # Recommended pathway
+    stages:             List[PathwayStage]
+    alternatives:       List[AlternativePathway]
+
+    # Narrative
+    pathway_narrative:  str    # "Why this stack works" — engineering linkage
+    constraint_summary: str    # one paragraph constraint diagnosis
+    residual_risks:     List[str]
+    confidence:         str    # High / Medium / Low
+
+    # Metadata
+    multi_constraint:   bool = False
+    guardrail_notes:    List[str] = field(default_factory=list)  # engineering rules applied
+
+
+# ── Step 1: Classify constraints from WaterPoint failure modes ─────────────────
+
+# Keyword mappings from failure mode titles → constraint type
+_TITLE_MAP: List[Tuple[List[str], str, str]] = [
+    # (keywords_any, constraint_type, severity_override_or_"use_mode")
+    (["overflow", "bypass", "wet weather overflow", "active overflow"],
+     CT_HYDRAULIC, "High"),
+    (["hydraulic overload", "recycle", "ras_utilisation"],
+     CT_HYDRAULIC, "use_mode"),
+    (["cycle throughput saturation", "cycle compression", "cycle instability"],
+     CT_SETTLING, "use_mode"),
+    (["settling", "solids carryover", "clarifier", "svi", "washout", "carry-over",
+      "indense required", "solids carry-over", "no upstream buffer"],
+     CT_SETTLING, "use_mode"),
+    (["nitrification", "ammonia", "nh4", "nh3", "srt compression",
+      "biological optimisation not yet installed"],
+     CT_NITRIFICATION, "use_mode"),
+    (["total nitrogen", "tn ", "nox", "denitrification", "carbon-limited",
+      "tightening cap", "tn/tp"],
+     CT_TN_POLISH, "use_mode"),
+    (["phosphorus", "tp ", " tp", "ebpr", "bio-p", "bio p", "p removal"],
+     CT_TP_POLISH, "use_mode"),
+    (["membrane", "fouling", "permeability", "cleaning frequency", "memdense"],
+     CT_MEMBRANE, "use_mode"),
+    (["biological", "biological performance", "do /", "aeration optimisation",
+      "carbon dosing", "volatile"],
+     CT_BIOLOGICAL, "use_mode"),
+    (["peak-flow attenuation", "wet weather", "storm", "peak wet weather"],
+     CT_WET_WEATHER, "use_mode"),
+    (["selector underperformance", "carrier retention", "cycle compression without"],
+     CT_SETTLING, "use_mode"),
+]
+
+
+def _classify_from_failure_modes(
+    failure_modes,       # FailureModes dataclass
+    wp_state: str,
+    flow_scenario: str,
+    plant_context: Dict,
+) -> List[Constraint]:
+    """
+    Classify failure mode list into structured Constraint objects.
+    Returns sorted list (priority ascending, severity ascending).
+    """
+    found: Dict[str, Constraint] = {}
+
+    def _sev_int(s: str) -> int:
+        return {"High": 3, "Medium": 2, "Low": 1}.get(s, 1)
+
+    for mode in (failure_modes.items if failure_modes else []):
+        title_lower = mode.title.lower()
+        desc_lower  = (mode.description or "").lower()
+        combined    = title_lower + " " + desc_lower
+
+        for keywords, ct, sev_rule in _TITLE_MAP:
+            if any(kw in combined for kw in keywords):
+                sev = mode.severity if sev_rule == "use_mode" else sev_rule
+                if ct not in found:
+                    found[ct] = Constraint(
+                        constraint_type = ct,
+                        label           = _CT_LABELS_V1.get(ct, ct),
+                        severity        = sev,
+                        priority        = _PRIORITY.get(ct, 9),
+                        source_modes    = [mode.title],
+                    )
+                else:
+                    existing = found[ct]
+                    if _sev_int(sev) > _sev_int(existing.severity):
+                        existing.severity = sev
+                    if mode.title not in existing.source_modes:
+                        existing.source_modes.append(mode.title)
+                break  # first match wins per mode
+
+    # Context-based supplemental flags
+    if plant_context.get("is_mbr") and CT_MEMBRANE not in found:
+        if plant_context.get("membrane_fouling") or plant_context.get("high_cleaning_frequency"):
+            found[CT_MEMBRANE] = Constraint(CT_MEMBRANE,
+                _CT_LABELS_V1[CT_MEMBRANE], "Medium", _PRIORITY[CT_MEMBRANE], ["Context flag"])
+
+    if wp_state == "Failure Risk" and not found:
+        found[CT_BIOLOGICAL] = Constraint(CT_BIOLOGICAL,
+            _CT_LABELS_V1[CT_BIOLOGICAL], "High", _PRIORITY[CT_BIOLOGICAL], ["Failure Risk state"])
+
+    # Flow scenario escalation
+    if flow_scenario in ("Average Wet Weather Flow (AWWF)", "Peak Wet Weather Flow (PWWF)"):
+        if CT_HYDRAULIC not in found and CT_WET_WEATHER not in found:
+            if plant_context.get("flow_ratio", 1.0) >= 1.5:
+                found[CT_WET_WEATHER] = Constraint(CT_WET_WEATHER,
+                    _CT_LABELS_V1[CT_WET_WEATHER], "Medium", _PRIORITY[CT_WET_WEATHER], ["Flow scenario"])
+
+    result = sorted(found.values())
+    return result
+
+
+# ── Engineering guardrails ─────────────────────────────────────────────────────
+
+def _apply_guardrails(
+    stages: List[PathwayStage],
+    constraints: List[Constraint],
+    notes: List[str],
+) -> List[PathwayStage]:
+    """
+    Enforce engineering rules. Remove or flag stages that violate them.
+    Returns cleaned stage list.
+    """
+    ct_set    = {c.constraint_type for c in constraints}
+    tech_set  = {s.technology for s in stages}
+    to_remove = set()
+
+    # Rule 1: Do not recommend Denitrification Filter if nitrification not controlled
+    if TI_DENFILTER in tech_set and CT_NITRIFICATION in ct_set:
+        # Check if nitrification is resolved by an earlier stage
+        nit_resolved = any(s.technology in (TI_IFAS, TI_HYBAS, TI_MBBR, TI_MABR, TI_MIGINDENSE)
+                           for s in stages)
+        if not nit_resolved:
+            to_remove.add(TI_DENFILTER)
+            notes.append(
+                "Guardrail: Denitrification filter removed — nitrification must be controlled "
+                "before tertiary denitrification is effective."
+            )
+
+    # Rule 2: Do not recommend IFAS if hydraulic limitation is unresolved
+    if TI_IFAS in tech_set and CT_HYDRAULIC in ct_set:
+        hyd_resolved = any(s.technology in (TI_COMAG, TI_EQ_BASIN, TI_STORM_STORE)
+                           for s in stages
+                           if s.stage_number < next(
+                               (s2.stage_number for s2 in stages if s2.technology == TI_IFAS),
+                               999))
+        if not hyd_resolved:
+            to_remove.add(TI_IFAS)
+            notes.append(
+                "Guardrail: IFAS removed — hydraulic limitation must be stabilised "
+                "before biofilm installation is effective."
+            )
+
+    # Rule 3: Do not recommend CoMag if purely nitrification-limited
+    if TI_COMAG in tech_set and ct_set == {CT_NITRIFICATION}:
+        to_remove.add(TI_COMAG)
+        notes.append(
+            "Guardrail: CoMag removed — ballasted clarification is not appropriate "
+            "for a purely nitrification-limited plant with no hydraulic or settling constraint."
+        )
+
+    # Rule 4: Do not recommend miGRATE before settling is stabilised
+    if TI_MIGINDENSE in tech_set:
+        mob_stage = next((s for s in stages if s.technology == TI_MIGINDENSE), None)
+        settling_stage = next((s for s in stages if s.technology in (TI_INDENSE, TI_COMAG, TI_BIOMAG)
+                               and s.stage_number < (mob_stage.stage_number if mob_stage else 999)), None)
+        if not settling_stage and mob_stage:
+            # If MOB is the only settling tech (SBR case), it is self-contained — keep it
+            if CT_SETTLING in ct_set and mob_stage.stage_number == 1:
+                pass  # MOB in Stage 1 is the settling remedy for SBR
+            else:
+                notes.append(
+                    "Note: MOB (miGRATE + inDENSE) is self-contained — inDENSE provides "
+                    "settling stabilisation before miGRATE contributes biological optimisation."
+                )
+
+    stages = [s for s in stages if s.technology not in to_remove]
+    return stages
+
+
+# ── Stage builders ─────────────────────────────────────────────────────────────
+
+def _make_stage(
+    num: int, tech: str, mechanism: str,
+    purpose: str, basis: str,
+    addresses: List[str], prereq: str = ""
+) -> PathwayStage:
+    return PathwayStage(
+        stage_number    = num,
+        technology      = tech,
+        tech_display    = _TECH_DISPLAY.get(tech, tech),
+        mechanism       = mechanism,
+        mechanism_label = _MECH_LABELS_V1.get(mechanism, mechanism),
+        purpose         = purpose,
+        engineering_basis = basis,
+        addresses       = addresses,
+        prerequisite    = prereq,
+        capex_class     = _CAPEX.get(tech, "Medium"),
+        complexity      = _COMPLEXITY.get(tech, "Medium"),
+    )
+
+
+def _build_pathway_stages(
+    constraints: List[Constraint],
+    plant_context: Dict,
+) -> List[PathwayStage]:
+    """Build ordered stages from prioritised constraints."""
+    is_sbr  = bool(plant_context.get("is_sbr", False))
+    is_mbr  = bool(plant_context.get("is_mbr", False))
+    overflow= bool(plant_context.get("overflow_risk", False))
+    ww_peak = bool(plant_context.get("wet_weather_peak", False))
+    aer_constrained = bool(plant_context.get("aeration_constrained", False))
+    high_load= bool(plant_context.get("high_load", False))
+    flow_ratio = plant_context.get("flow_ratio", 1.0) or 1.0
+
+    ct_set  = {c.constraint_type for c in constraints}
+    stages: List[PathwayStage] = []
+    used:   set = set()
+    stage_n = [1]
+
+    def emit(tech: str, mech: str, purpose: str, basis: str,
+             addresses: List[str], prereq: str = "") -> None:
+        if tech in used: return
+        used.add(tech)
+        stages.append(_make_stage(
+            stage_n[0], tech, mech, purpose, basis, addresses, prereq))
+        stage_n[0] += 1
+
+    # ── Stage 1: Hydraulic stabilisation ──────────────────────────────────────
+    if CT_HYDRAULIC in ct_set or CT_WET_WEATHER in ct_set:
+        hyd = next((c for c in constraints if c.constraint_type in
+                    (CT_HYDRAULIC, CT_WET_WEATHER)), None)
+        use_comag = overflow or ww_peak or (hyd and hyd.severity == "High") or flow_ratio >= 2.0
+        if use_comag:
+            emit(TI_COMAG, MECH_BALLASTED,
+                "High-rate magnetic ballasted clarification provides rapid solids removal "
+                "under peak wet weather flows, protecting the downstream biological process "
+                "from hydraulic and solids shock.",
+                "CoMag treats flows of 3–5× DWA without new secondary tanks. Magnetic "
+                "microspheres ballast the floc, enabling surface overflow rates of "
+                "10–20 m/h vs 1–2 m/h for conventional secondary settling. "
+                "Ballast is recovered and recycled magnetically.",
+                [CT_HYDRAULIC, CT_WET_WEATHER])
+        elif flow_ratio >= 3.0:
+            # Very high flow ratio — EQ basin for sustained attenuation
+            emit(TI_EQ_BASIN, MECH_HYD_EXP,
+                "Equalisation basin attenuates sustained peak inflows before secondary treatment, "
+                "protecting biological process stability under prolonged wet weather.",
+                "Target attenuation to ≤ 2× DWA at secondary inlet. EQ basin capacity sized "
+                "to the peak event duration and return rate. No process intensification "
+                "can substitute for hydraulic attenuation at this flow ratio.",
+                [CT_HYDRAULIC, CT_WET_WEATHER])
+        else:
+            emit(TI_EQ_BASIN, MECH_HYD_EXP,
+                "Equalisation basin smooths diurnal and wet weather flow peaks, "
+                "reducing hydraulic stress on clarifiers and biological zones.",
+                "Target ≤ 2× DWA at secondary inlet. EQ basin is the primary "
+                "hydraulic mitigation before any biological upgrade is considered.",
+                [CT_HYDRAULIC, CT_WET_WEATHER])
+
+    # ── Stage 2: Settling stabilisation ───────────────────────────────────────
+    if CT_SETTLING in ct_set:
+        set_con = next((c for c in constraints if c.constraint_type == CT_SETTLING), None)
+        severe  = set_con and set_con.severity == "High"
+        if is_sbr:
+            emit(TI_MIGINDENSE, MECH_BIOMASS_SEL,
+                "MOB (inDENSE + miGRATE) stabilises settling in the existing SBR and unlocks "
+                "cycle capacity without new reactor volume. inDENSE is the settling prerequisite; "
+                "miGRATE is the biological optimisation layer that follows.",
+                "inDENSE gravimetric selection reduces SVI and enables cycle compression to 3h. "
+                "miGRATE biofilm carriers then reduce TN and aerobic mass fraction. "
+                "Upgrade sequence: inDENSE commissioned and stable → then activate miGRATE. "
+                "miGRATE alone does not consistently improve SVI (Lang Lang + Army Bay).",
+                [CT_SETTLING, CT_NITRIFICATION],
+                prereq="SBR operational, feed characteristics stable")
+        elif is_mbr:
+            emit(TI_MEMDENSE, MECH_MEMBRANE_SEL,
+                "memDENSE selective wasting removes filamentous and low-density biomass "
+                "from MBR mixed liquor, directly reducing clarifier/membrane loading.",
+                "memDENSE improves settling velocity of the retained fraction, reduces SVI, "
+                "and lowers membrane fouling rate. PAO retention is enhanced, "
+                "improving biological P removal.",
+                [CT_SETTLING, CT_MEMBRANE])
+        elif severe or high_load:
+            emit(TI_BIOMAG, MECH_BALLASTED,
+                "BioMag combines ballasted settling with integrated biological treatment, "
+                "improving both hydraulic throughput and solids management under elevated load.",
+                "Magnetic microspheres improve mixed liquor density and settling velocity. "
+                "At high MLSS and elevated loading, BioMag provides more robust settling "
+                "improvement than inDENSE alone. Suitable when clarifier SOR is critically exceeded.",
+                [CT_SETTLING],
+                prereq="Ballast recovery and recycling infrastructure available")
+        else:
+            emit(TI_INDENSE, MECH_BIOMASS_SEL,
+                "inDENSE gravimetric selection removes light and filamentous biomass, "
+                "improving settling velocity and SVI without adding tank volume.",
+                "inDENSE selectively wastes the low-density fraction of mixed liquor. "
+                "The retained sludge is denser, settles faster, and occupies less clarifier volume. "
+                "SOR headroom recovers without clarifier expansion.",
+                [CT_SETTLING])
+
+    # ── Stage 3: Nitrification unlock ─────────────────────────────────────────
+    if CT_NITRIFICATION in ct_set and TI_MIGINDENSE not in used:
+        settling_present = any(s.technology in (TI_INDENSE, TI_BIOMAG, TI_COMAG, TI_MEMDENSE)
+                               for s in stages)
+        if aer_constrained:
+            emit(TI_MABR, MECH_AER_INT,
+                "MABR (OxyFAS) delivers oxygen directly to the biofilm via gas-permeable "
+                "hollow-fibre membranes, providing nitrification capacity without blower expansion.",
+                "OxyFAS drops into existing AS tanks. Oxygen transfer efficiency up to 14 kgO₂/kWh "
+                "vs 1–2 kgO₂/kWh for conventional diffused aeration. "
+                "NHx resilience is maintained even when blower capacity is near maximum. "
+                "Calibrated to Kawana modelling: NHx <0.1 mg/L across all load scenarios.",
+                [CT_NITRIFICATION],
+                prereq="Stage 2 settling stabilisation complete" if settling_present else "")
+        elif settling_present:
+            emit(TI_HYBAS, MECH_BIOFILM_RET,
+                "Hybas biofilm carriers decouple nitrification SRT from hydraulic SRT. "
+                "Nitrifiers accumulate on carriers independent of the WAS rate, providing "
+                "stable ammonia oxidation capacity in the existing tank volume.",
+                "Hybas increases effective sludge age for nitrification without increasing "
+                "reactor volume. Suspended MLSS decreases (less clarifier loading). "
+                "Carriers are retained by screens at zone outlets.",
+                [CT_NITRIFICATION],
+                prereq="Stage 2 settling stabilisation complete")
+        else:
+            emit(TI_IFAS, MECH_BIOFILM_RET,
+                "IFAS carriers retain nitrifying biofilm in the existing aeration zone, "
+                "decoupling nitrification SRT from the hydraulic SRT of the tank.",
+                "No new tank volume required. Media retention screens installed at zone outlets. "
+                "Effective nitrification SRT can exceed 15 days even at short hydraulic SRT. "
+                "MLSS may decrease as biofilm carries more of the nitrification load.",
+                [CT_NITRIFICATION])
+
+    # ── Stage 4: TN polishing ──────────────────────────────────────────────────
+    if CT_TN_POLISH in ct_set or (CT_BIOLOGICAL in ct_set and CT_NITRIFICATION not in ct_set):
+        biofilm_present = any(s.technology in (TI_IFAS, TI_HYBAS, TI_MBBR, TI_MABR, TI_MIGINDENSE)
+                              for s in stages)
+        if biofilm_present:
+            emit(TI_BARDENPHO, MECH_PROC_OPT,
+                "Bardenpho zone optimisation maximises denitrification using the elevated "
+                "nitrate load produced by biofilm nitrification.",
+                "Second anoxic zone (Bardenpho 5-stage) significantly reduces effluent TN. "
+                "Optimal internal recycle R ≈ 2; anaerobic HRT 2–2.5h for EBPR. "
+                "Carbon availability for denitrification should be assessed — "
+                "external carbon may be needed if COD/N < 4.",
+                [CT_TN_POLISH, CT_BIOLOGICAL],
+                prereq="Stage 3 biofilm commissioned and stable")
+        else:
+            emit(TI_RECYCLE_OPT, MECH_PROC_OPT,
+                "Internal recycle ratio optimisation improves denitrification efficiency "
+                "without capital expenditure.",
+                "MLR ratio R ≈ 2 recovers ~67% of nitrate; R=4 recovers ~80%. "
+                "Diminishing returns above R=4 due to dissolved oxygen carry-over. "
+                "RAS optimisation protects clarifier SOR.",
+                [CT_TN_POLISH, CT_BIOLOGICAL])
+            # Add Bardenpho if zone reconfiguration is feasible
+            emit(TI_BARDENPHO, MECH_PROC_OPT,
+                "Bardenpho zone reconfiguration extracts more TN removal from existing "
+                "tank volume by establishing a second anoxic zone.",
+                "5-stage Bardenpho: anaerobic → anoxic → aerobic → post-anoxic → reaeration. "
+                "Anaerobic zone HRT 2–2.5h optimal for PAO selection. "
+                "External carbon dosing to the post-anoxic zone if carbon-limited.",
+                [CT_TN_POLISH, CT_BIOLOGICAL],
+                prereq="Recycle optimisation complete")
+
+    # ── Stage 5: TP polishing ──────────────────────────────────────────────────
+    if CT_TP_POLISH in ct_set:
+        emit(TI_TERT_P, MECH_TERT_P,
+            "Tertiary phosphorus removal via chemical dosing (ferric/alum) and "
+            "downstream filtration achieves tight TP targets (<0.5 mg/L).",
+            "Chemical P precipitation requires 20–25 g FeCl₃ per g P removed. "
+            "Filter polishing achieves TSS <5 mg/L and TP <0.2 mg/L where required. "
+            "Alternatively, CoMag can provide combined hydraulic relief and P polishing "
+            "if both constraints are active.",
+            [CT_TP_POLISH])
+
+    # ── Stage 5b: Membrane polishing (if membrane and not already addressed) ──
+    if CT_MEMBRANE in ct_set and TI_MEMDENSE not in used:
+        emit(TI_MEMDENSE, MECH_MEMBRANE_SEL,
+            "memDENSE selective wasting removes filamentous and low-density organisms "
+            "from MBR mixed liquor, improving membrane permeability and reducing fouling.",
+            "memDENSE removes the fraction responsible for membrane fouling and cake formation. "
+            "Permeability typically improves within 4–8 weeks of commissioning. "
+            "PAO retention is enhanced, supporting biological P removal recovery.",
+            [CT_MEMBRANE])
+
+    return stages
+
+
+# ── Alternative pathways ───────────────────────────────────────────────────────
+
+def _build_pathway_alternatives(
+    constraints: List[Constraint],
+    stages: List[PathwayStage],
+    plant_context: Dict,
+) -> List[AlternativePathway]:
+    alts: List[AlternativePathway] = []
+    ct_set = {c.constraint_type for c in constraints}
+    tech_codes = [s.technology for s in stages]
+
+    # Option A — Lower CAPEX
+    if len(stages) >= 2:
+        low_capex_stages = [
+            _TECH_DISPLAY.get(s.technology, s.technology)
+            for s in stages if _CAPEX.get(s.technology, "High") in ("Low", "Medium")
+        ]
+        if not low_capex_stages:
+            low_capex_stages = [_TECH_DISPLAY.get(stages[0].technology, stages[0].technology)]
+        alts.append(AlternativePathway(
+            label="Option A — Lower CAPEX (staged intensification only)",
+            stages=low_capex_stages[:3],
+            rationale=(
+                "Defer high-CAPEX civil infrastructure (EQ basin, tertiary filters) "
+                "and focus on process intensification technologies that can be installed "
+                "within existing tank volume. Accept a narrower operating margin in the "
+                "short term while monitoring performance before committing to civil works."
+            ),
+            when_preferred=(
+                "When immediate capital is constrained and the plant is Tightening rather "
+                "than Fragile or Failure Risk. Suitable as a 2–5 year interim strategy."
+            ),
+            capex_class="Low",
+        ))
+
+    # Option B — Higher performance / future-proof
+    high_perf: List[str] = []
+    if CT_NITRIFICATION in ct_set and TI_MABR not in tech_codes:
+        high_perf.append(_TECH_DISPLAY[TI_MABR])
+    if CT_TN_POLISH in ct_set or CT_BIOLOGICAL in ct_set:
+        high_perf.append(_TECH_DISPLAY[TI_DENFILTER])
+    if not high_perf:
+        high_perf = [_TECH_DISPLAY.get(s.technology, s.technology) for s in stages]
+    alts.append(AlternativePathway(
+        label="Option B — Higher performance (licence-of-the-future compliant)",
+        stages=high_perf[:4],
+        rationale=(
+            "Select technologies that provide headroom beyond the current licence limits. "
+            "MABR and denitrification filtration achieve NH4 <0.5 mg/L and TN <3 mg/L, "
+            "positioning the plant for future tightening without further civil works."
+        ),
+        when_preferred=(
+            "When the utility anticipates licence tightening within 10 years, footprint "
+            "is constrained, or energy minimisation is a strategic priority."
+        ),
+        capex_class="High",
+    ))
+
+    return alts
+
+
+# ── Narrative generators ───────────────────────────────────────────────────────
+
+def _pathway_narrative(constraints: List[Constraint], stages: List[PathwayStage]) -> str:
+    if not stages:
+        return "Insufficient constraint data to generate upgrade pathway."
+    lines = [
+        "This upgrade pathway is sequenced to address the highest-priority constraint first, "
+        "with each stage unlocking the next. "
+    ]
+    for s in stages:
+        lines.append(
+            f"Stage {s.stage_number} ({s.tech_display.split('(')[0].strip()}) "
+            f"addresses {', '.join(c.replace('_limitation','').replace('_',' ') for c in s.addresses)} "
+            f"via {s.mechanism_label.lower()}."
+        )
+    lines.append(
+        "Technologies are selected to avoid functional overlap, "
+        "exhaust intensification options before civil expansion, "
+        "and produce a stack that reads as a coherent concept design."
+    )
+    return " ".join(lines)
+
+
+def _constraint_summary(constraints: List[Constraint], wp_state: str, proximity: float) -> str:
+    if not constraints:
+        return f"System is {wp_state} at {proximity:.0f}% proximity with no dominant constraint identified."
+    primary = constraints[0]
+    secondaries = constraints[1:]
+    parts = [
+        f"The plant is {wp_state} at {proximity:.0f}% proximity. "
+        f"The dominant constraint is {primary.label} [{primary.severity}], "
+        f"originating from: {', '.join(primary.source_modes[:3])}."
+    ]
+    if secondaries:
+        parts.append(
+            f"Secondary constraints: {', '.join(c.label for c in secondaries[:3])}."
+        )
+    return " ".join(parts)
+
+
+def _residual_risks(
+    constraints: List[Constraint],
+    stages: List[PathwayStage],
+    plant_context: Dict,
+) -> List[str]:
+    risks = []
+    ct_set   = {c.constraint_type for c in constraints}
+    tech_set = {s.technology for s in stages}
+
+    # Always: wet weather hydraulic
+    risks.append(
+        "Extreme wet weather events (> 3× DWA) may still require upstream "
+        "sewer attenuation or storm storage even after process intensification."
+    )
+
+    # Carbon limitation
+    if (CT_TN_POLISH in ct_set or CT_BIOLOGICAL in ct_set) and TI_DENFILTER not in tech_set:
+        risks.append(
+            "TN compliance may require external carbon dosing (methanol or acetate) "
+            "if COD/N ratio is below 4 after recycle optimisation."
+        )
+
+    # Operational complexity
+    if len(stages) >= 3:
+        risks.append(
+            f"A {len(stages)}-stage upgrade increases operational complexity. "
+            "Staged commissioning with effluent monitoring between stages is essential "
+            "before proceeding to the next."
+        )
+
+    # Energy / sludge
+    if TI_IFAS in tech_set or TI_HYBAS in tech_set or TI_MBBR in tech_set:
+        risks.append(
+            "Biofilm addition changes the mixed liquor MLSS profile. "
+            "Aeration control loops and wasting strategy must be recalibrated "
+            "after biofilm stage commissioning."
+        )
+
+    if TI_MEMDENSE in tech_set or TI_INDENSE in tech_set or TI_MIGINDENSE in tech_set:
+        risks.append(
+            "Selective wasting (inDENSE / memDENSE) increases wasted sludge density. "
+            "Sludge dewatering performance should be re-assessed after commissioning."
+        )
+
+    if TI_DENFILTER in tech_set:
+        risks.append(
+            "Denitrification filter requires continuous methanol dosing and "
+            "filter backwash management — increases chemical OPEX and operator attention."
+        )
+
+    return risks
+
+
+def _confidence(failure_modes, plant_context: Dict) -> str:
+    n_modes = len(failure_modes.items) if failure_modes else 0
+    missing = plant_context.get("missing_fields_count", 0) or 0
+    if n_modes >= 3 and missing <= 2:
+        return "High"
+    if n_modes >= 1 or missing <= 5:
+        return "Medium"
+    return "Low"
+
+
+# ── Main entry point ───────────────────────────────────────────────────────────
+
+def build_upgrade_pathway(
+    wp_result,
+    plant_context: Optional[Dict] = None,
+) -> UpgradePathway:
+    """
+    Build a consultant-grade upgrade pathway from a WaterPointResult.
+
+    Parameters
+    ----------
+    wp_result : WaterPointResult
+        Full output from apps.wastewater_app.waterpoint_engine.analyse().
+
+    plant_context : dict, optional
+        Supplemental signals not in WaterPointResult:
+          plant_type       str   "CAS" / "BNR" / "SBR" / "MBR" / "Nereda"
+          is_sbr           bool
+          is_mbr           bool
+          overflow_risk    bool
+          wet_weather_peak bool
+          aeration_constrained bool
+          high_load        bool
+          flow_ratio       float
+          missing_fields_count int
+
+    Returns
+    -------
+    UpgradePathway
+    """
+    ctx = plant_context or {}
+
+    s  = wp_result.system_stress
+    fm = wp_result.failure_modes
+    fst= getattr(wp_result.system_stress, "flow_scenario", "") or ctx.get("flow_scenario", "")
+
+    # ── Step 1: Classify constraints ───────────────────────────────────────────
+    constraints = _classify_from_failure_modes(fm, s.state, fst, ctx)
+
+    # Supplement from primary_constraint string if no modes found
+    if not constraints:
+        pc_lower = s.primary_constraint.lower()
+        if "clarifier" in pc_lower or "settling" in pc_lower:
+            constraints = [Constraint(CT_SETTLING, _CT_LABELS_V1[CT_SETTLING],
+                                      "Medium", _PRIORITY[CT_SETTLING], [s.primary_constraint])]
+        elif "aeration" in pc_lower or "oxygen" in pc_lower:
+            constraints = [Constraint(CT_NITRIFICATION, _CT_LABELS_V1[CT_NITRIFICATION],
+                                      "Medium", _PRIORITY[CT_NITRIFICATION], [s.primary_constraint])]
+        elif "throughput" in pc_lower or "hydraulic" in pc_lower:
+            constraints = [Constraint(CT_HYDRAULIC, _CT_LABELS_V1[CT_HYDRAULIC],
+                                      "Medium", _PRIORITY[CT_HYDRAULIC], [s.primary_constraint])]
+        elif "cycle" in pc_lower:
+            constraints = [Constraint(CT_SETTLING, _CT_LABELS_V1[CT_SETTLING],
+                                      "Medium", _PRIORITY[CT_SETTLING], [s.primary_constraint])]
+
+    # ── Step 2: Priority sort (already done in _classify) ──────────────────────
+    # ── Step 3-4: Build stages ─────────────────────────────────────────────────
+    guardrail_notes: List[str] = []
+    stages = _build_pathway_stages(constraints, ctx)
+
+    # ── Step 5: Apply engineering guardrails ────────────────────────────────────
+    stages = _apply_guardrails(stages, constraints, guardrail_notes)
+
+    # Guardrail: always add wet weather note
+    if not any("wet weather" in n.lower() for n in guardrail_notes):
+        guardrail_notes.append(
+            "Note: Extreme wet weather may still require storage or sewer attenuation "
+            "even after process upgrades are complete."
+        )
+
+    # ── Step 6-7: Build alternatives and narrative ─────────────────────────────
+    alternatives  = _build_pathway_alternatives(constraints, stages, ctx)
+    narrative     = _pathway_narrative(constraints, stages)
+    con_summary   = _constraint_summary(constraints, s.state, s.proximity_percent)
+    residuals     = _residual_risks(constraints, stages, ctx)
+    conf          = _confidence(fm, ctx)
+
+    primary_con   = constraints[0] if constraints else Constraint(
+        CT_UNKNOWN, "Unknown", "Low", 9, [])
+    secondary_con = constraints[1:] if len(constraints) > 1 else []
+
+    return UpgradePathway(
+        system_state         = s.state,
+        proximity_pct        = s.proximity_percent,
+        plant_type           = ctx.get("plant_type", "Unknown"),
+        flow_scenario        = fst or "DWA",
+        constraints          = constraints,
+        primary_constraint   = primary_con,
+        secondary_constraints= secondary_con,
+        stages               = stages,
+        alternatives         = alternatives,
+        pathway_narrative    = narrative,
+        constraint_summary   = con_summary,
+        residual_risks       = residuals,
+        confidence           = conf,
+        multi_constraint     = len(constraints) >= 2,
+        guardrail_notes      = guardrail_notes,
+    )
