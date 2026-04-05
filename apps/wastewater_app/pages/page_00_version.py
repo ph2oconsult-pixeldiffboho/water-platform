@@ -20,6 +20,18 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
     ("v24Z35", "5 Apr 2026", [
+        "Uncertainty and Sensitivity Layer Production V1 — apps/wastewater_app/uncertainty_layer.py",
+        "5 uncertainty dimensions: influent variability, hydraulic variability, process performance, carbon model (N2O always High), delivery/integration risk",
+        "Hydraulic rules: flow_ratio>=2.5 → High; >=3.0 → Very High",
+        "Technology-specific process uncertainty: DNF=High; MABR/CoMag/BioMag=Medium; IFAS/MBBR/inDENSE=Low",
+        "Carbon uncertainty bands: IPCC 2019 EF range 0.5%-1.6%-3.2%; GWP100=273 (AR6); fixed-reference pct gives meaningful 11-45% spread (Metro BNR)",
+        "3 ranked sensitivity drivers: peak flow frequency, N2O emission factor, aeration headroom / COD/TN / DO carryover",
+        "Decision tension: explicit primary trade-off sentence with Option A/B pros and cons",
+        "Confidence: starts from feasibility confidence; downgraded by High uncertainty dims and n_stages>=5",
+        "Validation flags: hydraulic_sensitivity_flagged, aeration_dependency_flagged, carbon_do_sensitivity_flagged, carbon_range_included",
+        "8/8 checks; 282/282 tests; no existing layers modified",
+    ]),
+    ("v24Z35", "5 Apr 2026", [
         "Carbon Layer Production V1 — new module apps/wastewater_app/carbon_layer.py",
         "Scope 1: N2O using IPCC 2019 EF_N2O=1.0% of influent TN, GWP100=273 (AR6); CH4 from anaerobic zones optional",
         "Scope 2: technology-specific energy intensities (CAS 0.45, MBR 1.0, MABR 0.25 kWh/m3); grid factor 0.8 kg CO2e/kWh",
