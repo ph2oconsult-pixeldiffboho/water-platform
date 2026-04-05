@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z41", "5 Apr 2026", [
+        "CoMag / BioMag Positioning & PSD Risk Enhancement — Production V1",
+        "tech_positioning.py: CoMag category renamed 'Hydraulic / Clarification'; primary_role clarified as high-rate clarification + hydraulic relief + TP/TSS polishing (not biological); typical_stack_position now includes Stage 3 for tertiary P polishing",
+        "tech_positioning.py: BioMag category renamed 'Settling + Biomass Concentration'; primary_role explicitly states 'secondary-stage settling and biomass-concentration — not a substitute for aeration intensification'",
+        "tech_positioning.py: Both CoMag and BioMag supply_dependency raised to High",
+        "tech_positioning.py: PSD (~10-30 um, water-grade magnetite) dependency added to limitations and key_engineering_truth for both technologies",
+        "tech_positioning.py: BioMag not_appropriate_when now explicitly lists aeration/oxygen bottleneck, hydraulic attenuation, remote/supply-constrained sites",
+        "tech_positioning.py: Remote plant IFAS/inDENSE/EQ alternative mentioned in BioMag key_engineering_truth",
+        "feasibility_layer.py: CoMag and BioMag supply_risk_base raised to High; notes and risks updated with PSD specification, ballast loss OPEX, and remote logistics risk",
+        "risk_layer.py: CoMag Technical risk now explicitly includes PSD dependency and recovery failure modes; Commercial escalates to High at remote sites",
+        "risk_layer.py: BioMag Technical risk now includes PSD + role clarification (settling not aeration); Financial risk references TOTEX comparison against inDENSE+IFAS",
+        "No selection logic changed — 30/30 checks; 282/282 tests",
+    ]),
     ("v24Z40", "5 Apr 2026", [
         "Brownfield vs Greenfield Strategic Assessment Layer Production V1 — apps/wastewater_app/bf_gf_layer.py",
         "7-dimension scoring model: constraint count, constraint severity, stack complexity, licence stringency, feasibility overhead, flow ratio, footprint",

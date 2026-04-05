@@ -352,115 +352,147 @@ def get_full_matrix() -> List[TechPosition]:
         TechPosition(
             code="COMAG",
             name="CoMag\u00ae (high-rate magnetic ballasted clarification)",
-            category="Hydraulic / Settling",
+            category="Hydraulic / Clarification",
             primary_role=(
-                "High-rate clarification providing rapid solids removal under peak wet weather "
-                "flows, protecting downstream biological processes from hydraulic and solids shock "
-                "loads. Treats flows of 3\u20135\u00d7 DWA without new secondary tanks."
+                "High-rate clarification for hydraulic relief, peak wet weather management, "
+                "and ultra-low phosphorus / TSS polishing. CoMag is a clarification and "
+                "hydraulic technology \u2014 it does not address biological nitrification, "
+                "denitrification, or aeration limitations."
             ),
             best_used_when=[
-                "Peak wet weather flows consistently exceed secondary clarifier capacity.",
-                "TSS compliance fails during storm events and solids carry-over is the primary "
-                "compliance failure mode.",
-                "TP polishing is required simultaneously (CoMag can receive chemical P dosing).",
-                "Site footprint is constrained and an EQ basin is not feasible.",
-                "Metropolitan location with reliable magnetite supply chain access.",
+                "Peak wet weather flows exceed secondary clarifier capacity and hydraulic "
+                "relief is urgently needed within a constrained footprint.",
+                "TSS compliance fails during storm events and solids carry-over is the "
+                "primary compliance failure mode.",
+                "Very low TP targets (< 0.2 mg/L) require chemically enhanced high-rate "
+                "clarification as a tertiary polishing step.",
+                "Tertiary TSS and TP polishing is required after biological treatment.",
+                "Metropolitan or regional location with reliable water-grade magnetite supply "
+                "chain access (PSD ~10\u201330 \u03bcm, controlled specification).",
                 "The plant is a continuous-flow process (CAS, BNR, MBR) \u2014 CoMag requires "
-                "continuous flow and cannot be installed inline with SBR decant.",
+                "continuous feed and cannot be installed inline with SBR decant.",
             ],
             not_appropriate_when=[
-                "The primary constraint is biological \u2014 nitrification, TN, or TP limitations "
-                "that are not driven by solids carry-over.",
-                "Plant is an SBR \u2014 CoMag requires a dedicated side-stream or bypass configuration "
-                "and cannot treat SBR batch decant inline.",
-                "Supply chain access for magnetite is unreliable (remote locations).",
-                "Plant size is below ~5 MLD \u2014 magnetite recovery economics deteriorate at "
-                "small scale.",
-                "Short-duration peaks are the only hydraulic issue \u2014 upstream storage or "
-                "I/I reduction may be more cost-effective.",
+                "Biological nitrification, denitrification, or aeration is the dominant unmet "
+                "need \u2014 CoMag does not address core biological constraints.",
+                "Aeration is the main bottleneck \u2014 MABR or IFAS are the correct response.",
+                "The plant only needs suspended-growth biological optimisation.",
+                "Extreme peaks above \u223c3\u00d7 ADWF are assumed to be fully resolved by "
+                "CoMag alone \u2014 upstream attenuation is still required above this threshold.",
+                "Plant is an SBR \u2014 requires a dedicated side-stream or bypass configuration.",
+                "Supply chain access for water-grade magnetite (controlled PSD) is unreliable "
+                "\u2014 particularly at remote sites where logistics risk is high.",
+                "Plant size is below \u223c5 MLD \u2014 magnetite recovery economics deteriorate.",
             ],
             strengths=[
-                "Surface overflow rate of 10\u201320 m/hr vs 1\u20132 m/hr for conventional clarifiers.",
+                "Surface overflow rate 10\u201320 m/hr vs 1\u20132 m/hr for conventional clarifiers.",
                 "Compact installation: significant flow treated in a small footprint.",
-                "Can treat flows of 3\u20135\u00d7 DWA without new secondary tanks.",
-                "Magnetite recovery >99.5% in normal operation.",
-                "Dual-use potential: combined hydraulic attenuation and chemical P polishing.",
+                "Treats 3\u20135\u00d7 DWA flows without new secondary tanks.",
+                "Strong pathway for ultra-low TP (< 0.1 mg/L) and TSS polishing.",
+                "Magnetite recovery >99.5% achievable in normal operation.",
+                "Dual-use potential: hydraulic relief and chemical P polishing in one unit.",
             ],
             limitations=[
+                "Does not address biological limitations \u2014 nitrification, TN, TP from "
+                "biology, or aeration capacity.",
+                "Not a substitute for upstream attenuation at extreme peaks (>3\u00d7 ADWF).",
+                "Performance depends on water-grade magnetite with controlled particle size "
+                "distribution (PSD ~10\u201330 \u03bcm). Oversized particles increase abrasion; "
+                "undersized particles reduce magnetic recovery and increase ballast loss rate.",
                 "Continuous magnetite supply and on-site magnetic recovery system required.",
-                "Whole-of-life cost sensitive to recovery efficiency and logistics.",
-                "Does not address biological constraints (nitrification, TN, EBPR).",
-                "Requires continuous flow \u2014 batch SBR plants need side-stream configuration.",
-                "Extreme peaks above 3\u00d7 ADWF may still require complementary upstream "
-                "attenuation \u2014 CoMag mitigates but does not fully resolve extreme hydraulic events.",
+                "Whole-of-life cost sensitive to recovery efficiency, PSD specification, "
+                "and logistics distance.",
+                "Requires continuous flow \u2014 SBR plants need side-stream configuration.",
             ],
             key_engineering_truth=(
-                "CoMag mitigates secondary treatment performance under peak flows; it does not "
-                "eliminate the need for upstream hydraulic attenuation at extreme events. "
-                "At flow ratios above 3\u00d7 ADWF, CoMag should be considered as part of a "
-                "combined strategy with I/I reduction or storm storage, not as a standalone solution. "
-                "Magnetite supply pre-qualification is a non-negotiable commissioning prerequisite."
+                "CoMag is a clarification and hydraulic relief technology. It is not a biological "
+                "treatment system. Select CoMag when high-rate hydraulic relief or ultra-low "
+                "phosphorus / solids polishing is the primary need. Where aeration or nitrification "
+                "is the true bottleneck, MABR or IFAS remain the correct response. "
+                "At flow ratios above 3\u00d7 ADWF, CoMag provides material relief but must be "
+                "part of a combined strategy with upstream I/I reduction or storage \u2014 it does "
+                "not eliminate the need for attenuation at extreme events. "
+                "Magnetite PSD pre-qualification (\u223c10\u201330 \u03bcm, water-grade) is a "
+                "non-negotiable commissioning prerequisite: incorrect PSD increases abrasion risk, "
+                "reduces recovery efficiency, and drives up ballast loss OPEX."
             ),
-            typical_stack_position="Stage 1",
+            typical_stack_position="Stage 1 (hydraulic / wet weather); Stage 3 (tertiary P / solids polishing)",
             capex_class="Medium",
             complexity="Medium",
-            supply_dependency="Medium",
+            supply_dependency="High",
         ),
 
         # ── 6. BioMag ─────────────────────────────────────────────────────────
         TechPosition(
             code="BIOMAG",
-            name="BioMag\u00ae (ballasted MBBR-activated sludge hybrid)",
-            category="Settling + Biological",
+            name="BioMag\u00ae (ballasted biological activated sludge intensification)",
+            category="Settling + Biomass Concentration",
             primary_role=(
-                "Combined biological intensification and ballasted settling, improving both "
-                "hydraulic throughput and biological treatment capacity in a single system. "
-                "Magnetic microspheres improve sludge density and settling velocity while "
-                "attached biofilm carriers increase biological treatment capacity."
+                "Secondary-stage settling and biomass-concentration intensification in the "
+                "biological activated sludge process. BioMag improves settling velocity and "
+                "enables higher effective MLSS without clarifier washout. It is a secondary "
+                "biological-stage technology \u2014 not a substitute for aeration intensification "
+                "or a primary hydraulic relief solution."
             ),
             best_used_when=[
-                "Both settling and biological capacity are simultaneously constrained.",
-                "MLSS is consistently elevated (> 5,000 mg/L) and clarifier SOR is critically exceeded.",
-                "A single technology must address both hydraulic and biological limitations.",
-                "Magnetite supply chain can be reliably established.",
-                "High biological load requires both increased biomass density and treatment capacity.",
+                "Clarifier / settling is the dominant bottleneck and MLSS is high.",
+                "Clarifier washout risk is limiting plant performance under peak biological load.",
+                "Additional biomass inventory is needed but clarifier solids loading is the "
+                "real constraint preventing MLSS increase.",
+                "The existing biological process is broadly sound but solids separation is "
+                "holding back capacity.",
+                "Water-grade magnetite supply (controlled PSD \u223c10\u201330 \u03bcm) "
+                "can be reliably established.",
+                "Settling and biomass concentration are jointly limiting \u2014 not aeration.",
             ],
             not_appropriate_when=[
-                "Only one constraint is active \u2014 simpler technologies (inDENSE or IFAS alone) "
-                "are more appropriate for single-constraint plants.",
-                "Supply chain access for magnetite is unreliable or plant is in a remote location.",
-                "Operational complexity must be minimised \u2014 BioMag is the most operationally "
-                "complex single-stage technology in this matrix.",
-                "Plant size is below 5 MLD \u2014 magnetite recovery economics and carrier retention "
-                "screening become disproportionately costly.",
+                "Aeration or oxygen delivery is the binding constraint \u2014 BioMag does not "
+                "improve oxygen transfer; MABR or blower expansion are the correct response.",
+                "Nitrification is limited solely by SRT or oxygen transfer without "
+                "a settling problem \u2014 IFAS or MABR are the appropriate technologies.",
+                "Hydraulic attenuation is the dominant unmet need \u2014 CoMag or EQ basin "
+                "address hydraulic overload; BioMag is not a hydraulic relief solution.",
+                "Magnetite supply chain (controlled PSD) is unreliable, particularly "
+                "at remote sites with high logistics risk.",
+                "Only one constraint is active \u2014 simpler options (inDENSE for settling "
+                "alone, IFAS for nitrification alone) avoid unnecessary complexity.",
+                "Plant size is below 5 MLD \u2014 magnetite recovery economics are unfavourable.",
             ],
             strengths=[
-                "Addresses settling and biological capacity in a single installation.",
-                "Enables higher MLSS operation without clarifier failure.",
-                "Magnetic microspheres improve sludge density and settling velocity.",
-                "Biofilm carriers provide additional SRT decoupling for nitrification.",
-                "Can increase hydraulic throughput capacity without new secondary tanks.",
+                "Increases effective biomass concentration without new reactor volume.",
+                "Improves settling velocity and reduces clarifier washout risk.",
+                "Enables higher MLSS operation within existing clarifier footprint.",
+                "Can contribute to biological capacity uplift where settling is the real bottleneck.",
+                "Combined settling + biomass concentration in a single installation.",
             ],
             limitations=[
-                "Dual supply dependency: magnetite + carrier media must both be maintained.",
-                "Highest operational complexity of the settling-intensification options.",
-                "Magnetite recovery required; loss rate must be managed.",
-                "Not appropriate as a standalone solution if hydraulic attenuation is required.",
-                "Commissioning requires careful sequencing of ballast activation and biofilm "
-                "establishment.",
+                "Does not improve oxygen transfer \u2014 aeration remains the limiting factor "
+                "if blowers are at capacity.",
+                "Does not replace EQ basin or CoMag for extreme hydraulic peak attenuation.",
+                "Performance depends on water-grade magnetite with controlled particle size "
+                "distribution (PSD \u223c10\u201330 \u03bcm). Incorrect PSD increases "
+                "abrasion risk and reduces magnetic recovery efficiency.",
+                "Dual supply dependency: magnetite + carrier media must both be managed.",
+                "Highest operational complexity of the settling-intensification technology class.",
+                "Commissioning requires sequential validation: settling improvement confirmed "
+                "before carrier activation.",
             ],
             key_engineering_truth=(
-                "BioMag is appropriate when both settling and biological constraints are active "
-                "and the plant must address both simultaneously. Where only one constraint exists, "
-                "simpler targeted options (inDENSE for settling alone, or IFAS for nitrification "
-                "alone) are preferred to avoid unnecessary operational complexity. "
-                "The dual magnetite + carrier dependency must be explicitly managed in procurement "
-                "and O&M planning."
+                "BioMag is a secondary-stage settling and biomass-concentration technology. "
+                "It is selected when settling and biomass inventory are jointly limiting \u2014 "
+                "it is not being used as a substitute for aeration intensification. "
+                "Where aeration or nitrification is the sole binding constraint, IFAS or MABR "
+                "remain the preferred pathways. "
+                "For remote plants or sites with high logistics risk, IFAS, inDENSE, or "
+                "EQ/storage may be more robust alternatives to magnetite-dependent systems. "
+                "Magnetite PSD pre-qualification (\u223c10\u201330 \u03bcm, water-grade) is "
+                "mandatory: incorrect PSD increases abrasion risk, reduces recovery efficiency, "
+                "and drives up ballast loss OPEX."
             ),
-            typical_stack_position="Stage 1\u20132",
+            typical_stack_position="Stage 1\u20132 (where settling and biomass concentration are dominant)",
             capex_class="Medium",
             complexity="High",
-            supply_dependency="Medium",
+            supply_dependency="High",
         ),
 
         # ── 7. Denitrification Filters (DNF) ──────────────────────────────────

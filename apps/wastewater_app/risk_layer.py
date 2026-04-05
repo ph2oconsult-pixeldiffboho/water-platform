@@ -92,88 +92,125 @@ class RiskReport:
 
 def _profile_comag(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:
     location = ctx.get("location_type", "metro")
-    supply_note = ("Supply chain access is good in metropolitan areas, "
-                   "reducing but not eliminating procurement risk."
-                   if location == "metro" else
-                   "Remote or regional location increases magnetite logistics risk "
-                   "and requires additional stock management.")
+    remote = location == "remote"
+    regional = location == "regional"
+    if remote:
+        supply_note = ("Remote location significantly increases magnetite logistics risk. "
+                       "Dual-sourcing, extended on-site stock (\u226560-day reserve), and a "
+                       "contingency supply protocol are essential prerequisites.")
+        supply_level = RL_HIGH
+    elif regional:
+        supply_note = ("Regional location increases logistics exposure relative to metropolitan. "
+                       "Establish supply agreement with \u226530-day on-site reserve minimum.")
+        supply_level = RL_MEDIUM
+    else:
+        supply_note = ("Metropolitan location provides good supply chain access. "
+                       "Pre-qualify \u22652 suppliers against water-grade magnetite PSD specification "
+                       "(~10\u201330 \u03bcm) before commitment.")
+        supply_level = RL_MEDIUM
     return (
-        "Medium overall risk. The primary driver is magnetite supply chain continuity and "
-        "recovery system efficiency. Technical and operational risks are manageable with "
-        "pre-commissioning supplier qualification and trained operators.",
+        "Medium overall risk (High supply risk at remote sites). CoMag is a clarification and "
+        "hydraulic relief technology. Primary risk drivers are magnetite PSD specification "
+        "compliance, recovery system efficiency, and supply chain continuity.",
         [
             RiskCategory("Technical", RL_MEDIUM,
-                "Magnetite recovery efficiency is sensitive to bypass events, "
-                "high shear conditions, and equipment wear. A single bypass "
-                "event can cause significant magnetite loss requiring restocking.",
-                "Design recovery system for >99.5% efficiency. Establish monitoring "
-                "of magnetite inventory and loss rate from first day of operation. "
-                "Include a manual bypass isolation procedure in the O&M plan."),
+                "Clarification performance depends on water-grade magnetite with controlled "
+                "particle size distribution (PSD ~10\u201330 \u03bcm). Oversized particles "
+                "increase abrasion and separator wear; undersized particles reduce magnetic "
+                "recovery and increase ballast loss rate. Recovery efficiency sensitive to "
+                "bypass events and high shear conditions.",
+                "Pre-qualify magnetite supplier against PSD specification before procurement. "
+                "Design recovery system for >99.5% efficiency at specified PSD. Establish "
+                "ballast loss monitoring as an operating KPI from commissioning. "
+                "Include manual bypass isolation procedure in O&M plan."),
             RiskCategory("Operational", RL_MEDIUM,
-                "Requires trained operators to manage continuous magnetite dosing, "
-                "drum separator operation, and bypass configuration during extreme "
-                "peak events. Side-stream configuration introduces additional "
-                "process control requirements.",
-                "Develop site-specific O&M manual with separator maintenance schedule. "
-                "Train operators pre-commissioning. Commission process control alarms "
-                "for separator underperformance and inventory depletion."),
-            RiskCategory("Commercial", RL_MEDIUM,
-                f"Continuous magnetite supply from a specialist supplier is required. "
-                f"{supply_note} Whole-of-life cost is sensitive to recovery "
-                f"efficiency — poor recovery compounds into significant ongoing cost.",
-                "Pre-qualify at least two magnetite suppliers. Establish a supply "
-                "agreement with minimum stock holding (≥ 30-day on-site reserve). "
-                "Include magnetite recovery performance in the OEM commissioning KPIs."),
+                "Requires trained operators to manage continuous magnetite dosing, drum "
+                "separator operation, and bypass configuration. CoMag is a clarification "
+                "technology: operators must understand it does not address biological "
+                "nitrification or TN/TP compliance from biological processes.",
+                "Develop site-specific O&M manual covering separator maintenance schedule, "
+                "ballast loss response protocol, and process control alarms. "
+                "Train operators pre-commissioning. Commission alarms for separator "
+                "underperformance and magnetite inventory depletion."),
+            RiskCategory("Commercial", supply_level,
+                f"Water-grade magnetite (controlled PSD) is a specialist material. "
+                f"{supply_note} "
+                "Whole-of-life cost sensitive to recovery efficiency and PSD compliance "
+                "\u2014 poor PSD drives up ballast loss OPEX and may compromise performance.",
+                "Pre-qualify \u22652 magnetite suppliers against PSD specification. "
+                "Establish supply agreement with minimum stock holding "
+                "(\u226530-day reserve; \u226560-day for remote). "
+                "Include PSD compliance and recovery efficiency in commissioning KPIs. "
+                "Dual-source strategy where possible."),
             RiskCategory("Financial", RL_MEDIUM,
-                "CAPEX is moderate. OPEX is dominated by magnetite make-up cost "
-                "and separator energy. Whole-of-life cost must account for "
-                "separator wear parts and periodic media restocking.",
-                "Conduct TOTEX analysis at detailed design stage. Include sensitivity "
-                "to ±20% in magnetite recovery rate. Budget for separator inspection "
-                "and wear-part replacement at 3–5 year intervals."),
+                "OPEX dominated by magnetite make-up cost, separator energy, and wear-part "
+                "replacement. Ballast loss rate (PSD-dependent) materially affects "
+                "whole-of-life cost. TOTEX sensitivity to magnetite price and logistics "
+                "distance must be assessed.",
+                "Conduct TOTEX analysis with \u00b120% sensitivity on magnetite recovery "
+                "rate and \u00b130% on logistics cost. Budget for separator inspection and "
+                "wear-part replacement at 3\u20135 year intervals. Compare against EQ basin "
+                "TOTEX if footprint becomes available."),
         ]
     )
 
 
 def _profile_biomag(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:
+    location = ctx.get("location_type", "metro")
+    remote = location == "remote"
+    supply_level = RL_HIGH if remote else RL_MEDIUM
+    remote_note = (
+        " Remote location significantly amplifies PSD logistics risk — "
+        "consider IFAS, inDENSE, or EQ/storage as lower-supply-risk alternatives."
+        if remote else ""
+    )
     return (
-        "Medium-High overall risk due to dual supply dependency (magnetite + carrier media). "
-        "BioMag addresses both settling and biological constraints simultaneously, which "
-        "justifies the higher complexity relative to single-mechanism technologies.",
+        "Medium-High overall risk. BioMag is a secondary-stage settling and biomass-concentration "
+        "technology. It is selected when clarifier settling and biomass inventory are jointly "
+        "limiting \u2014 not as a substitute for aeration intensification. Primary risk drivers "
+        "are magnetite PSD specification, dual supply dependency, and operational complexity.",
         [
             RiskCategory("Technical", RL_MEDIUM,
-                "Dual-mechanism system: magnetic microspheres must improve settling "
-                "velocity while biofilm carriers provide additional biological capacity. "
-                "Failure of either component reduces system performance. Magnetite "
-                "loss events or carrier screen fouling can degrade both functions.",
-                "Commission and validate settling improvement (inDENSE baseline) before "
-                "activating carrier component. Establish independent monitoring for "
-                "magnetite inventory and carrier retention. Define performance thresholds "
-                "for each mechanism in the O&M plan."),
+                "Performance depends on water-grade magnetite with controlled PSD "
+                "(~10\u201330 \u03bcm). Oversized particles increase abrasion; undersized "
+                "particles reduce magnetic recovery and increase ballast loss. Carrier "
+                "screen fouling can degrade biofilm retention. "
+                "Commissioning is sequenced: settling improvement (inDENSE basis) must be "
+                "confirmed stable before carrier activation.",
+                "Pre-qualify magnetite supplier against PSD specification before commitment. "
+                "Commission settling improvement first and validate MLSS and SVI response "
+                "before activating carrier component. Establish separate monitoring for "
+                "magnetite inventory, ballast loss rate, and carrier retention."),
             RiskCategory("Operational", RL_HIGH,
                 "Highest operational complexity in the settling-intensification technology "
-                "class. Requires simultaneous management of magnetite recovery, carrier "
-                "screen maintenance, and biofilm establishment. If control systems "
-                "prioritise one component, the other may underperform.",
-                "Develop a commissioning sequence that validates each mechanism "
-                "independently before combined operation. Allocate dedicated operator "
-                "training for both magnetite and carrier subsystems. Establish a "
-                "specialist OEM support contract for the first 2 years of operation."),
-            RiskCategory("Commercial", RL_MEDIUM,
-                "Dual supply dependency: magnetite supply chain and carrier media "
-                "supplier must both be managed concurrently. Procurement risk is "
-                "higher than for single-mechanism technologies.",
-                "Pre-qualify suppliers for both components before contract award. "
+                "class. Simultaneous management of magnetite recovery, carrier screen "
+                "maintenance, and biofilm establishment is required. If aeration or "
+                "nitrification is the true binding constraint, BioMag will not resolve "
+                "it \u2014 confirm constraint classification before deployment.",
+                "Validate that settling and biomass concentration (not aeration) are the "
+                "primary constraints before committing to BioMag. Develop a commissioning "
+                "sequence validating each mechanism independently. Allocate dedicated "
+                "operator training for magnetite and carrier subsystems separately. "
+                "Specialist OEM support contract recommended for first 2 years."),
+            RiskCategory("Commercial", supply_level,
+                "Dual supply dependency: water-grade magnetite (controlled PSD) and carrier "
+                f"media must both be managed concurrently.{remote_note} "
+                "Procurement risk is higher than for single-mechanism alternatives "
+                "(inDENSE, IFAS). PSD non-compliance from a supplier increases abrasion "
+                "and recovery loss without obvious immediate failure.",
+                "Pre-qualify \u22652 magnetite suppliers against PSD specification. "
                 "Establish independent supply agreements for magnetite and carriers. "
-                "Confirm carrier media compatibility with the magnetite recovery system."),
+                "Confirm carrier media compatibility with the magnetite recovery system. "
+                "Dual-source magnetite where logistics risk is material."),
             RiskCategory("Financial", RL_MEDIUM,
-                "CAPEX is moderate for each component. Combined OPEX (magnetite make-up "
-                "+ carrier screen maintenance + specialist O&M) is higher than "
-                "conventional settling upgrades. Long-term TOTEX benefit depends "
-                "on achieving the combined settling and biological performance target.",
-                "Conduct joint TOTEX analysis comparing BioMag to separate inDENSE + "
-                "IFAS. Include sensitivity to carrier media replacement cost. "
-                "Define the performance KPIs that justify combined deployment."),
+                "Combined OPEX (magnetite make-up + carrier screen maintenance + specialist "
+                "O&M) is higher than simpler settling alternatives. Ballast loss rate "
+                "(PSD-dependent) materially affects OPEX. Long-term TOTEX benefit "
+                "requires both settling and biological performance targets to be achieved.",
+                "Conduct joint TOTEX analysis comparing BioMag against separate "
+                "inDENSE + IFAS. Include PSD logistics cost sensitivity (\u00b130%). "
+                "Define performance KPIs (MLSS, SVI, clarifier SOR) that justify "
+                "combined deployment over simpler alternatives."),
         ]
     )
 

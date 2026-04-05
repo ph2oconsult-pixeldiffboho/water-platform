@@ -149,7 +149,7 @@ class _TechProfile:
 _PROFILES: Dict[str, _TechProfile] = {
 
     TI_COMAG: _TechProfile(
-        supply_risk_base="Medium",
+        supply_risk_base="High",
         opex_impact="Medium",
         complexity="Medium",
         chemical_dep="Medium",   # magnetite
@@ -158,18 +158,26 @@ _PROFILES: Dict[str, _TechProfile] = {
         sludge_impact="Low",
         base_feasibility="Medium",
         notes=[
-            "Requires continuous magnetite supply chain and on-site recovery system.",
-            "Recovery efficiency (typically >99.5%) determines whole-of-life cost.",
-            "Magnetite loss rate drives replacement cost — sensitive to shear and bypass events.",
+            "Requires continuous water-grade magnetite with controlled particle size distribution (PSD ~10–30 μm). "
+            "Oversized particles increase abrasion and equipment wear; undersized particles reduce "
+            "magnetic recovery efficiency and increase ballast loss rate and OPEX.",
+            "Recovery efficiency (>99.5% at correct PSD) determines whole-of-life cost. "
+            "Pre-qualify magnetite suppliers against PSD specification before commitment.",
+            "Monitor ballast loss as an operating KPI from commissioning. "
+            "Logistics risk increases sharply at remote sites — dual-sourcing and \u226530-day contingency stock are essential.",
         ],
         risks=[
-            "Supply chain disruption to magnetite stock halts operation.",
-            "Whole-of-life cost sensitive to recovery efficiency and logistics distance.",
+            "Supply chain disruption to water-grade magnetite (controlled PSD) halts operation. "
+            "Pre-qualify \u22652 suppliers against PSD specification.",
+            "Incorrect PSD (oversized) causes abrasion; undersized reduces recovery efficiency "
+            "and increases ballast loss OPEX.",
+            "Whole-of-life cost sensitive to recovery efficiency, ballast loss rate, "
+            "and logistics distance — conduct TOTEX sensitivity at \u00b120% recovery.",
         ],
     ),
 
     TI_BIOMAG: _TechProfile(
-        supply_risk_base="Medium",
+        supply_risk_base="High",
         opex_impact="Medium",
         complexity="High",
         chemical_dep="Medium",
@@ -178,13 +186,26 @@ _PROFILES: Dict[str, _TechProfile] = {
         sludge_impact="Low",
         base_feasibility="Medium",
         notes=[
-            "Combines magnetite ballast with biofilm carriers — dual supply dependency.",
-            "More operationally complex than CoMag alone due to biological component.",
-            "Requires magnetite recovery and carrier retention screening.",
+            "Secondary-stage settling and biomass-concentration technology — not a "
+            "substitute for aeration intensification. Selected when settling and biomass "
+            "inventory are jointly limiting, not when aeration or oxygen is the bottleneck.",
+            "Requires water-grade magnetite with controlled particle size distribution "
+            "(PSD ~10–30 μm). Incorrect PSD increases abrasion risk and reduces "
+            "magnetic recovery efficiency. Pre-qualify supplier against PSD specification.",
+            "Dual supply dependency: magnetite (controlled PSD) and carrier media must "
+            "both be managed concurrently. Logistics risk increases at remote sites.",
+            "Carrier retention screens required at zone outlets — combined with "
+            "magnetite recovery, operational complexity is the highest in this technology class.",
         ],
         risks=[
-            "Higher operational complexity than single-mechanism technologies.",
-            "Magnetite supply and carrier retention must both be maintained simultaneously.",
+            "Incorrect magnetite PSD (oversized) causes abrasion; undersized reduces "
+            "recovery efficiency and increases ballast loss OPEX.",
+            "If aeration or nitrification is the sole binding constraint, BioMag will not "
+            "resolve the primary issue — MABR or IFAS are the correct technologies.",
+            "Higher operational complexity than single-mechanism alternatives (inDENSE, IFAS). "
+            "Both magnetite recovery and carrier retention must be maintained simultaneously.",
+            "Whole-of-life cost sensitive to magnetite loss rate, recovery efficiency, "
+            "and logistics distance — evaluate against simpler alternatives on TOTEX.",
         ],
     ),
 
