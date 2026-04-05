@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z36", "5 Apr 2026", [
+        "Stabilisation Layer Production V1 — apps/wastewater_app/stabilisation_layer.py",
+        "5 option types: inDENSE trial, recycle optimisation, DO/aeration audit, COD fractionation audit, monitoring/trial programme",
+        "inDENSE guard: requires at least one CONTEXT-LEVEL signal (high_mlss, svi_elevated, svi_unknown, solids_carryover, clarifier_util>=0.85) — stress-engine CT_SETTLING alone is not sufficient",
+        "MBR exclusion: inDENSE always excluded for is_mbr=True (settling in MBR is handled by memDENSE)",
+        "Purely hydraulic overload without MLSS signal: inDENSE correctly absent",
+        "Capital classification: May defer capital / De-risks capital / Improves operational confidence only",
+        "Cap at 4 options, sorted by capital value; section suppressed if no credible options",
+        "16/16 checks; 282/282 tests; primary stack unchanged by layer",
+    ]),
     ("v24Z35", "5 Apr 2026", [
         "Uncertainty and Sensitivity Layer Production V1 — apps/wastewater_app/uncertainty_layer.py",
         "5 uncertainty dimensions: influent variability, hydraulic variability, process performance, carbon model (N2O always High), delivery/integration risk",
