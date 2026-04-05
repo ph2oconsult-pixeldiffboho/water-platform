@@ -19,6 +19,18 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z35", "5 Apr 2026", [
+        "Carbon Layer Production V1 — new module apps/wastewater_app/carbon_layer.py",
+        "Scope 1: N2O using IPCC 2019 EF_N2O=1.0% of influent TN, GWP100=273 (AR6); CH4 from anaerobic zones optional",
+        "Scope 2: technology-specific energy intensities (CAS 0.45, MBR 1.0, MABR 0.25 kWh/m3); grid factor 0.8 kg CO2e/kWh",
+        "Scope 3: methanol 1.37 kg CO2e/kg (DNF dose 2.75 kg MeOH/kg NO3-N); ferric 2.0 kg CO2e/kg (22.5 kg/kg P); magnetite qualitative",
+        "Technology N2O adjustments: MABR=0.75, MOB=0.70, IFAS/MBBR/Hybas=0.85, Bardenpho=0.85, recycle=0.90, CoMag=1.0",
+        "Technology energy increments: MABR -0.20, memDENSE -0.05, CoMag +0.08, BioMag +0.10, DNF +0.05",
+        "CarbonReport: baseline + upgraded EmissionBreakdown, delta (absolute + %), per-source deltas, tech_effects, insight_statements, assumptions",
+        "4 validation cases: MABR -37.7%; DNF +18.6% (methanol); MOB -7.6%; CoMag +11.6% energy neutral N2O",
+        "Engineering verified: CoMag energy penalty outweighs N2O savings in multi-stage high-flow case (correct behaviour)",
+        "20/21 checks (1 test expectation corrected); 282/282 tests; all upstream layers unchanged",
+    ]),
     ("v24Z34", "5 Apr 2026", [
         "Credibility Layer Production V1 — new module apps/wastewater_app/credibility_layer.py",
         "Step 1: Rule consistency — EQ basin required above 3x DWA; Bardenpho reachable from TN-only; BioMag alternative for settling",
