@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z38", "5 Apr 2026", [
+        "Biological Pathway Hierarchy Patch Production V1 — stack_generator.py",
+        "PathwayStage gains two new fields: bio_hierarchy_level (0=non-bio, 1=process opt, 2=biofilm, 3=aeration, 4=tertiary) and bio_hierarchy_rationale (engineer-readable explanation)",
+        "emit() closure and _make_stage() updated to pass bio_level/bio_rationale through",
+        "Stage 3 (nitrification): Level 2 = IFAS/Hybas when SRT is limiting and aeration has headroom; Level 3 = MABR when blower is near maximum — explicit rationale embedded in each branch",
+        "Stage 4 (TN): all paths annotated as Level 1 (process optimisation) — Bardenpho and recycle always first; no level-skipping to biofilm or tertiary",
+        "LOT alternative (Option B): when tn_target_mg_l <= 3.0 and NH4 stable, LOT-specific alternative generated with Bardenpho BEFORE DNF and explicit Level 1 prerequisite statement",
+        "Guardrail notes: biological hierarchy trace added to guardrail_notes after every stack — levels used, Level 1 confirmation for TN-only cases, MABR Level 3 justification, warning if level-skipping detected",
+        "22/22 validation checks; 282/282 benchmark tests; all prior fixes preserved",
+    ]),
     ("v24Z37", "5 Apr 2026", [
         "Final Combined Logic Patch — 4 surgical fixes across 3 modules",
         "Fix 1 (stack_generator.py): _classify_from_failure_modes — CT_SETTLING fully suppressed when no context-level signal (high_mlss/svi_elevated/svi_unknown/solids_carryover/clarifier_util>=1.0). Stress-engine SOR alone no longer creates a settling constraint.",

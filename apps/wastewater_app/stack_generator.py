@@ -169,6 +169,9 @@ class PathwayStage:
     prerequisite:  str  = ""
     capex_class:   str  = "Medium"
     complexity:    str  = "Medium"
+    # ── Biological hierarchy traceability (v24Z38) ──────────────────────────
+    bio_hierarchy_level:     int = 0   # 0=non-bio, 1=process opt, 2=biofilm, 3=aeration, 4=tertiary
+    bio_hierarchy_rationale: str = ""  # why this level was selected
 
 
 @dataclass
@@ -412,7 +415,8 @@ def _apply_guardrails(
 def _make_stage(
     num: int, tech: str, mechanism: str,
     purpose: str, basis: str,
-    addresses: List[str], prereq: str = ""
+    addresses: List[str], prereq: str = "",
+    bio_level: int = 0, bio_rationale: str = "",
 ) -> PathwayStage:
     return PathwayStage(
         stage_number    = num,
@@ -426,6 +430,8 @@ def _make_stage(
         prerequisite    = prereq,
         capex_class     = _CAPEX.get(tech, "Medium"),
         complexity      = _COMPLEXITY.get(tech, "Medium"),
+        bio_hierarchy_level     = bio_level,
+        bio_hierarchy_rationale = bio_rationale,
     )
 
 
@@ -448,11 +454,13 @@ def _build_pathway_stages(
     stage_n = [1]
 
     def emit(tech: str, mech: str, purpose: str, basis: str,
-             addresses: List[str], prereq: str = "") -> None:
+             addresses: List[str], prereq: str = "",
+             bio_level: int = 0, bio_rationale: str = "") -> None:
         if tech in used: return
         used.add(tech)
         stages.append(_make_stage(
-            stage_n[0], tech, mech, purpose, basis, addresses, prereq))
+            stage_n[0], tech, mech, purpose, basis, addresses, prereq,
+            bio_level=bio_level, bio_rationale=bio_rationale))
         stage_n[0] += 1
 
     # ── Stage 1: Hydraulic stabilisation ──────────────────────────────────────
@@ -528,11 +536,14 @@ def _build_pathway_stages(
                 "SOR headroom recovers without clarifier expansion.",
                 [CT_SETTLING])
 
-    # ── Stage 3: Nitrification unlock ─────────────────────────────────────────
+    # ── Stage 3: Nitrification unlock — biological hierarchy Levels 2 and 3 ──────
+    # Level 2 (biomass retention): use when SRT is the bottleneck and aeration has headroom
+    # Level 3 (aeration intensification): use only when blower is the binding constraint
     if CT_NITRIFICATION in ct_set and TI_MIGINDENSE not in used:
         settling_present = any(s.technology in (TI_INDENSE, TI_BIOMAG, TI_COMAG, TI_MEMDENSE)
                                for s in stages)
         if aer_constrained:
+            # Level 3: Aeration is the binding constraint — MABR bypasses blower limitation
             emit(TI_MABR, MECH_AER_INT,
                 "MABR (OxyFAS) delivers oxygen directly to the biofilm via gas-permeable "
                 "hollow-fibre membranes, providing nitrification capacity without blower expansion.",
@@ -541,8 +552,15 @@ def _build_pathway_stages(
                 "NHx resilience is maintained even when blower capacity is near maximum. "
                 "Calibrated to Kawana modelling: NHx <0.1 mg/L across all load scenarios.",
                 [CT_NITRIFICATION],
-                prereq="Stage 2 settling stabilisation complete" if settling_present else "")
+                prereq="Stage 2 settling stabilisation complete" if settling_present else "",
+                bio_level=3,
+                bio_rationale=(
+                    "MABR is selected at Level 3 (aeration intensification) because the aeration "
+                    "system is near maximum capacity. IFAS or Hybas would not resolve the oxygen "
+                    "delivery limitation — blower headroom is the binding constraint, not SRT alone."
+                ))
         elif settling_present:
+            # Level 2: SRT is the bottleneck; settling is already addressed; Hybas unlocks nitrification
             emit(TI_HYBAS, MECH_BIOFILM_RET,
                 "Hybas biofilm carriers decouple nitrification SRT from hydraulic SRT. "
                 "Nitrifiers accumulate on carriers independent of the WAS rate, providing "
@@ -551,21 +569,39 @@ def _build_pathway_stages(
                 "reactor volume. Suspended MLSS decreases (less clarifier loading). "
                 "Carriers are retained by screens at zone outlets.",
                 [CT_NITRIFICATION],
-                prereq="Stage 2 settling stabilisation complete")
+                prereq="Stage 2 settling stabilisation complete",
+                bio_level=2,
+                bio_rationale=(
+                    "Hybas is selected at Level 2 (biomass retention) because settling is already "
+                    "addressed and SRT is the controlling nitrification constraint. Biofilm "
+                    "retention provides the additional effective sludge age without blower expansion."
+                ))
         else:
+            # Level 2: SRT is the bottleneck; aeration has headroom; IFAS is the most direct match
             emit(TI_IFAS, MECH_BIOFILM_RET,
                 "IFAS carriers retain nitrifying biofilm in the existing aeration zone, "
                 "decoupling nitrification SRT from the hydraulic SRT of the tank.",
                 "No new tank volume required. Media retention screens installed at zone outlets. "
                 "Effective nitrification SRT can exceed 15 days even at short hydraulic SRT. "
                 "MLSS may decrease as biofilm carries more of the nitrification load.",
-                [CT_NITRIFICATION])
+                [CT_NITRIFICATION],
+                bio_level=2,
+                bio_rationale=(
+                    "IFAS is selected at Level 2 (biomass retention) because the nitrification "
+                    "constraint is driven by insufficient SRT / effective sludge age, not by oxygen "
+                    "delivery limitation. Aeration headroom exists; MABR is not required."
+                ))
 
-    # ── Stage 4: TN polishing ──────────────────────────────────────────────────
+    # ── Stage 4: TN polishing — biological hierarchy Level 1 ─────────────────
+    # Level 1: Suspended growth / process optimisation is ALWAYS the first response
+    # to TN exceedance. Biofilm or tertiary (Levels 2–4) only follow when Level 1
+    # is explicitly exhausted or inapplicable.
     if CT_TN_POLISH in ct_set or (CT_BIOLOGICAL in ct_set and CT_NITRIFICATION not in ct_set):
         biofilm_present = any(s.technology in (TI_IFAS, TI_HYBAS, TI_MBBR, TI_MABR, TI_MIGINDENSE)
                               for s in stages)
         if biofilm_present:
+            # Level 1 after biofilm: Bardenpho zone optimisation uses the elevated nitrate
+            # substrate produced by biofilm nitrification — still process optimisation
             emit(TI_BARDENPHO, MECH_PROC_OPT,
                 "Bardenpho zone optimisation maximises denitrification using the elevated "
                 "nitrate load produced by biofilm nitrification.",
@@ -574,15 +610,29 @@ def _build_pathway_stages(
                 "Carbon availability for denitrification should be assessed — "
                 "external carbon may be needed if COD/N < 4.",
                 [CT_TN_POLISH, CT_BIOLOGICAL],
-                prereq="Stage 3 biofilm commissioned and stable")
+                prereq="Stage 3 biofilm commissioned and stable",
+                bio_level=1,
+                bio_rationale=(
+                    "Biological optimisation is the first-line TN response. Bardenpho zone "
+                    "optimisation is selected because nitrification is already active via biofilm "
+                    "and TN exceedance is driven by denitrification limitation in the existing "
+                    "process configuration."
+                ))
         else:
+            # Level 1: NH4 compliant / TN-only — suspended growth optimisation first
             emit(TI_RECYCLE_OPT, MECH_PROC_OPT,
                 "Internal recycle ratio optimisation improves denitrification efficiency "
                 "without capital expenditure.",
                 "MLR ratio R ≈ 2 recovers ~67% of nitrate; R=4 recovers ~80%. "
                 "Diminishing returns above R=4 due to dissolved oxygen carry-over. "
                 "RAS optimisation protects clarifier SOR.",
-                [CT_TN_POLISH, CT_BIOLOGICAL])
+                [CT_TN_POLISH, CT_BIOLOGICAL],
+                bio_level=1,
+                bio_rationale=(
+                    "Biological optimisation is the first-line TN response because nitrification "
+                    "is already stable and TN exceedance is driven by denitrification limitation. "
+                    "Recycle optimisation is the lowest-cost and fastest intervention."
+                ))
             # Add Bardenpho if zone reconfiguration is feasible
             emit(TI_BARDENPHO, MECH_PROC_OPT,
                 "Bardenpho zone reconfiguration extracts more TN removal from existing "
@@ -591,7 +641,13 @@ def _build_pathway_stages(
                 "Anaerobic zone HRT 2–2.5h optimal for PAO selection. "
                 "External carbon dosing to the post-anoxic zone if carbon-limited.",
                 [CT_TN_POLISH, CT_BIOLOGICAL],
-                prereq="Recycle optimisation complete")
+                prereq="Recycle optimisation complete",
+                bio_level=1,
+                bio_rationale=(
+                    "Bardenpho zone reconfiguration is Level 1 process optimisation — it uses "
+                    "existing tank volume and carbon to improve denitrification without biofilm "
+                    "or tertiary intervention."
+                ))
 
     # ── Stage 5: TP polishing ──────────────────────────────────────────────────
     if CT_TP_POLISH in ct_set:
@@ -654,26 +710,56 @@ def _build_pathway_alternatives(
 
     # Option B — Higher performance / future-proof
     high_perf: List[str] = []
+    nh4_stable   = not plant_context.get("nh4_near_limit", False)
+    tn_target_val= plant_context.get("tn_target_mg_l", 10.) or 10.
+    lot_case     = tn_target_val <= 3.0 and nh4_stable  # licence-of-the-future DNF case
+
     if CT_NITRIFICATION in ct_set and TI_MABR not in tech_codes:
         high_perf.append(_TECH_DISPLAY[TI_MABR])
     if CT_TN_POLISH in ct_set or CT_BIOLOGICAL in ct_set:
         high_perf.append(_TECH_DISPLAY[TI_DENFILTER])
     if not high_perf:
         high_perf = [_TECH_DISPLAY.get(s.technology, s.technology) for s in stages]
-    alts.append(AlternativePathway(
-        label="Option B — Higher performance (licence-of-the-future compliant)",
-        stages=high_perf[:4],
-        rationale=(
-            "Select technologies that provide headroom beyond the current licence limits. "
-            "MABR and denitrification filtration achieve NH4 <0.5 mg/L and TN <3 mg/L, "
-            "positioning the plant for future tightening without further civil works."
-        ),
-        when_preferred=(
-            "When the utility anticipates licence tightening within 10 years, footprint "
-            "is constrained, or energy minimisation is a strategic priority."
-        ),
-        capex_class="High",
-    ))
+
+    if lot_case:
+        # LOT pathway: Bardenpho first, DNF only after biological optimisation is exhausted
+        # Guardrail: DNF must not appear until NH4 is stably controlled
+        lot_stages = [_TECH_DISPLAY[TI_BARDENPHO], _TECH_DISPLAY[TI_DENFILTER]]
+        if TI_MABR not in tech_codes and CT_NITRIFICATION in ct_set:
+            lot_stages = [_TECH_DISPLAY[TI_MABR]] + lot_stages
+        alts.append(AlternativePathway(
+            label="Option B — Licence-of-the-future pathway (TN < 3 mg/L)",
+            stages=lot_stages[:4],
+            rationale=(
+                "Level 1 (Bardenpho optimisation) is the prerequisite before Level 4 (DNF). "
+                "A denitrification filter achieves TN < 3 mg/L reliably but must only be "
+                "commissioned after nitrification is stably controlled (NH4 < 1 mg/L) and "
+                "biological optimisation is exhausted. "
+                "Methanol dose: ~2.5–3.0 mg/mg NO3-N removed. DO at filter inlet must be < 0.5 mg/L. "
+                "This is Level 4 in the biological escalation hierarchy — not a substitute for "
+                "incomplete biological treatment."
+            ),
+            when_preferred=(
+                "When TN target < 3 mg/L is required and biological optimisation cannot close "
+                "the residual gap. Always implement Level 1 (Bardenpho) before commissioning DNF."
+            ),
+            capex_class="High",
+        ))
+    else:
+        alts.append(AlternativePathway(
+            label="Option B — Higher performance (licence-of-the-future compliant)",
+            stages=high_perf[:4],
+            rationale=(
+                "Select technologies that provide headroom beyond the current licence limits. "
+                "MABR and denitrification filtration achieve NH4 <0.5 mg/L and TN <3 mg/L, "
+                "positioning the plant for future tightening without further civil works."
+            ),
+            when_preferred=(
+                "When the utility anticipates licence tightening within 10 years, footprint "
+                "is constrained, or energy minimisation is a strategic priority."
+            ),
+            capex_class="High",
+        ))
 
     return alts
 
@@ -850,6 +936,57 @@ def build_upgrade_pathway(
             "Note: Extreme wet weather may still require storage or sewer attenuation "
             "even after process upgrades are complete."
         )
+
+    # ── Biological hierarchy traceability notes (v24Z38) ──────────────────────
+    bio_stages  = [s for s in stages if s.bio_hierarchy_level > 0]
+    ct_set_g    = {c.constraint_type for c in constraints}
+    nh4_stable  = not ctx.get("nh4_near_limit", False)
+    aer_const   = bool(ctx.get("aeration_constrained", False))
+
+    if bio_stages:
+        levels_used = sorted({s.bio_hierarchy_level for s in bio_stages})
+        level_map   = {1:"Level 1 (process optimisation)",
+                       2:"Level 2 (biomass retention)",
+                       3:"Level 3 (aeration intensification)",
+                       4:"Level 4 (tertiary denitrification)"}
+        levels_str  = " → ".join(level_map.get(l,"") for l in levels_used)
+        guardrail_notes.append(
+            f"Biological hierarchy: {levels_str}. "
+            "This sequence reflects the expert escalation principle: optimise suspended "
+            "growth first, add biomass retention only when SRT is limiting, add aeration "
+            "intensification only when blowers are the binding constraint, and apply "
+            "tertiary denitrification only when biological optimisation is exhausted."
+        )
+
+    # If TN-only case: confirm no level-skipping occurred
+    if (CT_TN_POLISH in ct_set_g or CT_BIOLOGICAL in ct_set_g) and CT_NITRIFICATION not in ct_set_g:
+        has_l1 = any(s.bio_hierarchy_level == 1 for s in bio_stages)
+        has_l2_plus = any(s.bio_hierarchy_level >= 2 for s in bio_stages)
+        if has_l2_plus and not has_l1:
+            guardrail_notes.append(
+                "WARNING: TN-only case — Level 2+ technology selected without Level 1 "
+                "(process optimisation). Review constraint classification."
+            )
+        elif has_l1:
+            guardrail_notes.append(
+                "TN exceedance addressed via Level 1 (process optimisation) — correct "
+                "hierarchy entry point for nitrogen-compliant plant."
+            )
+
+    # If nitrification case: confirm MABR is justified by aeration constraint
+    if CT_NITRIFICATION in ct_set_g:
+        mabr_in = any(s.technology == TI_MABR for s in stages)
+        if mabr_in and not aer_const:
+            guardrail_notes.append(
+                "Note: MABR selected without confirmed aeration constraint. "
+                "Verify blower capacity audit confirms headroom is insufficient before "
+                "detailed design commitment. IFAS may be preferred if headroom exists."
+            )
+        elif mabr_in and aer_const:
+            guardrail_notes.append(
+                "MABR justified at Level 3: aeration system is near maximum capacity. "
+                "IFAS alone would not resolve the oxygen delivery constraint."
+            )
 
     # ── Step 6-7: Build alternatives and narrative ─────────────────────────────
     alternatives  = _build_pathway_alternatives(constraints, stages, ctx)
