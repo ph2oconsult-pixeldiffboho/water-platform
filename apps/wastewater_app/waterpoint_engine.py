@@ -90,6 +90,10 @@ def analyse(wp: WaterPointInput) -> WaterPointResult:
     Routes to Nereda-specific model when wp.nereda_enabled == True.
     Returns WaterPointResult.  Never raises.
     """
+    # ── MOB Intensified SBR pathway ───────────────────────────────────
+    if getattr(wp, "mob_enabled", False):
+        return _analyse_mob(wp)
+
     # ── Nereda pathway ────────────────────────────────────────────────
     if getattr(wp, "nereda_enabled", False):
         return _analyse_nereda(wp)
@@ -117,6 +121,74 @@ def analyse(wp: WaterPointInput) -> WaterPointResult:
         decision_layer  = decision,
         compliance_risk = compliance,
     )
+
+
+def _analyse_mob(wp: WaterPointInput) -> WaterPointResult:
+    """MOB Intensified SBR (miGRATE + inDENSE) analysis pipeline."""
+    try:
+        from apps.wastewater_app.waterpoint_mob import (
+            calculate_mob_stress, detect_mob_failure_modes,
+            generate_mob_decisions, assess_mob_compliance,
+        )
+
+        mob    = calculate_mob_stress(wp)
+        m_modes= detect_mob_failure_modes(wp, mob)
+        m_dec  = generate_mob_decisions(wp, mob, m_modes)
+        m_comp = assess_mob_compliance(wp, mob, m_modes)
+
+        fm_items = [FailureMode(title=m.title, description=m.description,
+                                severity=m.severity) for m in m_modes]
+        if any(m.severity == "High"    for m in fm_items): overall = "High"
+        elif any(m.severity == "Medium" for m in fm_items): overall = "Medium"
+        elif fm_items:                                       overall = "Low"
+        else:                                                overall = "Low"
+        failure = FailureModes(items=fm_items, overall_severity=overall)
+
+        stress = SystemStress(
+            state              = mob.state,
+            proximity_percent  = mob.proximity,
+            primary_constraint = mob.primary_constraint,
+            rate               = mob.rate,
+            time_to_breach     = mob.t2b,
+            confidence         = mob.confidence,
+            rationale          = mob.rationale,
+        )
+
+        decision = DecisionLayer(
+            short_term        = m_dec["short_term"],
+            medium_term       = m_dec["medium_term"],
+            long_term         = m_dec["long_term"],
+            capex_range       = m_dec["capex_range"],
+            risk_if_no_action = m_dec["risk_if_no_action"],
+        )
+
+        compliance = ComplianceRisk(
+            compliance_risk     = m_comp["compliance_risk"],
+            likely_breach_type  = m_comp["likely_breach_type"],
+            regulatory_exposure = m_comp["regulatory_exposure"],
+            reputational_risk   = m_comp["reputational_risk"],
+        )
+
+        return WaterPointResult(
+            system_stress   = stress,
+            failure_modes   = failure,
+            decision_layer  = decision,
+            compliance_risk = compliance,
+        )
+
+    except Exception as _mob_exc:
+        _fb = SystemStress(
+            state="Unknown", proximity_percent=0.,
+            primary_constraint="MOB model error",
+            rate="Unknown", time_to_breach="Not available", confidence="Low",
+            rationale=f"MOB analysis failed: {_mob_exc}",
+        )
+        return WaterPointResult(
+            system_stress   = _fb,
+            failure_modes   = FailureModes(),
+            decision_layer  = DecisionLayer(risk_if_no_action="MOB analysis error."),
+            compliance_risk = _fallback_compliance(),
+        )
 
 
 def _analyse_nereda(wp: WaterPointInput) -> WaterPointResult:

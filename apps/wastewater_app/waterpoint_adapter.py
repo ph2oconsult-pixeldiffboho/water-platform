@@ -85,6 +85,25 @@ class WaterPointInput:
     flow_first_flush_duration_hr: Optional[float] = None
     flow_wet_weather_duration_hr: Optional[float] = None
     flow_wet_weather_profile: Optional[str]  = None
+    # MOB Intensified SBR fields (technology_code == "migrate_indense")
+    mob_enabled:          bool           = False
+    migrate_enabled:      bool           = False
+    indense_enabled:      bool           = False
+    sbr_count:            Optional[int]   = None
+    sbr_volume_m3:        Optional[float] = None
+    sbr_fill_volume_m3:   Optional[float] = None
+    cycle_time_normal_hr: Optional[float] = None
+    cycle_time_storm_hr:  Optional[float] = None
+    migrate_fill_fraction_pct:          Optional[float] = None
+    migrate_surface_area_addition_m2_per_m3: Optional[float] = None
+    migrate_total_surface_area_m2:      Optional[float] = None
+    indense_pressure_psig:              Optional[float] = None
+    indense_overflow_flow_pct:          Optional[float] = None
+    indense_underflow_flow_pct:         Optional[float] = None
+    indense_overflow_solids_pct:        Optional[float] = None
+    indense_underflow_solids_pct:       Optional[float] = None
+    carrier_screening_available:        bool           = True
+    selector_operational:               bool           = True
     # Nereda-specific fields (populated when technology_code == "granular_sludge")
     nereda_enabled:      bool           = False
     nereda_fbt_m3:       Optional[float] = None   # balance tank volume

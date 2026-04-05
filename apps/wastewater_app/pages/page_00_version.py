@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z25", "19 Mar 2026", [
+        "MOB Intensified SBR WaterPoint module — miGRATE + inDENSE (Lang Lang calibrated)",
+        "New file: waterpoint_mob.py — cycle throughput, settling/solids retention, biofilm nitrification, selector domains",
+        "technology_code='migrate_indense' activates mob_enabled pathway",
+        "19 new WaterPointInput fields: mob/migrate/indense flags, SBR geometry, cycle times, inDENSE split ratios",
+        "8 MOB-specific failure modes: throughput saturation, selector underperformance, settling limitation (miGRATE-only), carrier screening, nitrification under load, wet weather compression, TP trimming dependency, DO/aeration limitation",
+        "Key rule: miGRATE alone does not improve SVI — settling improvement requires inDENSE (Lang Lang finding)",
+        "State logic: Stable/Tightening/Fragile/Failure Risk driven by throughput util and selector status",
+        "Decision layer: intensify first (optimise selector, carrier, DO) before recommending civil expansion",
+        "Long-term: third SBR only if intensified envelope demonstrably exhausted",
+        "5 test cases M1-M5 all passing: baseline, miGRATE-only, full upgrade, storm PWWF, selector failure",
+        "BNR and Nereda pathways confirmed unchanged; 282/282 benchmark tests pass",
+    ]),
     ("v24Z24", "19 Mar 2026", [
         "Final credibility and UX refinement patches — 2 files modified, 21/21 checks, 282/282 tests",
         "P1: Clarifier expansion suppressed at DWA/DWP — only fires when clarifier mode is Medium or High severity",
