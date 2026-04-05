@@ -21,6 +21,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 CHANGELOG: list[tuple[str, str, list[str]]] = [
     ("v24Z34", "5 Apr 2026", [
         "Credibility Layer Production V1 — new module apps/wastewater_app/credibility_layer.py",
+        "Step 1: Rule consistency — EQ basin required above 3x DWA; Bardenpho reachable from TN-only; BioMag alternative for settling",
+        "Step 2: Completeness — MABR alternative added for nitrification; IFAS vs MABR both surfaced",
+        "Step 3: Minimum 2 alternatives enforced — generates civil expansion fallback if needed",
+        "Step 4: Technology compatibility flags — SBR+CoMag interface note; MBR+IFAS/MBBR screen warning; CoMag/BioMag magnetite dependency",
+        "Step 5: Ranking vs stack clarification — standard note always added to output",
+        "Step 6: Structured residual risks — 4 categories: Hydraulic, Chemical, Operational, Future trigger",
+        "Step 7: Executive summary in cause→mechanism→solution language; why_stack_works narrative per stage",
+        "Step 8: Consistency check — DNF without nitrification control; settling tech without settling constraint",
+        "Step 9: CredibleOutput dataclass with 17 fields — ready_for_client flag, all sections assembled",
+        "Pipeline: analyse() → build_upgrade_pathway() → assess_feasibility() → build_credible_output()",
+        "17/17 checks; 282/282 tests; UpgradePathway and FeasibilityReport unchanged",
+    ]),
+    ("v24Z34", "5 Apr 2026", [
+        "Credibility Layer Production V1 — new module apps/wastewater_app/credibility_layer.py",
         "Step 1 Rule Consistency: EQ basin warning + alt generated when flow_ratio ≥ 3.0 and no hydraulic in stack",
         "Step 2 Completeness: Bardenpho alt generated when TN active and not in stack; MABR alt when nitrification + IFAS in stack",
         "Step 3 Alternatives: guarantees ≥2 alternatives (from pathway, feasibility LRA, generated); civil expansion fallback if needed",
