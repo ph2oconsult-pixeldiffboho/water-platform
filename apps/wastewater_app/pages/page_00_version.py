@@ -19,6 +19,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z34", "5 Apr 2026", [
+        "Credibility Layer Production V1 — new module apps/wastewater_app/credibility_layer.py",
+        "Step 1 Rule Consistency: EQ basin warning + alt generated when flow_ratio ≥ 3.0 and no hydraulic in stack",
+        "Step 2 Completeness: Bardenpho alt generated when TN active and not in stack; MABR alt when nitrification + IFAS in stack",
+        "Step 3 Alternatives: guarantees ≥2 alternatives (from pathway, feasibility LRA, generated); civil expansion fallback if needed",
+        "Step 4 Compatibility: SBR+CoMag flag (bypass required); MBR+IFAS/MBBR flag (media retention screens); CoMag/BioMag magnetite note; DNF+DO note",
+        "Step 5 Ranking clarification: standard _RANKING_CLARIFICATION constant always attached",
+        "Step 6 Residual risks: structured ResidualRisk list — always Hydraulic + Future trigger; conditional Chemical, Operational, Biofilm",
+        "Step 7 Narrative: executive_summary (cause→mechanism→solution), why_stack_works (per-stage linkage), feasibility_narrative",
+        "Step 8 Consistency: DNF without nitrification control flagged; settling tech without settling constraint flagged; multi-constraint with <2 alts flagged",
+        "Step 9 CredibleOutput: 9 fields — recommended_stages, alternatives, residual_risks, notes, consistency_flags, compatibility_flags, 3 narratives, ready_for_client bool",
+        "ready_for_client = True only when zero Warning/Correction notes and zero consistency flags",
+        "17/17 checks; 282/282 tests; UpgradePathway and FeasibilityReport unchanged",
+    ]),
     ("v24Z33", "5 Apr 2026", [
         "Feasibility Layer Production V1 — new module apps/wastewater_app/feasibility_layer.py",
         "Evaluates UpgradePathway across 6 dimensions: supply chain, operational complexity, energy/OPEX, sludge/residuals, chemical dependency, integration risk",
