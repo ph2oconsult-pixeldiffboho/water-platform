@@ -649,6 +649,47 @@ def _build_pathway_stages(
                     "or tertiary intervention."
                 ))
 
+    # ── Stage 4b: Conditional DNF — LOT / TN <3 mg/L tertiary polishing ─────────
+    # Fix 3 (v24Z39): DNF surfaces in primary stack only when ALL conditions are met:
+    #   (a) TN target <= 3.0 mg/L
+    #   (b) NH4 is stable (not nh4_near_limit)
+    #   (c) Level 1 biological optimisation is already in the stack
+    #   (d) Nitrification is not actively broken (CT_NITRIFICATION absent or resolved by biofilm)
+    #   (e) DNF not already emitted
+    # This prevents DNF appearing before Level 1 and prevents it appearing when NH4 is unstable.
+    _tn_tgt    = plant_context.get("tn_target_mg_l", 10.) or 10.
+    _nh4_stable= not bool(plant_context.get("nh4_near_limit", False))
+    _l1_in     = any(s.technology in (TI_RECYCLE_OPT, TI_BARDENPHO) for s in stages)
+    _nit_unresolved = (CT_NITRIFICATION in ct_set and
+                       not any(s.technology in (TI_IFAS, TI_HYBAS, TI_MBBR, TI_MABR, TI_MIGINDENSE)
+                               for s in stages))
+    _dnf_conditions = (
+        _tn_tgt <= 3.0
+        and _nh4_stable
+        and _l1_in
+        and not _nit_unresolved
+        and TI_DENFILTER not in used
+    )
+    if _dnf_conditions:
+        emit(TI_DENFILTER, MECH_TERT_DN,
+            "Denitrification filter provides tertiary TN polishing where biological "
+            "optimisation alone cannot reliably achieve TN < 3 mg/L.",
+            "Methanol-dosed tertiary denitrification: ~2.5–3.0 mg MeOH per mg NO₃-N removed. "
+            "DO at filter inlet must be < 0.5 mg/L. "
+            "Filter is positioned after Bardenpho optimisation (Level 1) — it polishes the "
+            "residual TN gap that biological denitrification cannot close reliably. "
+            "DNF must NOT be commissioned before upstream NH₄ is stably controlled.",
+            [CT_TN_POLISH, CT_BIOLOGICAL],
+            prereq="Level 1 biological optimisation (Bardenpho / recycle) complete and "
+                   "NH₄ stably controlled",
+            bio_level=4,
+            bio_rationale=(
+                "DNF is Level 4 (tertiary denitrification) — the final escalation step. "
+                "It is surfaced here because TN target ≤ 3 mg/L cannot be reliably achieved by "
+                "biological optimisation alone, NH₄ is stable, and Level 1 is already in the "
+                "stack. DO not commission before upstream nitrification is confirmed stable."
+            ))
+
     # ── Stage 5: TP polishing ──────────────────────────────────────────────────
     if CT_TP_POLISH in ct_set:
         emit(TI_TERT_P, MECH_TERT_P,

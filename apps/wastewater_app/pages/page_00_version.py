@@ -19,6 +19,18 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z39", "5 Apr 2026", [
+        "Targeted Engineering Improvements Production V3 — stack_generator.py",
+        "Fix 3: Conditional DNF in primary stack — Stage 4b fires when ALL conditions met: tn_target_mg_l<=3.0, NH4 stable (not nh4_near_limit), Level 1 in stack (Bardenpho/recycle), nitrification not actively broken, DNF not already emitted",
+        "S8 LOT TN<3 primary stack: Recycle → Bardenpho → DNF (Level 1 → Level 1 → Level 4) — Level 1 precedes Level 4 in stage order enforced",
+        "DNF guard verified: NH4 unstable → DNF suppressed regardless of TN target",
+        "S2 Nitrification CAS: IFAS Level 2 preserved (no regression from v24Z38)",
+        "S3 TN-only: Level 1 only preserved (no regression from v24Z38)",
+        "Metro BNR: no DNF (TN target=5, NH4 unstable — both guards fire correctly)",
+        "Fix 4: benchmark physical relationships confirmed unchanged (no code change required)",
+        "Fix 5: decision tension explanations already embedded via bio_hierarchy_rationale (v24Z38)",
+        "20/20 validation checks; 282/282 benchmark tests",
+    ]),
     ("v24Z38", "5 Apr 2026", [
         "Biological Pathway Hierarchy Patch Production V1 — stack_generator.py",
         "PathwayStage gains two new fields: bio_hierarchy_level (0=non-bio, 1=process opt, 2=biofilm, 3=aeration, 4=tertiary) and bio_hierarchy_rationale (engineer-readable explanation)",
