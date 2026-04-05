@@ -19,6 +19,17 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z40", "5 Apr 2026", [
+        "Integrated Biological & Technology Expert Logic Layer Production V1 — stack_generator.py",
+        "Fix 1: BioMag clarifier_util guard — BioMag only fires when high_load AND (clarifier_util>=1.0 OR overflow/wet weather). V3 Nit+poor SVI now produces inDENSE+Hybas (correct) not BioMag.",
+        "Fix 2: MOB (TI_MIGINDENSE) gets bio_hierarchy_level=2 with rationale explaining settling+SRT+SND differentiation vs IFAS (SRT only) and MABR (oxygen transfer).",
+        "Fix 3: Nereda Option C alternative — fires when footprint_constrained OR greenfield OR >=3 High-severity constraints. Includes strong-fit notes, weak-fit assessment, startup/granule risks, and decision tension text. Never appears in primary stack.",
+        "Fix 4: MABR guardrail note enhanced — adds applicability notes (membrane lifecycle 8-10yr, FOG/scaling risk, decision tension: compact/energy-efficient vs lower-CAPEX conventional).",
+        "V1 TN-only: Level 1 only ✅  V2 Nit good settling: IFAS ✅  V3 Nit poor SVI: inDENSE+Hybas ✅",
+        "V4 Aeration: MABR ✅  V5 SBR: MOB Level 2 ✅  V6 LOT: Level 1→DNF ✅",
+        "V7 Brownfield: Nereda alt only ✅  V8 Greenfield: Nereda strong candidate ✅",
+        "22/22 validation checks; 282/282 benchmark tests; no architectural change",
+    ]),
     ("v24Z39", "5 Apr 2026", [
         "Targeted Engineering Improvements Production V3 — stack_generator.py",
         "Fix 3: Conditional DNF in primary stack — Stage 4b fires when ALL conditions met: tn_target_mg_l<=3.0, NH4 stable (not nh4_near_limit), Level 1 in stack (Bardenpho/recycle), nitrification not actively broken, DNF not already emitted",

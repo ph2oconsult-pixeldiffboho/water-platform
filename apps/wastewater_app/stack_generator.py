@@ -506,10 +506,20 @@ def _build_pathway_stages(
                 "miGRATE is the biological optimisation layer that follows.",
                 "inDENSE gravimetric selection reduces SVI and enables cycle compression to 3h. "
                 "miGRATE biofilm carriers then reduce TN and aerobic mass fraction. "
-                "Upgrade sequence: inDENSE commissioned and stable → then activate miGRATE. "
-                "miGRATE alone does not consistently improve SVI (Lang Lang + Army Bay).",
+                "Upgrade sequence: inDENSE commissioned and stable \u2192 then activate miGRATE. "
+                "miGRATE alone does not consistently improve SVI (Lang Lang + Army Bay). "
+                "MOB does not solve hydraulic overload; stable operation is required throughout. "
+                "MOB is differentiated from IFAS (SRT only) and MABR (oxygen transfer) by its "
+                "combined settling + SRT + SND mechanism.",
                 [CT_SETTLING, CT_NITRIFICATION],
-                prereq="SBR operational, feed characteristics stable")
+                prereq="SBR operational, feed characteristics stable",
+                bio_level=2,
+                bio_rationale=(
+                    "MOB is selected at Level 2 (biomass retention) because both settling "
+                    "instability and SRT limitation are present in the SBR. "
+                    "This differentiates MOB from IFAS (SRT only) and MABR (oxygen transfer). "
+                    "MOB addresses the combined settling + biological constraint in a single staged deployment."
+                ))
         elif is_mbr:
             emit(TI_MEMDENSE, MECH_MEMBRANE_SEL,
                 "memDENSE selective wasting removes filamentous and low-density biomass "
@@ -519,14 +529,34 @@ def _build_pathway_stages(
                 "improving biological P removal.",
                 [CT_SETTLING, CT_MEMBRANE])
         elif severe or high_load:
-            emit(TI_BIOMAG, MECH_BALLASTED,
-                "BioMag combines ballasted settling with integrated biological treatment, "
-                "improving both hydraulic throughput and solids management under elevated load.",
-                "Magnetic microspheres improve mixed liquor density and settling velocity. "
-                "At high MLSS and elevated loading, BioMag provides more robust settling "
-                "improvement than inDENSE alone. Suitable when clarifier SOR is critically exceeded.",
-                [CT_SETTLING],
-                prereq="Ballast recovery and recycling infrastructure available")
+            # BioMag requires confirmed hydraulic overload (clarifier_util >= 1.0) AND high load.
+            # Without actual clarifier overload, inDENSE addresses settling more precisely.
+            # This prevents BioMag from firing when SVI is elevated but clarifier is not overloaded.
+            _cl_util     = plant_context.get("clarifier_util", 0.0) or 0.0
+            _use_biomag  = high_load and (_cl_util >= 1.0 or
+                           plant_context.get("overflow_risk", False) or
+                           plant_context.get("wet_weather_peak", False))
+            if _use_biomag:
+                emit(TI_BIOMAG, MECH_BALLASTED,
+                    "BioMag combines ballasted settling with integrated biological treatment, "
+                    "improving both hydraulic throughput and solids management under elevated load.",
+                    "Magnetic microspheres improve mixed liquor density and settling velocity. "
+                    "At high MLSS and elevated loading, BioMag provides more robust settling "
+                    "improvement than inDENSE alone. Suitable when clarifier SOR is critically exceeded.",
+                    [CT_SETTLING],
+                    prereq="Ballast recovery and recycling infrastructure available")
+            else:
+                # Settling present but clarifier not in confirmed overload — inDENSE is appropriate.
+                # The nitrification stage will follow with IFAS/Hybas to address the SRT constraint.
+                emit(TI_INDENSE, MECH_BIOMASS_SEL,
+                    "inDENSE gravimetric selection removes light and filamentous biomass, "
+                    "improving settling velocity and SVI without adding tank volume.",
+                    "inDENSE selectively wastes the low-density fraction of mixed liquor. "
+                    "The retained sludge is denser, settles faster, and occupies less clarifier volume. "
+                    "SOR headroom recovers without clarifier expansion. "
+                    "Where SRT is simultaneously limiting, a biofilm retention stage (IFAS/Hybas) "
+                    "follows as Stage 2 to address nitrification capacity.",
+                    [CT_SETTLING])
         else:
             emit(TI_INDENSE, MECH_BIOMASS_SEL,
                 "inDENSE gravimetric selection removes light and filamentous biomass, "
@@ -802,6 +832,60 @@ def _build_pathway_alternatives(
             capex_class="High",
         ))
 
+    # ── Option C — Nereda (AGS) replacement pathway (Section 5) ───────────────
+    # Nereda NEVER appears in primary stack — it is a full process replacement.
+    # Surface as an alternative when greenfield / footprint-constrained / multi-constraint.
+    # Weak fit: brownfield staged, high variability, low operator capability.
+    _footprint_const = bool(plant_context.get("footprint_constrained", False))
+    _greenfield      = bool(plant_context.get("greenfield", False))
+    _n_constraints   = len(constraints)
+    _multi_severe    = sum(1 for c in constraints if c.severity == "High") >= 3
+    _nereda_trigger  = _footprint_const or _greenfield or _multi_severe
+
+    if _nereda_trigger:
+        _nereda_weak = []
+        _is_brownfield_staged = (
+            not _greenfield
+            and not _footprint_const
+            and len(stages) >= 2   # staged upgrade already in primary
+        )
+        if _is_brownfield_staged:
+            _nereda_weak.append("brownfield staged upgrade is already the primary recommendation")
+        if plant_context.get("location_type","") == "remote":
+            _nereda_weak.append("remote location limits OEM support")
+        if plant_context.get("high_diurnal", False):
+            _nereda_weak.append("high influent variability increases granule stability risk")
+
+        _nereda_rationale = (
+            "Nereda® Aerobic Granular Sludge (AGS) delivers BNR in a compact footprint "
+            "(30–50% smaller than conventional activated sludge) with integrated "
+            "nitrification, denitrification, and biological P removal in a single vessel. "
+            "It eliminates secondary clarifiers and achieves TN < 10 mg/L and TP < 1 mg/L routinely. "
+            "Nereda is a full process replacement, not a retrofit addition — it requires "
+            "decommissioning of the existing biological process. "
+            "Startup complexity, granule stability risk, and proprietary technology dependency "
+            "must be assessed before commitment. "
+            + (f"Potential weaknesses for this plant: {'; '.join(_nereda_weak)}. " if _nereda_weak else "")
+            + "Decision tension: staged brownfield intensification vs full process replacement. "
+            "The recommended primary stack delivers compliance within existing assets; "
+            "Nereda is the long-term strategic alternative if civil expansion is required."
+        )
+        _nereda_when = (
+            "When the plant requires a major rebuild or is being replaced at end-of-life, "
+            "footprint is severely constrained and civil expansion is not viable, "
+            "or the utility is prepared to accept the disruption and CAPEX of full process conversion."
+            + (" Strong fit here: footprint constraint identified." if _footprint_const else "")
+            + (" Strong fit here: greenfield site." if _greenfield else "")
+        )
+        alts.append(AlternativePathway(
+            label="Option C — Nereda® AGS (full process replacement)",
+            stages=["Nereda® Aerobic Granular Sludge reactor (replaces secondary treatment)",
+                    "Tertiary P removal if TP < 0.5 mg/L required"],
+            rationale=_nereda_rationale,
+            when_preferred=_nereda_when,
+            capex_class="High",
+        ))
+
     return alts
 
 
@@ -1026,7 +1110,11 @@ def build_upgrade_pathway(
         elif mabr_in and aer_const:
             guardrail_notes.append(
                 "MABR justified at Level 3: aeration system is near maximum capacity. "
-                "IFAS alone would not resolve the oxygen delivery constraint."
+                "IFAS alone would not resolve the oxygen delivery constraint. "
+                "MABR applicability notes: "
+                "Strong fit — aeration constrained, footprint constrained, or cold-climate nitrification. "
+                "Membrane lifecycle 8–10 years; FOG/scaling fouling risk requires management. "
+                "Decision tension: compact energy-efficient solution vs lower-CAPEX conventional expansion."
             )
 
     # ── Step 6-7: Build alternatives and narrative ─────────────────────────────
