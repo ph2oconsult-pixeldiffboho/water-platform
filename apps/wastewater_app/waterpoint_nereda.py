@@ -19,7 +19,7 @@ from typing import List, Optional, Tuple
 
 @dataclass
 class NeredaStressResult:
-    """Output from the Nereda stress model."""
+    """Output from the Nereda stress model (V2)."""
     # Domains (name, utilisation 0–1.2+, detail string)
     domains:             List[Tuple[str, float, str]] = field(default_factory=list)
     # Key computed values
@@ -28,6 +28,10 @@ class NeredaStressResult:
     compression_ratio:   float = 0.0              # 1 - (rwf_cycle / dwf_cycle)
     decant_risk_flag:    bool  = False
     cycle_rwf_hr:        Optional[float] = None   # estimated RWF cycle duration
+    cycle_instability:   bool  = False             # V2: cycle < _MIN_CYCLE_MIN_ABS
+    no_buffer:           bool  = False             # V2: FBT absent
+    polishing_gap:       bool  = False             # V2: no tertiary, tight TSS target
+    brownfield:          Optional[NeredaBrownfieldAssessment] = None  # V2
     # State
     state:      str = "Stable"
     rate:       str = "Stable"
@@ -45,6 +49,17 @@ class NeredaFailureMode:
     severity:    str   # Low / Medium / High
 
 
+@dataclass
+class NeredaBrownfieldAssessment:
+    """Brownfield conversion suitability result for Nereda V2."""
+    mode:               str   = "greenfield"  # greenfield | brownfield
+    existing_process:   Optional[str] = None
+    conversion_ratio:   float = 0.0
+    suitability:        str   = "Not assessed"  # High / Partial / Low
+    suitability_note:   str   = ""
+    compatibility_note: str   = ""
+
+
 # ── Default design parameters (Longwarry anchors) ─────────────────────────────
 _DWF_CYCLE_MIN  = 300.0    # min — DWF cycle time
 _RWF_CYCLE_MIN  = 235.0    # min — typical RWF cycle (range 230–240)
@@ -53,8 +68,15 @@ _COMPRESS_FRAGILE = 0.35   # compression_ratio > this → Fragile
 _COMPRESS_FAIL    = 0.50   # compression_ratio > this → Failure Risk
 _DECANT_RISK_CR   = 0.15   # compression_ratio > this (i.e. cycle < 85% of DWF) → decant risk
 _BTK_FILL_HOURS_FAIL = 2.0 # hours_to_fill < this → Failure Risk
+_MIN_CYCLE_MIN_ABS   = 120.0  # absolute minimum cycle — below this → instability
 
 _NO_CLARIFIER_TECHS = {"granular_sludge", "bnr_mbr", "anmbr"}
+
+# V2: Brownfield conversion suitability thresholds
+_BF_HIGH_RATIO    = 0.80   # existing_vol / required_vol ≥ this → high suitability
+_BF_PARTIAL_RATIO = 0.50   # 0.50–0.80 → partial; <0.50 → low
+# Nereda typical volumetric loading: ~4–5 kgBOD/m³·d → volume proxy
+_NEREDA_BOD_LOAD_KG_M3_D = 4.5
 
 
 # ── Main Nereda stress function ────────────────────────────────────────────────
@@ -82,6 +104,11 @@ def calculate_nereda_stress(wp) -> NeredaStressResult:
     n_reactors     = wp.nereda_n_reactors or 2
     reactor_vol_m3 = wp.reactor_volume_m3 or (1650.0 * n_reactors)
     fst            = wp.flow_scenario_type or ""
+    # V2: process train and brownfield flags (safe getattr)
+    has_balancing  = getattr(wp, "nereda_has_flow_balancing", True)
+    has_tertiary   = getattr(wp, "nereda_has_tertiary_polishing", False)
+    min_cycle_min  = getattr(wp, "nereda_min_cycle_min", None) or _MIN_CYCLE_MIN_ABS
+    nereda_mode    = getattr(wp, "nereda_mode", None) or "greenfield"
 
     # ── Estimate RWF cycle time via compression ────────────────────────────
     # Calibrated to Longwarry: DWF≈300min, RWF≈235min at ~3× flow → cr≈0.22.
@@ -136,6 +163,17 @@ def calculate_nereda_stress(wp) -> NeredaStressResult:
             f"{adj_flow_mld:.1f} MLD ({flow_ratio:.1f}\u00d7 ADWF — beyond FBT buffer capacity)",
         ))
 
+    # ── V2: Cycle instability check ───────────────────────────────────────
+    # If estimated RWF cycle drops below absolute minimum → instability flag
+    result.cycle_instability = (rwf_cycle_hr * 60.0) < min_cycle_min
+
+    # ── V2: No upstream buffer escalation ─────────────────────────────────
+    result.no_buffer = not has_balancing
+    if not has_balancing and flow_ratio > 1.0:
+        # Without FBT, hydraulic shocks hit the reactor directly — add stress
+        btk_util = min(1.4, btk_util * 1.40)   # 40% penalty on hydraulic domain
+        result.balance_tank_util = round(btk_util, 3)
+
     # ── Domain 2: Cycle compression ───────────────────────────────────────
     # Map compression_ratio to utilisation against Failure threshold
     cycle_util = compression_ratio / _COMPRESS_FAIL   # 0→0, 0.5→1.0
@@ -167,6 +205,17 @@ def calculate_nereda_stress(wp) -> NeredaStressResult:
 
     dom_name, max_util, dom_detail = max(result.domains, key=lambda x: x[1])
     result.proximity = round(max_util * 100.0, 1)   # uncapped
+
+    # ── V2: Polishing gap flag ────────────────────────────────────────────
+    # If no tertiary polishing and TSS target is tight (≤10 mg/L)
+    _tss_target = getattr(wp, "effluent_tss_target_mg_l", None)
+    result.polishing_gap = (
+        not has_tertiary and _tss_target is not None and _tss_target <= 10.0
+    )
+
+    # ── V2: Brownfield conversion assessment ──────────────────────────────
+    if nereda_mode == "brownfield":
+        result.brownfield = _assess_brownfield_conversion(wp, base_flow_mld)
 
     # ── State logic — Nereda-specific escalation (Rule 7) ─────────────────
     if wp.flow_overflow_flag:
@@ -217,12 +266,15 @@ def calculate_nereda_stress(wp) -> NeredaStressResult:
     result.rationale = _nereda_rationale(dom_name, state, compression_ratio,
                                           hours_to_fill, flow_ratio)
 
-    # Exceedance label for extreme events
+    # V2: Proximity = flow_ratio × 100 (uncapped), exceedance label bands
+    result.proximity = round(flow_ratio * 100.0, 1)
     _constraint_label = f"{dom_name} ({dom_detail})"
-    if flow_ratio >= 5.0:
-        _constraint_label += f" | Catastrophic exceedance: {round((flow_ratio-1)*100)}% above design"
-    elif flow_ratio >= 3.0:
-        _constraint_label += f" | Extreme exceedance: {round((flow_ratio-1)*100)}% above design"
+    if flow_ratio > 2.5:
+        _constraint_label += f" | Extreme overload: {round((flow_ratio-1)*100)}% above design average"
+    elif flow_ratio > 1.5:
+        _constraint_label += f" | Severe overload: {round((flow_ratio-1)*100)}% above design average"
+    elif flow_ratio > 1.0:
+        _constraint_label += f" | Over design: {round((flow_ratio-1)*100)}% above design average"
     result.primary_constraint = _constraint_label
 
     return result
@@ -248,6 +300,66 @@ def _nereda_rationale(domain: str, state: str, cr: float,
                 f"Cycle compression {cr:.2f} exceeds decant risk threshold.")
     return (f"Extreme hydraulic loading ({flow_ratio:.1f}\u00d7 ADWF) has exceeded "
             f"Nereda process capacity. Overflow and decant failure risk are immediate.")
+
+
+# ── V2: Brownfield conversion assessment function ─────────────────────────────
+
+def _assess_brownfield_conversion(wp, base_flow_mld: float) -> NeredaBrownfieldAssessment:
+    """Evaluate suitability of converting an existing plant to Nereda."""
+    existing_vol   = getattr(wp, "nereda_existing_volume_m3", None) or 0.0
+    existing_proc  = (getattr(wp, "nereda_existing_process", None) or "unknown").lower()
+    o2_demand      = wp.o2_demand_kg_day or 0.0
+    bod_kg_d       = (wp.current_load.bod_kg_d or 0.0) if wp.current_load else 0.0
+
+    # Estimate required Nereda volume: BOD load / volumetric rate
+    required_vol = (bod_kg_d / _NEREDA_BOD_LOAD_KG_M3_D) if bod_kg_d > 0 else (
+        base_flow_mld * 1000.0 * 0.20   # proxy: 200 m³/MLD if no BOD
+    )
+
+    conv_ratio = existing_vol / required_vol if required_vol > 0 and existing_vol > 0 else 0.0
+
+    if conv_ratio >= _BF_HIGH_RATIO:
+        suitability = "High"
+        suit_note = (
+            f"Existing volume ({existing_vol:.0f} m³) is {conv_ratio:.0%} of estimated "
+            f"Nereda requirement ({required_vol:.0f} m³). High suitability for direct conversion."
+        )
+    elif conv_ratio >= _BF_PARTIAL_RATIO:
+        suitability = "Partial"
+        suit_note = (
+            f"Existing volume ({existing_vol:.0f} m³) is {conv_ratio:.0%} of estimated "
+            f"requirement ({required_vol:.0f} m³). Partial conversion — additional reactor volume required."
+        )
+    else:
+        suitability = "Low"
+        suit_note = (
+            f"Existing volume ({existing_vol:.0f} m³) is {conv_ratio:.0%} of estimated "
+            f"requirement ({required_vol:.0f} m³). Low suitability — new build likely required."
+        )
+
+    # Process compatibility
+    compat_map = {
+        "mbbr":  ("High",       "MBBR tank geometry closely matches Nereda SBR requirements. "
+                                 "Existing media can be removed and AGS seeded directly."),
+        "sbr":   ("High",       "Existing SBR tanks are directly compatible — same cyclic operation. "
+                                 "Conversion is primarily biological rather than civil."),
+        "mle":   ("Moderate",   "MLE tanks can be converted but require baffling, diffuser reconfiguration, "
+                                 "and cycle control installation."),
+        "cas":   ("Conditional","Conventional AS conversion requires clarifier redundancy assessment. "
+                                 "Sludge inventory management during granule formation is critical."),
+    }
+    compat, compat_note = compat_map.get(existing_proc, (
+        "Unknown", "Process type not recognised — manual compatibility assessment required."
+    ))
+
+    return NeredaBrownfieldAssessment(
+        mode=             "brownfield",
+        existing_process= existing_proc,
+        conversion_ratio= round(conv_ratio, 2),
+        suitability=      suitability,
+        suitability_note= suit_note,
+        compatibility_note= compat_note,
+    )
 
 
 # ── Nereda failure modes ───────────────────────────────────────────────────────
@@ -326,6 +438,61 @@ def detect_nereda_failure_modes(
                 "and allow flocculent sludge to compete with granules. "
                 "Monitor granule diameter and settleability. "
                 "Consider reducing ADWF cycle feed fraction to maintain granule density."
+            ),
+            severity = "Medium",
+        ))
+
+    # ── V2 failure modes ──────────────────────────────────────────────────
+
+    # 6. Cycle instability (< minimum cycle time)
+    if nereda.cycle_instability:
+        modes.append(NeredaFailureMode(
+            title       = "Cycle instability risk",
+            description = (
+                f"Estimated RWF cycle time ({nereda.cycle_rwf_hr*60:.0f} min) has fallen "
+                f"below the minimum safe cycle ({_MIN_CYCLE_MIN_ABS:.0f} min). "
+                "Settling and decant phases are severely compressed — granule washout "
+                "and effluent quality failure are immediate risks."
+            ),
+            severity = "High",
+        ))
+
+    # 7. No upstream buffer (no FBT)
+    if nereda.no_buffer and flow_ratio > 1.0:
+        modes.append(NeredaFailureMode(
+            title       = "No upstream buffering — AGS exposed to hydraulic shocks",
+            description = (
+                "No flow balance tank is present. Hydraulic shocks from wet weather "
+                "or diurnal peaks arrive directly at the Nereda reactors, "
+                "compressing cycle timing and threatening granule integrity. "
+                "FBT installation is strongly recommended before commissioning under wet weather."
+            ),
+            severity = "Medium",
+        ))
+
+    # 8. Granule shear / loss risk (extreme hydraulic loading)
+    if flow_ratio > 3.0:
+        modes.append(NeredaFailureMode(
+            title       = "Granule shear / loss risk",
+            description = (
+                f"Extreme hydraulic loading ({flow_ratio:.1f}× ADWF) creates shear forces "
+                "that may disrupt granule structure and cause granule fragmentation or washout. "
+                "Granule diameter and SVI should be monitored closely. "
+                "Reduce inflow or divert to equalisation immediately."
+            ),
+            severity = "High",
+        ))
+
+    # 9. Effluent polishing gap (no tertiary, tight TSS target)
+    if nereda.polishing_gap:
+        modes.append(NeredaFailureMode(
+            title       = "Effluent polishing gap",
+            description = (
+                "A TSS target of ≤10 mg/L has been specified but no tertiary polishing "
+                "(UF or tertiary filtration) is installed. "
+                "Nereda decant TSS is typically 10–15 mg/L — compliance relies on "
+                "excellent granule stability. Tertiary polishing is recommended "
+                "for consistent compliance under variable loading."
             ),
             severity = "Medium",
         ))
@@ -442,6 +609,15 @@ def generate_nereda_decisions(
     # ── Medium-term ───────────────────────────────────────────────────────
     if fst == SCENARIO_AWWF:
         medium.append(
+            "Increase aeration fraction and adjust intermittent aeration timing "
+            "to maintain nitrification under sustained diluted loading — "
+            "sustained AWWF reduces BOD:N ratio and may limit aerobic SND performance."
+        )
+        medium.append(
+            "Adjust WAS strategy to protect SRT under extended AWWF: "
+            "reduce wastage rate to preserve granule inventory and biological stability."
+        )
+        medium.append(
             "Increase balance tank volume to extend hydraulic buffer for sustained "
             "wet weather loading — target minimum 4–6 hours of net inflow capacity."
         )
@@ -533,8 +709,12 @@ def assess_nereda_compliance(wp, nereda: NeredaStressResult, modes: List[NeredaF
     # Breach type
     if wp.flow_overflow_flag:
         breach = "Wet weather overflow or bypass event — notifiable incident"
+    elif getattr(nereda, "cycle_instability", False):
+        breach = "Cycle instability — decant and settling integrity at immediate risk"
     elif nereda.decant_risk_flag:
         breach = "Risk of decant solids carryover under wet weather cycle compression"
+    elif getattr(nereda, "polishing_gap", False):
+        breach = "TSS compliance risk — decant performance without tertiary polishing"
     elif cr > _COMPRESS_TIGHTEN:
         breach = "Cycle compression risk — effluent quality may degrade under sustained wet weather"
     else:
@@ -556,10 +736,17 @@ def assess_nereda_compliance(wp, nereda: NeredaStressResult, modes: List[NeredaF
                 "Regulator engagement recommended if effluent quality is persistently affected."
             )
     elif risk_level == "Medium":
-        reg_exp = (
-            "Moderate risk of cycle compression affecting effluent quality under wet weather. "
-            "Maintain enhanced effluent monitoring and prepare contingency cycle programme."
-        )
+        if getattr(nereda, "polishing_gap", False):
+            reg_exp = (
+                "TSS compliance margin is narrow without tertiary polishing. "
+                "Nereda decant TSS is typically 10–15 mg/L. "
+                "Enhanced TSS monitoring and contingency polishing plan recommended."
+            )
+        else:
+            reg_exp = (
+                "Moderate risk of cycle compression affecting effluent quality under wet weather. "
+                "Maintain enhanced effluent monitoring and prepare contingency cycle programme."
+            )
     else:
         reg_exp = (
             "Nereda process is operating within design parameters. "

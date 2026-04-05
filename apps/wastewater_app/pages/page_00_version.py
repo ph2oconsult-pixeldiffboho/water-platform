@@ -19,6 +19,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z28", "19 Mar 2026", [
+        "Nereda V2: Process + Brownfield Integrated Model — surgical extension of waterpoint_nereda.py",
+        "13 new WaterPointInput fields: process train flags (FBT, tertiary, sidestream, effluent buffer), brownfield mode/volume/process, min cycle constraint",
+        "NeredaBrownfieldAssessment dataclass: conversion_ratio, suitability (High/Partial/Low), process compatibility (MBBR/SBR=High, MLE=Moderate, CAS=Conditional)",
+        "Proximity fix: flow_ratio * 100 (uncapped) with label bands: Over design / Severe overload / Extreme overload",
+        "Cycle instability flag: estimated RWF cycle < 120 min → 'Cycle instability risk [High]' failure mode",
+        "No upstream buffer: FBT absent → 40% hydraulic penalty + 'No upstream buffering' failure mode",
+        "Polishing gap: no tertiary + TSS target ≤10 mg/L → 'Effluent polishing gap [Medium]' failure mode + TSS compliance language",
+        "Granule shear/loss: flow_ratio > 3× → 'Granule shear / loss risk [High]' failure mode",
+        "AWWF decision layer: aeration fraction + WAS strategy added before FBT/cycle actions",
+        "Brownfield engine: _assess_brownfield_conversion() from BOD load → required Nereda volume → ratio",
+        "20/20 validation checks pass; all 13 original criteria intact; 282/282 benchmark tests pass",
+        "BNR, MOB, MABR engines confirmed unchanged",
+    ]),
     ("v24Z27", "19 Mar 2026", [
         "Brownfield Upgrade Pathway Ranking Engine — new module brownfield_upgrade_ranking.py",
         "Ranks 5 upgrade pathways: Nereda, MOB (miGRATE+inDENSE), MABR (OxyFAS), IFAS, MBBR",

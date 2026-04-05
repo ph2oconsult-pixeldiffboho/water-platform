@@ -128,11 +128,22 @@ class WaterPointInput:
     indense_underflow_solids_pct:       Optional[float] = None
     carrier_screening_available:        bool           = True
     selector_operational:               bool           = True
-    # Nereda-specific fields (populated when technology_code == "granular_sludge")
-    nereda_enabled:      bool           = False
-    nereda_fbt_m3:       Optional[float] = None   # balance tank volume
-    nereda_dwf_cycle_min: Optional[float]= None   # DWF cycle time (minutes)
-    nereda_n_reactors:   Optional[int]   = None   # number of reactors
+    # Nereda V2 fields — process pathway + brownfield
+    nereda_enabled:          bool           = False
+    nereda_fbt_m3:           Optional[float] = None   # balance tank volume
+    nereda_dwf_cycle_min:    Optional[float] = None   # DWF cycle time (minutes)
+    nereda_n_reactors:       Optional[int]   = None   # number of reactors
+    # V2: process train flags
+    nereda_has_flow_balancing:     bool           = True    # FBT upstream
+    nereda_has_effluent_buffer:    bool           = False
+    nereda_has_tertiary_polishing: bool           = False
+    nereda_has_sidestream_buffer:  bool           = False
+    # V2: brownfield conversion
+    nereda_mode:              Optional[str]   = None   # "greenfield" | "brownfield"
+    nereda_existing_volume_m3: Optional[float]= None   # existing tank volume
+    nereda_existing_process:  Optional[str]   = None   # "MLE"|"MBBR"|"CAS"|"SBR"
+    # V2: cycle constraints
+    nereda_min_cycle_min:     Optional[float] = None   # absolute minimum cycle (default 120)
     # Data quality tracker
     missing_fields: List[str] = field(default_factory=list)
 
