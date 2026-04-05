@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z42", "5 Apr 2026", [
+        "memDENSE Dual-Role Enhancement Production V2 — mbr_layer.py + stack_generator.py + credibility_layer.py",
+        "MbrApplicabilityReport gains 5 new fields: memdense_role (existing_optimisation/new_enhancement/not_applicable), memdense_benefits (4), memdense_risks (4), memdense_decision_tension (TOTEX trade-off), memdense_note",
+        "assess_mbr_applicability: existing MBR + fouling → role=existing_optimisation (Stage 1 opt note); new MBR no fouling → role=new_enhancement (Optional Enhanced note); non-MBR → not_applicable (note=None)",
+        "stack_generator._build_pathway_alternatives: Option memDENSE Enhanced MBR Configuration added when is_mbr=True + no fouling + memDENSE not already in primary — explicit 'optional' label, TOTEX rationale, 'not required' when_preferred",
+        "Guard: if memDENSE already in primary stack (existing MBR + fouling), optional alternative NOT generated (no duplication)",
+        "credibility_layer: memdense_note appended to compatibility_flags when populated",
+        "28/28 validation checks; 282/282 benchmark tests; no stack selection logic changed",
+    ]),
     ("v24Z41", "5 Apr 2026", [
         "MBR Applicability & Architecture Layer Production V1 — new module apps/wastewater_app/mbr_layer.py",
         "MbrApplicabilityReport dataclass: fit_level (Strong/Moderate/Weak), fit_factors, weak_fit_factors, architecture_role, not_a (3 items), energy_note (kWh quantified), operations_note (CIP), lifecycle_note (8-10yr), mabr_differentiation, decision_tension, credibility_notes, existing_mbr_note",

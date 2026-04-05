@@ -88,6 +88,13 @@ class MbrApplicabilityReport:
     existing_mbr:       bool          # True if plant is already MBR
     existing_mbr_note:  Optional[str] # guidance for existing MBR plants
 
+    # ── memDENSE dual-role (v24Z42) ───────────────────────────────────────────
+    memdense_role:      str     # "existing_optimisation" / "new_enhancement" / "not_applicable"
+    memdense_benefits:  List[str]
+    memdense_risks:     List[str]
+    memdense_decision_tension: str
+    memdense_note:      Optional[str]  # surfaced in credibility output
+
 
 # ── Applicability assessment ──────────────────────────────────────────────────
 
@@ -286,6 +293,49 @@ def assess_mbr_applicability(
                 "mismatched to its influent or effluent requirements."
             )
 
+    # ── memDENSE dual-role (v24Z42) ───────────────────────────────────────────
+    _memdense_benefits = [
+        "Improves biomass quality and membrane permeability through selective wasting "
+        "of low-density and filamentous organisms via hydrocyclone.",
+        "Reduces fouling rate and cleaning frequency (CIP interval may increase 20–40%).",
+        "May reduce aeration demand by improving mixed liquor rheology.",
+        "Can improve TOTEX performance by extending membrane module service life.",
+    ]
+    _memdense_risks = [
+        "Introduces additional technology dependency (hydrocyclone + specialist supplier).",
+        "Supplier-specific implementation may limit procurement flexibility.",
+        "Represents higher technical complexity than a standard MBR configuration.",
+        "Application track record is more limited than conventional MBR — "
+        "site-specific calibration of split ratio is required.",
+    ]
+    _memdense_tension = (
+        "The decision is between a standard MBR configuration and an enhanced MBR "
+        "system incorporating memDENSE, trading increased technical complexity and "
+        "supplier dependency against potential improvements in membrane performance "
+        "and lifecycle cost (TOTEX). memDENSE is an optional enhancement, not a "
+        "default inclusion."
+    )
+
+    if is_mbr and membrane_fouling:
+        _md_role = "existing_optimisation"
+        _md_note = (
+            "memDENSE is recommended as Stage 1 optimisation for this existing MBR: "
+            "selective wasting via hydrocyclone targets the low-density biomass fraction "
+            "driving membrane fouling. Commission and validate before considering "
+            "membrane replacement."
+        )
+    elif is_mbr and not membrane_fouling:
+        _md_role = "new_enhancement"
+        _md_note = (
+            "memDENSE Optional Enhanced Configuration: for a new or recently commissioned "
+            "MBR, memDENSE may be incorporated as an enhancement to standard design. "
+            "It is not required for a compliant MBR installation and should be evaluated "
+            "against the TOTEX trade-off. Present as an option, not a default."
+        )
+    else:
+        _md_role = "not_applicable"
+        _md_note = None
+
     return MbrApplicabilityReport(
         fit_level           = fit,
         fit_factors         = strong,
@@ -300,4 +350,9 @@ def assess_mbr_applicability(
         credibility_notes   = cred,
         existing_mbr        = is_mbr,
         existing_mbr_note   = existing_note,
+        memdense_role       = _md_role,
+        memdense_benefits   = _memdense_benefits,
+        memdense_risks      = _memdense_risks,
+        memdense_decision_tension = _memdense_tension,
+        memdense_note       = _md_note,
     )

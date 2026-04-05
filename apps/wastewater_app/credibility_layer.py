@@ -449,6 +449,9 @@ def _check_compatibility(
         flags.append(mbr_report.mabr_differentiation)
         # Decision tension
         flags.append(mbr_report.decision_tension)
+        # memDENSE dual-role note (v24Z42)
+        if mbr_report.memdense_note:
+            flags.append(mbr_report.memdense_note)
 
     return flags
 

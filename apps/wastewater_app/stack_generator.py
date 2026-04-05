@@ -886,6 +886,48 @@ def _build_pathway_alternatives(
             capex_class="High",
         ))
 
+    # ── memDENSE optional enhancement for new MBR designs (v24Z42) ────────────
+    # Rule 2: surface memDENSE as optional enhanced configuration when is_mbr=True.
+    # NOT as default — only as an explicitly labelled optional alternative.
+    # Not triggered for existing MBR with fouling (memDENSE already in primary stack).
+    _is_mbr        = bool(plant_context.get("is_mbr", False))
+    _mbr_fouling   = bool(plant_context.get("membrane_fouling", False))
+    _memdense_in_primary = TI_MEMDENSE in tech_codes
+
+    if _is_mbr and not _mbr_fouling and not _memdense_in_primary:
+        alts.append(AlternativePathway(
+            label="Option — memDENSE Enhanced MBR Configuration (optional)",
+            stages=[
+                "Standard MBR bioreactor (as primary recommendation)",
+                "memDENSE® hydrocyclone selective wasting (optional enhancement)",
+            ],
+            rationale=(
+                "memDENSE is an optional enhancement to a standard MBR configuration, not a "
+                "default inclusion. It improves biomass quality through hydrocyclone-based "
+                "selective wasting of low-density organisms, targeting the biomass fraction "
+                "that drives membrane fouling. "
+                "Benefits: improved permeability (CIP interval may increase 20–40%), "
+                "reduced fouling rate, potential aeration demand reduction, and improved "
+                "TOTEX through extended membrane lifecycle. "
+                "Risks: introduces additional technology dependency; supplier-specific "
+                "implementation may limit procurement flexibility; higher technical complexity "
+                "than standard MBR; application track record is more limited than conventional MBR. "
+                "Commission hydrocyclone split ratio calibration to site-specific MLSS characteristics. "
+                "Decision tension: standard MBR configuration vs enhanced MBR with memDENSE, "
+                "trading increased complexity and supplier dependency against potential "
+                "improvements in membrane performance and lifecycle cost (TOTEX)."
+            ),
+            when_preferred=(
+                "When membrane fouling is anticipated to be a lifecycle cost driver, "
+                "the utility has the operational capability to manage hydrocyclone "
+                "equipment, and a specialist supplier relationship can be established. "
+                "Evaluate against TOTEX model before committing. "
+                "Do not select memDENSE as default — a compliant standard MBR "
+                "installation does not require it."
+            ),
+            capex_class="Medium",
+        ))
+
     return alts
 
 
