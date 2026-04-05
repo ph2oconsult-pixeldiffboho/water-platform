@@ -245,7 +245,7 @@ def calculate_system_stress(wp: WaterPointInput) -> SystemStress:
             flow_ratio = adj_flow / base_flow
             # Map flow_ratio to utilisation: ≤1.5 = Normal, 1.5–2.0 = Elevated, >2.0 = Overload
             # Normalise so that ratio=2.0 → util=1.0 (capacity boundary)
-            ww_util = min(flow_ratio / 2.0, 1.2)   # cap at 1.2 so it can show Failure Risk
+            ww_util = flow_ratio / 2.0   # uncapped: extreme events show >100% proximity
 
             # ── Pre-stress narrative band (1.3–1.5) ──────────────────
             # Does NOT activate the stress domain or change state.
@@ -738,6 +738,12 @@ def detect_failure_modes(wp: WaterPointInput, stress: SystemStress) -> FailureMo
     _high_count_final = sum(1 for m in modes if m.severity == "High")
     if _high_count_final >= 3:
         modes = [m for m in modes if m.severity != "Low"]
+    # P2: AWWF-specific — suppress Low clarifier-related modes when 2+ High modes present
+    fst_p2 = wp.flow_scenario_type or ""
+    if fst_p2 == _SCENARIO_AWWF and _high_count_final >= 2:
+        modes = [m for m in modes if not (
+            m.severity == "Low" and "clarifier" in m.title.lower()
+        )]
 
     return FailureModes(items=modes, overall_severity=overall)
 
@@ -931,7 +937,9 @@ def generate_decision_layer(
             "Review storm tank capacity adequacy:"
             " confirm volume is sufficient for modelled PWWF duration and peak flow."
         )
-        if "Clarifier" in str(titles) or "Hydraulic" in str(titles):
+        _clar_modes_pw = [m for m in failure.items if "clarifier" in m.title.lower()]
+        _clar_overloaded_pw = any(m.severity in ("Medium", "High") for m in _clar_modes_pw)
+        if _clar_overloaded_pw or "Hydraulic" in str(titles):
             medium.append("Evaluate secondary clarifier expansion or parallel clarifier to restore SOR headroom.")
         if "Nitrification" in str(titles) or "nitrogen" in str(titles).lower():
             medium.append("Consider IFAS media addition to existing aerobic zone to increase biological volume and nitrification capacity without new civil works.")
@@ -939,8 +947,10 @@ def generate_decision_layer(
             medium.append("Commission concept-level capacity expansion study with 20-year demand projections.")
 
     else:
-        # Dry weather / DWP: original generic ordering
-        if "Clarifier" in str(titles) or "Hydraulic" in str(titles):
+        # Dry weather / DWP: generic ordering — expansion only if genuinely overloaded
+        _clar_modes_dw = [m for m in failure.items if "clarifier" in m.title.lower()]
+        _clar_overloaded_dw = any(m.severity in ("Medium", "High") for m in _clar_modes_dw)
+        if _clar_overloaded_dw or "Hydraulic" in str(titles):
             medium.append("Evaluate secondary clarifier expansion or parallel clarifier to restore SOR headroom.")
         if "Nitrification" in str(titles) or "nitrogen" in str(titles).lower():
             medium.append("Consider IFAS media addition to existing aerobic zone to increase biological volume and nitrification capacity without new civil works.")

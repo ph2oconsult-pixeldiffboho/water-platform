@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z24", "19 Mar 2026", [
+        "Final credibility and UX refinement patches — 2 files modified, 21/21 checks, 282/282 tests",
+        "P1: Clarifier expansion suppressed at DWA/DWP — only fires when clarifier mode is Medium or High severity",
+        "P2: AWWF Low clarifier modes suppressed when 2+ High modes present (threshold lowered from 3)",
+        "P3: Nereda DWA Stable short-term uses routine operational language (no wet-weather FBT framing)",
+        "P4: Nereda short-term fully scenario-differentiated: AWWF=sustained monitoring, PWWF=peak prep, Overflow=incident response",
+        "P5: BNR wet weather proximity uncapped — AWWF 3x=150%, PWWF 5x=250%, PWWF 8x=400%",
+        "All previously confirmed fixes (v24Z21-Z23) intact",
+    ]),
     ("v24Z23", "19 Mar 2026", [
         "Nereda AGS WaterPoint model — surgical addition, no existing logic changed",
         "New file: waterpoint_nereda.py — balance tank (FBT) + cycle compression + aeration + hydraulic overload domains",

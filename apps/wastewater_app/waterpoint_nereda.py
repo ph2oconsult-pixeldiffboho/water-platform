@@ -357,12 +357,11 @@ def generate_nereda_decisions(
     medium: List[str] = []
     long_:  List[str] = []
 
-    # ── Short-term ────────────────────────────────────────────────────────
+    # ── Short-term — P3/P4: scenario and state differentiated ───────────
     if wp.flow_overflow_flag:
-        # Active overflow — incident language
+        # P4: Active overflow — incident response language
         short.append(
-            "ACTIVE OVERFLOW: divert flow to equalisation basin immediately. "
-            "Isolate Nereda reactors from uncontrolled inflow."
+            "ACTIVE OVERFLOW: divert flow to equalisation immediately."
         )
         short.append(
             "Initiate regulatory notification — wet weather overflow is a notifiable incident. "
@@ -372,25 +371,60 @@ def generate_nereda_decisions(
             "Prioritise plant stability: protect granule bed integrity over treatment completeness. "
             "Resume normal cycle programme once inflow returns to balance tank capacity."
         )
-    else:
-        # Pre-event / operational
+    elif fst == SCENARIO_AWWF:
+        # P4: AWWF — sustained monitoring and biological stability
         short.append(
-            "Protect balance tank capacity — ensure FBT is as empty as possible before "
-            "anticipated wet weather events to maximise buffer volume."
+            "Monitor cycle compression and FBT fill rate continuously "
+            "— adjust cycle timing to maintain settling integrity."
         )
         short.append(
-            "Adjust cycle timing: extend settling phase to preserve granule integrity "
-            "as inflow increases. Reduce feed rate if fill volume exceeds working volume."
+            "Manage sludge age and biological stability under sustained loading conditions."
         )
         if cr > _COMPRESS_TIGHTEN:
             short.append(
                 f"Cycle compression at {cr:.2f} — verify feed pump rate and confirm "
                 "decant phase is completing fully before next fill cycle."
             )
+    elif fst == SCENARIO_PWWF:
+        # P4: PWWF — peak event preparation
         short.append(
-            "Verify feed pump availability and flow control valve response "
-            "before anticipated wet weather event."
+            "Prepare FBT for peak buffering — confirm available volume and inflow control."
         )
+        short.append(
+            "Verify overflow pathway and equalisation basin availability before peak arrival."
+        )
+        if cr > _COMPRESS_TIGHTEN:
+            short.append(
+                f"Cycle compression at {cr:.2f} — verify feed pump rate and confirm "
+                "decant phase is completing fully before next fill cycle."
+            )
+    else:
+        # P3: DWA / DWP Stable — routine operational language, no wet-weather framing
+        if state == "Stable" and flow_ratio <= 1.5:
+            short.append(
+                "Maintain standard cycle programme and monitor FBT level and cycle timing."
+            )
+            short.append(
+                "Verify feed pump availability and confirm cycle parameters are within design range."
+            )
+        else:
+            short.append(
+                "Protect balance tank capacity — ensure FBT is as empty as possible before "
+                "anticipated wet weather events to maximise buffer volume."
+            )
+            short.append(
+                "Adjust cycle timing: extend settling phase to preserve granule integrity "
+                "as inflow increases. Reduce feed rate if fill volume exceeds working volume."
+            )
+            if cr > _COMPRESS_TIGHTEN:
+                short.append(
+                    f"Cycle compression at {cr:.2f} — verify feed pump rate and confirm "
+                    "decant phase is completing fully before next fill cycle."
+                )
+            short.append(
+                "Verify feed pump availability and flow control valve response "
+                "before anticipated wet weather event."
+            )
 
     # First flush
     if wp.flow_first_flush_enabled:
