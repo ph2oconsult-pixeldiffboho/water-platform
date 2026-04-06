@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z51", "7 Apr 2026", [
+        "Confidence Drivers Panel — plain-language engineering drivers sorted by penalty magnitude",
+        "Drivers now ranked by penalty points descending (largest impact listed first); previously reported in calculation order",
+        "All driver labels replaced with spec-compliant plain language per driver mapping table",
+        "Severe carbon penalty unified: eff COD:TN < 3 carries combined 25-pt penalty with single clear label",
+        "Duplicate driver suppression: set-based deduplication before top-3 selection",
+        "No internal variable names, threshold values, or compliance codes exposed in driver text",
+        "Score calculation unchanged; only label text and ordering changed",
+        "23/23 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z50", "7 Apr 2026", [
         "Confidence score audit fixes — three mandatory changes from audit cycle",
         "Fix 1 (Critical): NH₄ P95 penalty differentiated — Conditional=−10, Not credible=−20; NH₄ P95=Not credible can no longer produce High confidence label",

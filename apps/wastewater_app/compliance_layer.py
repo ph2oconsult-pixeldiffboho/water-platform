@@ -1149,97 +1149,87 @@ def build_compliance_report(
 
 
     # ── Confidence Score Layer ────────────────────────────────────────────────
+    # Penalties are collected as (points, plain_language_driver) tuples,
+    # sorted descending by penalty magnitude before top-3 selection.
     _score    = 100
-    _drivers  = []   # penalty driver labels
+    _pen: list = []   # (penalty_pts, driver_label)
+
+    def _p(pts, label):
+        nonlocal _score
+        _score -= pts
+        _pen.append((pts, label))
 
     # 1. High TKN severity
     if _tkn_in > 50.:
         _req_rem = (_tkn_in - tn_tgt) / _tkn_in if _tkn_in > 0 else 0.
         if _req_rem >= 0.90:
-            _score  -= 20
-            _drivers.append("High TKN removal requirement (>{:.0f}%)".format(int(_req_rem*100)))
+            _p(20, "High nitrogen removal requirement (>{:.0f}%)".format(int(_req_rem * 100)))
         else:
-            _score  -= 10
-            _drivers.append("Elevated TKN influent (>{:.0f} mg/L)".format(_tkn_in))
+            _p(10, "Elevated nitrogen load increases treatment difficulty")
 
     # 2. Carbon limitation
     if _eff_codn < 5. and _cod_in > 0.:
-        _score  -= 15
-        _drivers.append("Carbon limitation (effective COD:TN {:.1f})".format(_eff_codn))
         if _eff_codn < 3.:
-            _score  -= 10
-            _drivers.append("Severe carbon deficit (effective COD:TN < 3)")
+            _p(25, "Severe carbon limitation — denitrification unlikely without external carbon")
+        else:
+            _p(15, "Insufficient biologically available carbon for denitrification")
 
-    # 3. Low temperature (three-tier: 15°C / 12°C / 10°C)
+    # 3. Low temperature (three-tier: ≤15°C / ≤12°C / ≤10°C)
     _temp = float(ctx.get("temp_celsius") or ctx.get("temperature_celsius") or 20.)
-    if _temp <= 15.:
-        _score  -= 5
-        _drivers.append("Reduced temperature (≤15°C)")
-    if _temp <= 12.:
-        _score  -= 5
-        _drivers.append("Low temperature (≤12°C — process risk zone)")
     if _temp <= 10.:
-        _score  -= 5
-        _drivers.append("Very low temperature (≤10°C — Anammox critically impaired)")
+        _p(5, "Moderate temperature constraint (≤15°C)")
+        _p(5, "Low temperature limits biological reaction rates")
+        _p(5, "Very low temperature — biological processes significantly impaired")
+    elif _temp <= 12.:
+        _p(5, "Moderate temperature constraint (≤15°C)")
+        _p(5, "Low temperature limits biological reaction rates")
+    elif _temp <= 15.:
+        _p(5, "Moderate temperature constraint (≤15°C)")
 
     # 4. Hydraulic stress
     _fr = _flow_ratio(ctx)
     if _fr >= 4.:
-        _score  -= 15   # 10 + 5 additional
-        _drivers.append("Extreme hydraulic stress (≥4× ADWF)")
+        _p(15, "Extreme hydraulic loading challenges system capacity")
     elif _fr >= 3.:
-        _score  -= 10
-        _drivers.append("High hydraulic stress (≥3× ADWF)")
+        _p(10, "High hydraulic variability reduces process stability")
 
-    # 5. Compliance status (use final TN param after all consistency rules)
+    # 5. Compliance status
     _tn_final_p = next(p for p in params if p.parameter == "TN")
     if _tn_final_p.median_outcome == NOT_YET_CREDIBLE:
-        _score  -= 25
-        _drivers.append("TN median compliance not credible on current stack")
+        _p(25, "Target not achievable under average conditions")
     elif _tn_final_p.median_outcome == CONDITIONAL:
-        _score  -= 10
-        _drivers.append("TN median compliance conditional")
+        _p(10, "Target achievable under average conditions only")
     if _tn_final_p.p95_outcome == NOT_YET_CREDIBLE:
-        _score  -= 25
-        _drivers.append("TN P95 compliance not credible")
+        _p(25, "Target not achievable under peak conditions")
     elif _tn_final_p.p95_outcome == CONDITIONAL:
-        _score  -= 10
-        _drivers.append("TN P95 compliance conditional")
+        _p(10, "Performance risk under peak conditions")
 
     # 6. NH4 limitation (differentiated: Conditional=-10, Not credible=-20)
     _nh4_final_p = next((p for p in params if p.parameter == "NH₄"), None)
     if _nh4_final_p:
         if _nh4_final_p.p95_outcome == NOT_YET_CREDIBLE:
-            _score  -= 20
-            _drivers.append("Nitrification P95 not credible — cannot demonstrate NH₄ reliability")
+            _p(20, "Nitrification not reliable at peak conditions")
         elif _nh4_final_p.p95_outcome == CONDITIONAL:
-            _score  -= 10
-            _drivers.append("Nitrification reliability at P95 conditional")
+            _p(10, "Nitrification performance uncertain at peak conditions")
 
     # 7. Process complexity
     _tech_set = {s.technology for s in pathway.stages}
     if "PdNA (Partial Denitrification-Anammox)" in _tech_set:
-        _score  -= 10
-        _drivers.append("PdNA process complexity")
+        _p(10, "Process depends on tight control and specialist operation")
     _adv_stage = {"MABR (OxyFAS retrofit)", "Denitrification Filter",
                   "IFAS", "MOB (miGRATE + inDENSE)"}
     if _tech_set & _adv_stage:
-        _score  -= 5
-        _drivers.append("Multi-stage advanced process stack")
+        _p(5, "Advanced process configuration increases operational complexity")
 
     # 8. Operator capability
     if _op_flag:
-        _score  -= 10
-        _drivers.append("Operator capability risk ({})".format(
-            ctx.get("location_type", "regional")))
+        _p(10, "Operator capability may not support process complexity")
 
     # 9. Sludge / high load — informational only, no score penalty
-    # (Removed from score: high COD must not score lower than low COD for same TN target)
 
     # 10. Stack compliance gap
     if _gap:
-        _score  -= 20
-        _drivers.append("Stack compliance gap — upgrade required")
+        _p(20, "Selected process cannot meet target without upgrade")
 
     # Normalise and band
     _score = max(0, min(100, _score))
@@ -1259,8 +1249,16 @@ def build_compliance_report(
             _c_label = "Moderate"
             _score   = min(_score, 79)
 
-    # Keep top 3 drivers
-    _top_drivers = _drivers[:3]
+    # Sort by penalty magnitude descending; take top 3 unique labels
+    _seen: set = set()
+    _ranked: list = []
+    for _pts, _lbl in sorted(_pen, key=lambda x: x[0], reverse=True):
+        if _lbl not in _seen:
+            _seen.add(_lbl)
+            _ranked.append(_lbl)
+        if len(_ranked) == 3:
+            break
+    _top_drivers = _ranked
 
     return ComplianceReport(
         parameters             = params,
