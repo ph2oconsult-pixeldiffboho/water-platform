@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z57", "7 Apr 2026", [
+        "Greenfield Delivery Model Comparison section (E7) added to synthesis layer UI",
+        "Trigger: greenfield=True OR intensified technology in stack (MABR, PdNA, DNF, IFAS, Hybas, MBBR, MOB)",
+        "Four comparison rows: Footprint, Resilience, OPEX Style, Complexity",
+        "Neutral engineering tone — neither option presented as universally superior",
+        "Contextual note: selection depends on utility capability, land availability, energy strategy, and risk tolerance",
+        "Hidden for plain BNR brownfield stacks with no intensified technology",
+        "11/11 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z56", "7 Apr 2026", [
         "InDENSE hydraulic pathway (v24Z56a): hydrocyclone sludge densification as Stage 1 for steady-state clarifier limitation",
         "Hydraulic constraint classified as peak-driven (CoMag) vs steady-state (inDENSE) vs both (hybrid)",

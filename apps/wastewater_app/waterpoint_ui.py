@@ -382,6 +382,60 @@ def _render_synthesis_layers(result, scenario, project) -> None:
         st.caption(risk.decision_tension)
 
 
+
+    # ── E7. GREENFIELD DELIVERY MODEL COMPARISON ──────────────────────────
+    _INTENSIFIED_TECHS = {
+        "MABR (OxyFAS retrofit)", "PdNA (Partial Denitrification-Anammox)",
+        "Denitrification Filter", "IFAS", "Hybas (IFAS)", "MBBR",
+        "MOB (miGRATE + inDENSE)",
+    }
+    _gf_flag         = bool(ctx.get("greenfield", False))
+    _stage_techs     = {st.technology for st in pathway.stages}
+    _has_intensified = bool(_stage_techs & _INTENSIFIED_TECHS)
+    _show_gf_compare = _gf_flag or _has_intensified
+
+    if _show_gf_compare:
+        with st.expander(
+            "🏗️ Greenfield Delivery Model Comparison",
+            expanded=False,
+        ):
+            st.caption(
+                "Comparison of conventional and intensified greenfield approaches "
+                "across key decision dimensions."
+            )
+            _rows = [
+                ("Dimension",     "Conventional",                          "Intensified"),
+                ("Footprint",     "High — land typically available",  "Low — reduced footprint / lower civil CAPEX"),
+                ("Resilience",    "High — volume provides buffering against shocks",
+                                  "Moderate — performance depends on control systems and sensors"),
+                ("OPEX Style",    "Low-tech / high-energy",                "High-tech / low-energy"),
+                ("Complexity",    "Low — standard operating practices",
+                                  "High — requires specialist training and tighter control"),
+            ]
+            _col_w = [1.5, 3, 3]
+            _header_row = st.columns(_col_w)
+            _header_row[0].markdown(f"**{_rows[0][0]}**")
+            _header_row[1].markdown(f"**{_rows[0][1]}**")
+            _header_row[2].markdown(f"**{_rows[0][2]}**")
+            st.markdown(
+                "<hr style='margin:4px 0; border-color:#dde3ea;'>",
+                unsafe_allow_html=True,
+            )
+            for dim, conv, intens in _rows[1:]:
+                _r = st.columns(_col_w)
+                _r[0].markdown(f"**{dim}**")
+                _r[1].caption(conv)
+                _r[2].caption(intens)
+            st.markdown(
+                "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Selection between conventional and intensified approaches depends on "
+                "utility capability, land availability, energy strategy, and risk tolerance."
+            )
+
+
 def _build_context(scenario, project) -> dict | None:
     """
     Build plant_context dict from scenario / project fields.
