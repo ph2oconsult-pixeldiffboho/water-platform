@@ -19,6 +19,18 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z44", "7 Apr 2026", [
+        "Shortcut Nitrogen Pathway Selector — page_13_nitrogen_selector.py",
+        "6-tab feature module: Overview, Comparison, Decision Guide, Key Risks, Scale Challenges, Recommendation",
+        "Active decision guide: 5 plant-condition questions with weighted scoring → Nitrite Shunt vs PdNA recommendation",
+        "Content: Nitrite Shunt (kinetic control), PdNA (stoichiometric control), full-scale reality card",
+        "Side-by-side comparison: 5 dimensions — mechanism, benefit, weakness, application",
+        "4 risk cards: NOB Adaptation, Anammox Washout, Carbon Overdosing, Sensor Drift",
+        "3 scale challenges: NOB seeding, hydraulic washout, automation reliability",
+        "Engineering recommendation section with 4 expandable design principles",
+        "Wired into app.py navigation as page 13 — no existing pages modified",
+        "282/282 tests passing",
+    ]),
     ("v24Z43", "6 Apr 2026", [
         "Percentile Compliance Logic Layer Production V1 — apps/wastewater_app/compliance_layer.py",
         "Risk-based reliability framework for concept/pre-FEED stage — NOT a dynamic process simulator",
