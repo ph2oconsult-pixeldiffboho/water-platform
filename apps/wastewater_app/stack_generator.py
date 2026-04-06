@@ -477,33 +477,90 @@ def _build_pathway_stages(
     if (CT_HYDRAULIC in ct_set or CT_WET_WEATHER in ct_set) and not _gf_mode_sg:
         hyd = next((c for c in constraints if c.constraint_type in
                     (CT_HYDRAULIC, CT_WET_WEATHER)), None)
-        use_comag = overflow or ww_peak or (hyd and hyd.severity == "High") or flow_ratio >= 2.0
-        if use_comag:
+        # Classify hydraulic sub-type:
+        # Peak-driven: storm events, PWWF spikes, overflow risk, flow_ratio ≥ 3
+        # Steady-state: sustained clarifier SOR/SVI limitation, not storm-dominated
+        _svi_high      = (plant_context.get("svi_ml_g") or 0.) > 120.
+        _cl_util       = plant_context.get("clarifier_util", 0.) or 0.
+        _cl_overloaded = _cl_util >= 1.0 or bool(plant_context.get("clarifier_overloaded", False))
+        _steady_state  = (_cl_overloaded or _svi_high) and not overflow and not ww_peak
+        _peak_driven   = overflow or ww_peak or flow_ratio >= 3.0
+        # Hybrid: clarifier/SVI issue present AND confirmed high peak flow,
+        # even if overflow_risk/ww_peak flags are not set
+        _both          = (_cl_overloaded or _svi_high) and _peak_driven
+
+        if _both:
+            # Rule 4: hybrid — steady-state SVI/SOR problem AND peak storm risk
+            emit(TI_INDENSE, MECH_BIOMASS_SEL,
+                "inDENSE improves sludge settleability and increases clarifier throughput "
+                "under steady-state conditions, but does not provide instantaneous "
+                "protection against peak storm flows.",
+                "inDENSE selectively wastes light and filamentous biomass via hydrocyclone, "
+                "densifying the retained sludge and recovering SOR headroom. "
+                "Effective where SVI > 120 mL/g or clarifier SOR is persistently exceeded "
+                "under average flow. Addresses baseline settling deficit; "
+                "CoMag addresses peak storm events.",
+                [CT_HYDRAULIC, CT_SETTLING])
             emit(TI_COMAG, MECH_BALLASTED,
-                "High-rate magnetic ballasted clarification provides rapid solids removal "
-                "under peak wet weather flows, protecting the downstream biological process "
-                "from hydraulic and solids shock.",
-                "CoMag treats flows of 3–5× DWA without new secondary tanks. Magnetic "
-                "microspheres ballast the floc, enabling surface overflow rates of "
-                "10–20 m/h vs 1–2 m/h for conventional secondary settling. "
-                "Ballast is recovered and recycled magnetically.",
+                "CoMag provides peak storm protection where inDENSE addresses the "
+                "steady-state settling deficit. Together they cover both constraint types.",
+                "InDENSE improves baseline settling; CoMag provides peak storm protection. "
+                "CoMag treats flows of 3–5× DWA. Ballast is recovered and recycled.",
                 [CT_HYDRAULIC, CT_WET_WEATHER])
-        elif flow_ratio >= 3.0:
-            # Very high flow ratio — EQ basin for sustained attenuation
-            emit(TI_EQ_BASIN, MECH_HYD_EXP,
-                "Equalisation basin attenuates sustained peak inflows before secondary treatment, "
-                "protecting biological process stability under prolonged wet weather.",
-                "Target attenuation to ≤ 2× DWA at secondary inlet. EQ basin capacity sized "
-                "to the peak event duration and return rate. No process intensification "
-                "can substitute for hydraulic attenuation at this flow ratio.",
-                [CT_HYDRAULIC, CT_WET_WEATHER])
+
+        elif _steady_state:
+            # Rule 2: steady-state clarifier limitation, no dominant storm risk
+            emit(TI_INDENSE, MECH_BIOMASS_SEL,
+                "inDENSE improves sludge settleability and increases clarifier throughput "
+                "under steady-state conditions, but does not provide instantaneous "
+                "protection against peak storm flows.",
+                "inDENSE selectively wastes light and filamentous biomass via hydrocyclone, "
+                "densifying the retained sludge and recovering SOR headroom under sustained "
+                "average or high-dry-weather flow. SVI reduction of 20–40% is typical. "
+                "Where MABR is also selected, inDENSE complements the increased biomass "
+                "concentration by improving retention of the denser carrier-associated fraction.",
+                [CT_HYDRAULIC, CT_SETTLING])
+
+        elif _peak_driven:
+            # Rule 3: peak-driven — CoMag or EQ basin
+            if flow_ratio >= 3.0 and not overflow and not ww_peak:
+                emit(TI_EQ_BASIN, MECH_HYD_EXP,
+                    "Equalisation basin attenuates sustained peak inflows before secondary "
+                    "treatment, protecting biological process stability.",
+                    "Target attenuation to ≤ 2× DWA at secondary inlet. EQ basin capacity "
+                    "sized to peak event duration and return rate.",
+                    [CT_HYDRAULIC, CT_WET_WEATHER])
+            else:
+                emit(TI_COMAG, MECH_BALLASTED,
+                    "High-rate magnetic ballasted clarification provides rapid solids removal "
+                    "under peak wet weather flows, protecting the downstream biological process "
+                    "from hydraulic and solids shock.",
+                    "CoMag treats flows of 3–5× DWA without new secondary tanks. Magnetic "
+                    "microspheres ballast the floc, enabling surface overflow rates of "
+                    "10–20 m/h vs 1–2 m/h for conventional secondary settling. "
+                    "Ballast is recovered and recycled magnetically.",
+                    [CT_HYDRAULIC, CT_WET_WEATHER])
+
         else:
-            emit(TI_EQ_BASIN, MECH_HYD_EXP,
-                "Equalisation basin smooths diurnal and wet weather flow peaks, "
-                "reducing hydraulic stress on clarifiers and biological zones.",
-                "Target ≤ 2× DWA at secondary inlet. EQ basin is the primary "
-                "hydraulic mitigation before any biological upgrade is considered.",
-                [CT_HYDRAULIC, CT_WET_WEATHER])
+            # Default: hydraulic constraint flagged, no clear sub-type — use severity
+            use_comag = (hyd and hyd.severity == "High") or flow_ratio >= 2.0
+            if use_comag:
+                emit(TI_COMAG, MECH_BALLASTED,
+                    "High-rate magnetic ballasted clarification provides rapid solids removal "
+                    "under peak wet weather flows, protecting the downstream biological process "
+                    "from hydraulic and solids shock.",
+                    "CoMag treats flows of 3–5× DWA without new secondary tanks. Magnetic "
+                    "microspheres ballast the floc, enabling surface overflow rates of "
+                    "10–20 m/h vs 1–2 m/h for conventional secondary settling. "
+                    "Ballast is recovered and recycled magnetically.",
+                    [CT_HYDRAULIC, CT_WET_WEATHER])
+            else:
+                emit(TI_EQ_BASIN, MECH_HYD_EXP,
+                    "Equalisation basin smooths diurnal and wet weather flow peaks, "
+                    "reducing hydraulic stress on clarifiers and biological zones.",
+                    "Target ≤ 2× DWA at secondary inlet. EQ basin is the primary "
+                    "hydraulic mitigation before any biological upgrade is considered.",
+                    [CT_HYDRAULIC, CT_WET_WEATHER])
 
     # ── Stage 2: Settling stabilisation ───────────────────────────────────────
     if CT_SETTLING in ct_set:
@@ -1292,6 +1349,19 @@ def build_upgrade_pathway(
 
     # ── Step 2: Priority sort (already done in _classify) ──────────────────────
     # ── Step 3-4: Build stages ─────────────────────────────────────────────────
+    # Inject CT_HYDRAULIC when steady-state clarifier signals are present in context
+    # (clarifier_overloaded or SVI > 120) but not already classified.
+    _ctx_cl_over = bool(ctx.get("clarifier_overloaded", False))
+    _ctx_svi_hi  = (ctx.get("svi_ml_g") or 0.) > 120.
+    _ct_types    = {c.constraint_type for c in constraints}
+    if (_ctx_cl_over or _ctx_svi_hi) and CT_HYDRAULIC not in _ct_types:
+        constraints = [Constraint(
+            CT_HYDRAULIC, _CT_LABELS_V1[CT_HYDRAULIC],
+            "High" if _ctx_cl_over else "Medium",
+            _PRIORITY[CT_HYDRAULIC],
+            ["Steady-state clarifier limitation (SOR overloaded or SVI > 120 mL/g)"]
+        )] + constraints
+
     guardrail_notes: List[str] = []
     stages = _build_pathway_stages(constraints, ctx)
 
@@ -1447,6 +1517,134 @@ def build_upgrade_pathway(
             "requires tertiary denitrification. Biological optimisation alone is "
             "insufficient to close this gap reliably.".format(_tn_tgt_esc)
         )
+
+    # ── Unified Process–Hydraulic Escalation ──────────────────────────────────
+    # Triggered when: stack_compliance_gap=True, stringent target (TN≤3 or TP≤0.1),
+    # and the system is in confirmed extreme failure (confidence proxy: gap + target).
+    # Adds tertiary closure elements that are absent from the current stack.
+    _esc_gap    = bool(ctx.get("stack_compliance_gap", False))
+    _esc_tn_tgt = float(ctx.get("tn_target_mg_l") or 99.)
+    _esc_tp_tgt = float(ctx.get("tp_target_mg_l") or 99.)
+    _esc_strict = (_esc_tn_tgt <= 3.0 or _esc_tp_tgt <= 0.1)
+    _esc_cs     = int(ctx.get("confidence_score", 100))   # injected by caller if available
+    _esc_low_cs = _esc_cs < 20
+
+    # Only escalate when gap is confirmed AND target is stringent AND (low score or extreme state)
+    _esc_active = _esc_gap and _esc_strict and (_esc_low_cs or s.proximity_percent >= 250.)
+    _esc_gf     = bool(ctx.get("greenfield", False))
+    _esc_sbr    = bool(ctx.get("is_sbr", False))
+
+    if _esc_active and not _esc_sbr:
+        _esc_tech  = {st.technology for st in stages}
+        _esc_notes: list = []
+        _esc_nh4_nl = bool(ctx.get("nh4_near_limit", False))
+        _esc_fr     = float(ctx.get("flow_ratio", 1.) or 1.)
+        _esc_hyd    = (CT_HYDRAULIC in {c.constraint_type for c in constraints}
+                       or CT_WET_WEATHER in {c.constraint_type for c in constraints}
+                       or _esc_fr >= 3.)
+
+        # 1. DNF closure for TN ≤3 mg/L
+        if (_esc_tn_tgt <= 3.0
+                and TI_DENFILTER not in _esc_tech
+                and TI_PDNA not in _esc_tech):
+            _esc_dnf_prereq = (
+                "Methanol dosing system and filter backwash system procured."
+                + (" DNF performance depends on stable nitrification and may require "
+                   "staged commissioning." if _esc_nh4_nl else " NH₄ stably controlled.")
+            )
+            _esc_dnf_num = max((st.stage_number for st in stages), default=0) + 1
+            _esc_tert_idx = next(
+                (i for i, st in enumerate(stages) if st.technology == TI_TERT_P), None)
+            _esc_insert = _esc_tert_idx if _esc_tert_idx is not None else len(stages)
+            _esc_dnf_stage = PathwayStage(
+                stage_number        = _esc_dnf_num,
+                technology          = TI_DENFILTER,
+                tech_display        = _TECH_DISPLAY.get(TI_DENFILTER, TI_DENFILTER),
+                mechanism           = MECH_TERT_DN,
+                mechanism_label     = _MECH_LABELS_V1.get(MECH_TERT_DN, MECH_TERT_DN),
+                purpose             = (
+                    "Tertiary denitrification filter included as closure layer to ensure "
+                    "TN ≤3 mg/L compliance under constrained upstream conditions."
+                ),
+                engineering_basis   = (
+                    "Methanol-dosed tertiary denitrification: ~2.5–3.0 mg MeOH per mg NO₃-N. "
+                    "DO at filter inlet < 0.5 mg/L. Provides robustness during peak loading "
+                    "and upstream process variability."
+                    + (" DNF performance depends on stable nitrification and may require "
+                       "staged commissioning." if _esc_nh4_nl else "")
+                ),
+                addresses           = [CT_TN_POLISH],
+                prerequisite        = _esc_dnf_prereq,
+                capex_class         = "High",
+                bio_hierarchy_level = 4,
+                bio_hierarchy_rationale = (
+                    "DNF is Level 4 — tertiary denitrification. Included as closure layer "
+                    "because TN ≤3 mg/L cannot be reliably achieved on the current stack."
+                ),
+            )
+            stages = stages[:_esc_insert] + [_esc_dnf_stage] + stages[_esc_insert:]
+            _esc_tech = {st.technology for st in stages}
+            _esc_notes.append(
+                "DNF added as tertiary closure layer: TN ≤3 mg/L target cannot be met "
+                "on the current biological stack under peak loading conditions."
+            )
+
+        # 2. CoMag closure for hydraulic constraint (brownfield only)
+        if _esc_hyd and not _esc_gf and TI_COMAG not in _esc_tech:
+            _esc_comag_num = max((st.stage_number for st in stages), default=0) + 1
+            # CoMag goes at Stage 1 (before biological stages)
+            _esc_comag_stage = PathwayStage(
+                stage_number        = _esc_comag_num,
+                technology          = TI_COMAG,
+                tech_display        = _TECH_DISPLAY.get(TI_COMAG, TI_COMAG),
+                mechanism           = MECH_BALLASTED,
+                mechanism_label     = _MECH_LABELS_V1.get(MECH_BALLASTED, MECH_BALLASTED),
+                purpose             = (
+                    "CoMag ballasted clarification included as hydraulic closure layer. "
+                    "Provides peak flow protection and enhances phosphorus removal and "
+                    "solids capture under peak flow conditions."
+                ),
+                engineering_basis   = (
+                    "CoMag treats flows of 3–5× DWA without new secondary tanks. "
+                    "Surface overflow rates of 10–20 m/h vs 1–2 m/h conventional. "
+                    "CoMag also enhances phosphorus removal and improves solids capture "
+                    "under peak flow conditions."
+                ),
+                addresses           = [CT_HYDRAULIC, CT_WET_WEATHER],
+                prerequisite        = "Ballast recovery system installed.",
+                capex_class         = "Medium",
+            )
+            # Insert at front (Stage 1 position)
+            stages = [_esc_comag_stage] + stages
+            _esc_notes.append(
+                "CoMag added as hydraulic closure layer: peak flow protection and "
+                "phosphorus removal enhancement under peak loading conditions."
+            )
+        elif _esc_hyd and _esc_gf:
+            _esc_notes.append(
+                "Hydraulic and solids capacity to be addressed through design sizing. "
+                "Tertiary clarification technologies should only be considered if "
+                "required after sizing."
+            )
+
+        # 3. Escalation header note — always emitted when escalation fires
+        _esc_final_tech = {st.technology for st in stages}
+        if not any("Escalation Mode" in n for n in guardrail_notes):
+            guardrail_notes.insert(0,
+                "Escalation Mode Activated — Tertiary Closure Strategy Applied: "
+                "Tertiary processes included to ensure compliance under constrained "
+                "upstream conditions. These systems provide robustness during peak "
+                "loading and process variability."
+            )
+        if _esc_notes:
+            guardrail_notes.extend(_esc_notes)
+        # CoMag co-benefit note — emit if CoMag is in final stack
+        if (TI_COMAG in _esc_final_tech
+                and not any("CoMag also enhances" in n for n in guardrail_notes)):
+            guardrail_notes.append(
+                "CoMag also enhances phosphorus removal and improves solids capture "
+                "under peak flow conditions."
+            )
 
     # ── Step 6-7: Build alternatives and narrative ─────────────────────────────
     alternatives  = _build_pathway_alternatives(constraints, stages, ctx)

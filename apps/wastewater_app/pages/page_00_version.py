@@ -20,6 +20,20 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
     ("v24Z56", "7 Apr 2026", [
+        "InDENSE hydraulic pathway (v24Z56a): hydrocyclone sludge densification as Stage 1 for steady-state clarifier limitation",
+        "Hydraulic constraint classified as peak-driven (CoMag) vs steady-state (inDENSE) vs both (hybrid)",
+        "Signals: clarifier_overloaded=True or svi_ml_g > 120 inject CT_HYDRAULIC constraint; trigger inDENSE",
+        "Greenfield: both CoMag and inDENSE suppressed at Stage 1; design sizing note added",
+        "Non-regression: plain storm scenarios without clarifier signals unchanged",
+        "Unified Process-Hydraulic Escalation Rule (v24Z56b): tertiary closure strategy for extreme failure + stringent targets",
+        "Trigger: stack_compliance_gap=True AND (TN≤3 OR TP≤0.1) AND (confidence<20 OR proximity≥250%)",
+        "Action: adds DNF for TN≤3, CoMag for hydraulic stress (brownfield), greenfield suppresses CoMag with design note",
+        "NH4 near limit: DNF added with staged commissioning note",
+        "CoMag co-benefit note: phosphorus removal and solids capture enhancement",
+        "Escalation Mode guardrail note injected when triggered; TN≤5 never triggers escalation",
+        "15/15 validation checks pass; 282/282 benchmark tests pass",
+    ]),
+    ("v24Z56", "7 Apr 2026", [
         "Delivery and Operational Considerations layer added to ComplianceReport",
         "New field: delivery_considerations (List[str]) on ComplianceReport dataclass",
         "New function: _build_delivery_considerations() in compliance_layer.py",
