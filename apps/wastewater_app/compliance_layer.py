@@ -149,6 +149,14 @@ class ComplianceReport:
     # Phase 2 realism
     sludge_flag:          str   = ""
     effective_cod_tn_val: float = 0.
+    # Confidence score layer
+    confidence_score:   int  = 100
+    confidence_label:   str  = "High"
+    confidence_drivers: list = None  # List[str] — top penalty drivers
+
+    def __post_init__(self):
+        if self.confidence_drivers is None:
+            object.__setattr__(self, 'confidence_drivers', [])
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -1139,6 +1147,113 @@ def build_compliance_report(
         if _op_flag else ""
     )
 
+
+    # ── Confidence Score Layer ────────────────────────────────────────────────
+    _score    = 100
+    _drivers  = []   # penalty driver labels
+
+    # 1. High TKN severity
+    if _tkn_in > 50.:
+        _req_rem = (_tkn_in - tn_tgt) / _tkn_in if _tkn_in > 0 else 0.
+        if _req_rem >= 0.90:
+            _score  -= 20
+            _drivers.append("High TKN removal requirement (>{:.0f}%)".format(int(_req_rem*100)))
+        else:
+            _score  -= 10
+            _drivers.append("Elevated TKN influent (>{:.0f} mg/L)".format(_tkn_in))
+
+    # 2. Carbon limitation
+    if _eff_codn < 5. and _cod_in > 0.:
+        _score  -= 15
+        _drivers.append("Carbon limitation (effective COD:TN {:.1f})".format(_eff_codn))
+        if _eff_codn < 3.:
+            _score  -= 10
+            _drivers.append("Severe carbon deficit (effective COD:TN < 3)")
+
+    # 3. Low temperature
+    _temp = float(ctx.get("temp_celsius") or ctx.get("temperature_celsius") or 20.)
+    if _temp <= 12.:
+        _score  -= 10
+        _drivers.append("Low operating temperature (≤12°C)")
+
+    # 4. Hydraulic stress
+    _fr = _flow_ratio(ctx)
+    if _fr >= 4.:
+        _score  -= 15   # 10 + 5 additional
+        _drivers.append("Extreme hydraulic stress (≥4× ADWF)")
+    elif _fr >= 3.:
+        _score  -= 10
+        _drivers.append("High hydraulic stress (≥3× ADWF)")
+
+    # 5. Compliance status (use final TN param after all consistency rules)
+    _tn_final_p = next(p for p in params if p.parameter == "TN")
+    if _tn_final_p.median_outcome == NOT_YET_CREDIBLE:
+        _score  -= 25
+        _drivers.append("TN median compliance not credible on current stack")
+    elif _tn_final_p.median_outcome == CONDITIONAL:
+        _score  -= 10
+        _drivers.append("TN median compliance conditional")
+    if _tn_final_p.p95_outcome == NOT_YET_CREDIBLE:
+        _score  -= 25
+        _drivers.append("TN P95 compliance not credible")
+    elif _tn_final_p.p95_outcome == CONDITIONAL:
+        _score  -= 10
+        _drivers.append("TN P95 compliance conditional")
+
+    # 6. NH4 limitation
+    _nh4_final_p = next((p for p in params if p.parameter == "NH₄"), None)
+    if _nh4_final_p and _nh4_final_p.p95_outcome != ACHIEVABLE:
+        _score  -= 10
+        _drivers.append("Nitrification reliability at P95")
+
+    # 7. Process complexity
+    _tech_set = {s.technology for s in pathway.stages}
+    if "PdNA (Partial Denitrification-Anammox)" in _tech_set:
+        _score  -= 10
+        _drivers.append("PdNA process complexity")
+    _adv_stage = {"MABR (OxyFAS retrofit)", "Denitrification Filter",
+                  "IFAS", "MOB (miGRATE + inDENSE)"}
+    if _tech_set & _adv_stage:
+        _score  -= 5
+        _drivers.append("Multi-stage advanced process stack")
+
+    # 8. Operator capability
+    if _op_flag:
+        _score  -= 10
+        _drivers.append("Operator capability risk ({})".format(
+            ctx.get("location_type", "regional")))
+
+    # 9. Sludge / high load
+    if _fix3_note:
+        _score  -= 5
+        _drivers.append("High sludge production")
+
+    # 10. Stack compliance gap
+    if _gap:
+        _score  -= 20
+        _drivers.append("Stack compliance gap — upgrade required")
+
+    # Normalise and band
+    _score = max(0, min(100, _score))
+    if _score >= 80:
+        _c_label = "High"
+    elif _score >= 60:
+        _c_label = "Moderate"
+    elif _score >= 40:
+        _c_label = "Low"
+    else:
+        _c_label = "Very Low"
+
+    # Enforce: Not credible compliance cannot be High confidence
+    if (_tn_final_p.median_outcome == NOT_YET_CREDIBLE or
+            _tn_final_p.p95_outcome == NOT_YET_CREDIBLE):
+        if _c_label == "High":
+            _c_label = "Moderate"
+            _score   = min(_score, 79)
+
+    # Keep top 3 drivers
+    _top_drivers = _drivers[:3]
+
     return ComplianceReport(
         parameters             = params,
         drivers                = drivers,
@@ -1154,4 +1269,7 @@ def build_compliance_report(
         operator_capability_note      = _op_note,
         sludge_flag                   = _fix3_note,
         effective_cod_tn_val          = _eff_codn,
+        confidence_score              = _score,
+        confidence_label              = _c_label,
+        confidence_drivers            = _top_drivers,
     )

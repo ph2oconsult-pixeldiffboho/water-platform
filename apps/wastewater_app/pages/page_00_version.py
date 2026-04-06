@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z49", "7 Apr 2026", [
+        "Confidence Score Layer added to ComplianceReport",
+        "Score 0-100: starts at 100, penalties applied for high TKN removal, carbon limitation, low temperature, hydraulic stress, compliance status, NH4 limitation, process complexity, operator capability, sludge load, stack gap",
+        "Banding: High (≥80), Moderate (60-79), Low (40-59), Very Low (<40)",
+        "Invariant: Not credible compliance cannot produce High confidence label",
+        "Top 3 penalty drivers returned as confidence_drivers list",
+        "New ComplianceReport fields: confidence_score (int), confidence_label (str), confidence_drivers (list)",
+        "24/24 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z48", "7 Apr 2026", [
         "Compliance consistency enforcement — four rules applied after all Phase 2 adjustments",
         "Rule 1: TN median = Not credible ⇒ TN P95 forced to Not credible; flag added to P95 conditions",
