@@ -507,7 +507,25 @@ def build_bf_gf_assessment(
     }
     total = sum(dim_scores.values())
 
-    # ── Classify ───────────────────────────────────────────────────────────────
+    # Fix 4: Greenfield mode — reduce hydraulic/footprint penalty,
+    # reframe as design optimisation not brownfield intensification
+    _gf_mode = bool(ctx.get('greenfield', False))
+    _gf_bonus = 0
+    if _gf_mode:
+        # On a new plant, hydraulic and footprint constraints are design variables
+        # — they do not drive toward replacement. Reduce their contribution.
+        _gf_bonus = min(s_foot + s_flow, 4)   # remove up to 4 pts of footprint/flow penalty
+        total = max(0, total - _gf_bonus)
+        dim_notes['Flow ratio'] = (
+            '[Greenfield] Hydraulic sizing is a design variable on a new plant. '
+            + dim_notes.get('Flow ratio', '')
+        )
+        dim_notes['Footprint'] = (
+            '[Greenfield] Footprint is a design variable on a new plant. '
+            + dim_notes.get('Footprint', '')
+        )
+
+    # ── Classify ─────────────────────────────────────────────────────────
     if total <= 4:
         recommendation = STRONG_BROWNFIELD
     elif total <= 9:

@@ -1386,8 +1386,15 @@ def build_upgrade_pathway(
         CT_UNKNOWN, "Unknown", "Low", 9, [])
     secondary_con = constraints[1:] if len(constraints) > 1 else []
 
+    # Fix 5: greenfield mode — reclassify hydraulic 'Failure Risk' as design variable
+    _state_label = s.state
+    _gf_active   = bool(ctx.get('greenfield', False))
+    if _gf_active and s.state == 'Failure Risk':
+        # On a new plant, sizing for peak flow is a design choice, not a failure
+        _state_label = 'Design load — size for compliance in design phase'
+
     return UpgradePathway(
-        system_state         = s.state,
+        system_state         = _state_label,
         proximity_pct        = s.proximity_percent,
         plant_type           = ctx.get("plant_type", "Unknown"),
         flow_scenario        = fst or "DWA",

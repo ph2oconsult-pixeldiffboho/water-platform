@@ -146,6 +146,9 @@ class ComplianceReport:
     stack_consistency_note:   str  = ""
     operator_capability_flag: bool = False
     operator_capability_note: str  = ""
+    # Phase 2 realism
+    sludge_flag:          str   = ""
+    effective_cod_tn_val: float = 0.
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -158,6 +161,39 @@ def _cold(ctx: Dict) -> bool:
 
 def _aer_constrained(ctx: Dict) -> bool:
     return bool(ctx.get("aeration_constrained", False))
+
+
+
+# ── Phase 2 realism helpers ───────────────────────────────────────────────────
+
+def _influent_tn_mg_l(ctx: Dict) -> float:
+    v = ctx.get("tn_in_mg_l") or ctx.get("influent_tn_mg_l")
+    if v: return float(v)
+    cod_tn = ctx.get("cod_tn_ratio")
+    # If we have cod_tn ratio, can't infer TN — return 0 (unknown)
+    return 0.
+
+def _influent_cod_mg_l(ctx: Dict) -> float:
+    v = ctx.get("cod_mg_l") or ctx.get("influent_cod_mg_l")
+    if v: return float(v)
+    cod_tn = ctx.get("cod_tn_ratio")
+    tn_in  = ctx.get("tn_in_mg_l") or ctx.get("influent_tn_mg_l")
+    if cod_tn and tn_in:
+        return float(cod_tn) * float(tn_in)
+    return 0.
+
+def _high_tkn_removal_required(tkn_in: float, tn_target: float) -> bool:
+    if tkn_in <= 0: return False
+    return ((tkn_in - tn_target) / tkn_in) >= 0.90
+
+def _effective_cod_tn(cod_in: float, tkn_in: float) -> float:
+    if tkn_in <= 0 or cod_in <= 0: return 999.
+    return (cod_in * 0.60) / tkn_in
+
+def _downgrade_outcome(outcome: str) -> str:
+    if outcome == ACHIEVABLE:   return CONDITIONAL
+    if outcome == CONDITIONAL:  return NOT_YET_CREDIBLE
+    return outcome
 
 
 def _carbon_limited(ctx: Dict) -> bool:
@@ -988,6 +1024,56 @@ def build_compliance_report(
     brownfield_note    = _build_brownfield_note(params, ctx)
     overall_confidence = _overall_confidence(params, ctx)
 
+    # ── Phase 2 realism (Fixes 1, 2, 3) ─────────────────────────────────────
+    _tkn_in  = _influent_tn_mg_l(ctx)
+    _cod_in  = _influent_cod_mg_l(ctx)
+    _tn_p    = next(p for p in params if p.parameter == "TN")
+    _tn_idx  = params.index(_tn_p)
+    _has_adv = _has_tech(pathway, TI_PDNA, TI_DENFILTER)
+
+    # Fix 1: High TKN removal >90% at P95
+    if (_tkn_in > 50. and tn_tgt <= 5.
+            and tn_basis in (BASIS_P95, BASIS_P99)
+            and _high_tkn_removal_required(_tkn_in, tn_tgt)):
+        _f1 = ("High TKN removal requirement (>90%) \u2014 "
+               "performance risk at P95 conditions.")
+        _new_p95 = _downgrade_outcome(_tn_p.p95_outcome)
+        _new_dvs = list(_tn_p.decision_variables) + [_f1]
+        _new_p95c = [_f1] + list(_tn_p.p95_conditions)
+        from dataclasses import replace as _dc_replace
+        _tn_p = _dc_replace(_tn_p,
+            p95_outcome=_new_p95,
+            p95_conditions=_new_p95c,
+            decision_variables=_new_dvs)
+
+    # Fix 2: COD fractionation / effective COD:TN
+    _eff_codn = _effective_cod_tn(_cod_in, _tkn_in) if _tkn_in > 0 else 999.
+    _fix3_note = ""
+    if (_tkn_in > 50. or tn_tgt <= 5.) and _cod_in > 0.:
+        if _eff_codn < 5.:
+            _f2 = ("Biologically available COD may be insufficient for target TN — "
+                   "effective COD:TN after settling ≈{:.1f} (threshold 5.0). "
+                   "Carbon limitation likely at P95.".format(_eff_codn))
+            from dataclasses import replace as _dc_replace
+            if not _has_adv:
+                _new_med  = _downgrade_outcome(_tn_p.median_outcome)
+                _new_mc2  = [_f2] + list(_tn_p.median_conditions)
+                _new_dvs2 = list(_tn_p.decision_variables) + [_f2]
+                _tn_p = _dc_replace(_tn_p, median_outcome=_new_med,
+                    median_conditions=_new_mc2, decision_variables=_new_dvs2)
+            else:
+                # Advanced N removal present: flag only, do not downgrade
+                _tn_p = _dc_replace(_tn_p,
+                    decision_variables=list(_tn_p.decision_variables) + [_f2])
+
+    # Fix 3: Sludge production flag
+    if _cod_in > 400. or _tkn_in > 50.:
+        _fix3_note = ("Sludge production significantly above typical municipal baseline \u2014 "
+                      "verify sludge handling capacity before committing to design.")
+
+    params[_tn_idx] = _tn_p
+
+
     # Fix 1: stack↔compliance consistency
     _tn_param  = next(p for p in params if p.parameter == "TN")
     _gap = (
@@ -1031,4 +1117,6 @@ def build_compliance_report(
         stack_consistency_note        = _gap_note,
         operator_capability_flag      = _op_flag,
         operator_capability_note      = _op_note,
+        sludge_flag                   = _fix3_note,
+        effective_cod_tn_val          = _eff_codn,
     )

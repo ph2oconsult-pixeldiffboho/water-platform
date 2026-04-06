@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z47", "7 Apr 2026", [
+        "Phase 2 Engineering Realism Upgrades — 5 fixes from extreme red team audit",
+        "Fix 1 (Critical): High TKN removal realism — when TKN>50 mg/L + TN≤5 mg/L + P95 basis + removal≥90%, TN P95 downgraded one level and flag added to decision variables",
+        "Fix 2 (High): COD fractionation — effective COD:TN computed as settled COD (influent×0.6)/TKN; if <5.0 and no DNF/PdNA in stack, TN median downgraded; flag always added to DVs even when PdNA present (external carbon warning)",
+        "Fix 3 (Medium): Sludge production visibility — sludge_flag field added to ComplianceReport; fires when COD>400 or TKN>50 mg/L; information only, no downgrade",
+        "Fix 4 (Medium): Greenfield BF/GF scoring — when greenfield=True, footprint+flow ratio penalty removed from total score (up to 4 pts); dimension notes prefixed with [Greenfield]",
+        "Fix 5 (Medium): Hydraulic state label correction — when greenfield=True and Failure Risk state, pathway.system_state relabelled to 'Design load — size for compliance in design phase'",
+        "New ComplianceReport fields: sludge_flag (str), effective_cod_tn_val (float)",
+        "14/14 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z46", "7 Apr 2026", [
         "Five red team fixes applied across compliance_layer, bnr_strategy_layer, stack_generator, waterpoint_adapter",
         "Fix 1 (Critical): Stack↔compliance consistency — stack_compliance_gap + stack_consistency_note fields added to ComplianceReport; fires when TN≤3 mg/L at P95 basis and TN P95 = Not yet credible; note explicitly states DNF or PdNA required",
