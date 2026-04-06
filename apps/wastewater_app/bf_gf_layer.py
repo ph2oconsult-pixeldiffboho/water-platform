@@ -526,6 +526,16 @@ def build_bf_gf_assessment(
         )
 
     # ── Classify ─────────────────────────────────────────────────────────
+    # Fix 4: escalate when compliance gap is proven (gap_in_ctx + TN median not credible)
+    _gap_ctx = bool(ctx.get("stack_compliance_gap", False))
+    _tn_med_nc = ctx.get("tn_median_not_credible", False)
+    if _gap_ctx and _tn_med_nc:
+        total = total + 4
+        dim_notes["Compliance"] = (
+            "Stack compliance gap confirmed: TN cannot be met under average conditions. "
+            "Replacement pressure elevated."
+        )
+
     if total <= 4:
         recommendation = STRONG_BROWNFIELD
     elif total <= 9:

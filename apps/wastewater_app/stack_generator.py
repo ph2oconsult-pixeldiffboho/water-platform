@@ -217,6 +217,7 @@ class UpgradePathway:
     # Metadata
     multi_constraint:   bool = False
     guardrail_notes:    List[str] = field(default_factory=list)  # engineering rules applied
+    system_state_type:  str = "Hydraulic / operating stress"  # Fix5: separate from compliance
 
     # Constraint priority override
     # compliance_primary_ct: the constraint that determines licence compliance
@@ -472,7 +473,8 @@ def _build_pathway_stages(
         stage_n[0] += 1
 
     # ── Stage 1: Hydraulic stabilisation ──────────────────────────────────────
-    if CT_HYDRAULIC in ct_set or CT_WET_WEATHER in ct_set:
+    _gf_mode_sg = bool(plant_context.get("greenfield", False))
+    if (CT_HYDRAULIC in ct_set or CT_WET_WEATHER in ct_set) and not _gf_mode_sg:
         hyd = next((c for c in constraints if c.constraint_type in
                     (CT_HYDRAULIC, CT_WET_WEATHER)), None)
         use_comag = overflow or ww_peak or (hyd and hyd.severity == "High") or flow_ratio >= 2.0
@@ -1296,6 +1298,19 @@ def build_upgrade_pathway(
     # ── Step 5: Apply engineering guardrails ────────────────────────────────────
     stages = _apply_guardrails(stages, constraints, guardrail_notes)
 
+    # Greenfield hydraulic note (CoMag/BioMag suppressed — design sizing instead)
+    if bool(ctx.get("greenfield", False)):
+        _gf_hyd_needed = any(
+            c.constraint_type in (CT_HYDRAULIC, CT_WET_WEATHER)
+            for c in constraints
+        )
+        if _gf_hyd_needed and not any("Hydraulic capacity" in n for n in guardrail_notes):
+            guardrail_notes.append(
+                "Hydraulic capacity to be addressed through sizing of clarifiers, "
+                "reactors, and hydraulic pathways in the design phase. "
+                "No retrofit hydraulic relief technology is required on a new plant."
+            )
+
     # Guardrail: always add wet weather note
     if not any("wet weather" in n.lower() for n in guardrail_notes):
         guardrail_notes.append(
@@ -1371,10 +1386,10 @@ def build_upgrade_pathway(
     _nh4_ok_esc   = not bool(ctx.get("nh4_near_limit", False))
     _not_sbr_esc  = not bool(ctx.get("is_sbr", False))
 
+    _nh4_nl_esc = bool(ctx.get("nh4_near_limit", False))
     if (_tn_tgt_esc <= 3.0
             and _is_p95_esc
             and not _has_adv_esc
-            and _nh4_ok_esc
             and _not_sbr_esc):
 
         # Determine insertion position: DNF goes after Bardenpho if present,
@@ -1391,31 +1406,38 @@ def build_upgrade_pathway(
         else:
             _insert_pos = len(stages)   # append at end
 
+        _dnf_prereq = (
+            "Methanol dosing system and filter backwash system procured."
+            + (" NOTE: nitrification is currently near its limit — "
+               "establish stable NH₄ control before commissioning DNF."
+               if _nh4_nl_esc else " NH₄ stably controlled.")
+        )
+        _dnf_basis = (
+            "Methanol-dosed tertiary denitrification: ~2.5–3.0 mg MeOH per mg NO₃-N. "
+            "DO at filter inlet must be < 0.5 mg/L. Required to close the "
+            "TN ≤3 mg/L compliance gap that biological optimisation alone cannot close."
+            + (" Commissioning prerequisite: establish stable NH₄ control first."
+               if _nh4_nl_esc else "")
+        )
+        _dnf_num = max((s.stage_number for s in stages), default=0) + 1
         _dnf_stage = PathwayStage(
-            technology       = TI_DENFILTER,
-            tech_display     = _TECH_DISPLAY.get(TI_DENFILTER, TI_DENFILTER),
-            mechanism        = MECH_TERT_DN,
-            rationale        = (
-                "Denitrification filter added to close the TN ≤3 mg/L compliance gap. "
-                "Biological optimisation alone cannot reliably achieve TN < 3 mg/L at "
-                "95th percentile — tertiary methanol-dosed denitrification is required "
-                "to polish the residual TN after Bardenpho."
+            stage_number        = _dnf_num,
+            technology          = TI_DENFILTER,
+            tech_display        = _TECH_DISPLAY.get(TI_DENFILTER, TI_DENFILTER),
+            mechanism           = MECH_TERT_DN,
+            mechanism_label     = _MECH_LABELS_V1.get(MECH_TERT_DN, MECH_TERT_DN),
+            purpose             = (
+                "Denitrification filter provides tertiary TN polishing to close the "
+                "TN ≤3 mg/L compliance gap that biological optimisation alone cannot close."
             ),
-            when_to_implement = (
-                "After Level 1 biological optimisation (Bardenpho / recycle) is complete "
-                "and NH₄ is stably controlled. Do not commission DNF until upstream "
-                "nitrification is demonstrated."
-            ),
-            constraints_addressed = [CT_TN_POLISH],
-            prerequisite     = (
-                "NH₄ stably controlled. Bardenpho optimisation complete. "
-                "Methanol dosing system and filter backwash system procured."
-            ),
-            capex_class      = "High",
+            engineering_basis   = _dnf_basis,
+            addresses           = [CT_TN_POLISH],
+            prerequisite        = _dnf_prereq,
+            capex_class         = "High",
             bio_hierarchy_level = 4,
-            bio_rationale    = (
-                "DNF is Level 4 — tertiary denitrification. Added here because TN ≤3 mg/L "
-                "at 95th percentile basis cannot be reliably delivered by biological "
+            bio_hierarchy_rationale = (
+                "DNF is Level 4 — tertiary denitrification. Required because TN ≤3 mg/L "
+                "at 95th percentile cannot be reliably achieved by biological "
                 "optimisation alone on this stack."
             ),
         )
@@ -1463,6 +1485,7 @@ def build_upgrade_pathway(
 
     return UpgradePathway(
         system_state         = _state_label,
+        system_state_type    = "Hydraulic / operating stress",
         proximity_pct        = s.proximity_percent,
         plant_type           = ctx.get("plant_type", "Unknown"),
         flow_scenario        = fst or "DWA",

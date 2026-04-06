@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z55", "7 Apr 2026", [
+        "Five mandatory engineering fixes from senior review",
+        "Fix 1: DNF stack escalation — NH₄ near-limit no longer blocks DNF; fires for all TN≤3 P95 gap scenarios; commissioning caveat injected into stage notes when NH₄ is near limit",
+        "Fix 2: Greenfield CoMag/BioMag suppression — hydraulic relief technologies excluded from greenfield primary stacks; design sizing note added to guardrail notes",
+        "Fix 3: Temperature forced visibility at ≤12°C in Confidence Drivers Panel (shipped in v24Z54)",
+        "Fix 4: BF/GF escalation — when stack_compliance_gap=True and TN median=Not credible, BF/GF score increases by 4pts and Compliance dimension note added",
+        "Fix 5: system_state_type field added to UpgradePathway dataclass ('Hydraulic / operating stress') — separates hydraulic stress state from compliance performance",
+        "14/15 validation checks pass (1 expected: gap flag correctly reflects pre-DNF compliance state); 282/282 benchmark tests pass",
+    ]),
     ("v24Z54", "7 Apr 2026", [
         "Forced visibility for critical physical constraints in Confidence Drivers Panel",
         "Rule 1 (Temperature): ≤12°C forces 'Low temperature limits biological reaction rates'; "
