@@ -12,13 +12,14 @@ from apps.ui.ui_components import render_page_header
 def render() -> None:
     render_page_header("📖 User Manual", "Platform guide, module reference, and engineering notes.")
 
-    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_eng = st.tabs([
+    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_wp, tab_eng = st.tabs([
         "🚀 Getting Started",
         "🔄 Workflow Guide",
         "⚙️ Treatment Modules",
         "📋 Input Reference",
         "📊 Understanding Results",
         "🔬 Digital Twin",
+        "⚡ WaterPoint Intelligence",
         "🔧 Engineering Notes",
     ])
 
@@ -569,7 +570,272 @@ Three parameters can be calibrated from plant data:
                 "Update these directly in Page 02 inputs — they do not override model assumptions automatically.")
 
     # ─────────────────────────────────────────────────────────────────────
-    # TAB 7 — ENGINEERING NOTES
+    # TAB 7 — WATERPOINT INTELLIGENCE
+    # ─────────────────────────────────────────────────────────────────────
+    with tab_wp:
+        st.markdown("## WaterPoint Intelligence")
+        st.markdown(
+            "WaterPoint is the decision-support layer that runs on top of the engineering "
+            "calculations. It interprets outputs, identifies compliance gaps, recommends "
+            "upgrade pathways, and guides the user from rapid screening toward plant-specific "
+            "analysis. All WaterPoint outputs are read-only — they never alter the engineering calculations."
+        )
+
+        st.info(
+            "WaterPoint renders in the **Results page (Page 04)** after calculations are run. "
+            "Sections E1–E8 appear below the main engineering tabs."
+        )
+
+        with st.expander("**What WaterPoint adds to the Results page**", expanded=True):
+            rows = [
+                ("A. System Stress", "Four metrics — System State, Load/Capacity %, Trajectory, and Confidence — with a colour-coded status badge and primary constraint summary."),
+                ("B. Failure Mode Analysis", "Ranked failure modes with severity (High/Medium/Low), root cause, and recommended response."),
+                ("C. Decision Layer", "Prioritised actions across three time horizons: Short-term (0–12 months operational), Medium-term (1–3 years debottlenecking), Long-term (3–10 years capital)."),
+                ("D. Compliance & Regulatory Risk", "Compliance risk level, likely breach type, reputational risk, and regulatory exposure."),
+                ("E1. Recommended Upgrade Stack", "Technology selection and stage-by-stage engineering rationale, feasibility rating per stage, credibility notes, and consistency checks."),
+                ("E2. Alternative Pathways", "Up to three alternative technology stacks with CAPEX class and preferred use conditions."),
+                ("E3. Feasibility Assessment", "Six feasibility dimensions (supply chain, operational complexity, chemical dependency, energy, integration, sludge), key risks and mitigations."),
+                ("E4. Carbon & Uncertainty", "CO₂e reduction range (low/central/high bands, IPCC AR6), five uncertainty dimensions, top sensitivity drivers, decision tension."),
+                ("E5. Stabilisation Options", "Low-cost stabilisation measures that may defer or de-risk capital. Each option is rated by capital class and time to result."),
+                ("E6. Risk & Mitigation", "Per-technology risk profiles across four categories with mitigation strategies."),
+                ("E7. Greenfield Delivery Model Comparison", "Conventional vs intensified comparison across footprint, resilience, OPEX style, and operational complexity. Shown for greenfield or intensified-stack scenarios."),
+                ("E8. Refinement Prompt", "Phase 1 → Phase 2 upgrade path. Prompts the user to add plant-specific data when confidence is below 70 or constraints are present. See Refinement section below."),
+            ]
+            for section, desc in rows:
+                st.markdown(f"**{section}**")
+                st.caption(desc)
+                st.markdown("")
+
+        st.markdown("---")
+        st.markdown("### Compliance Layer — Confidence Score")
+        st.markdown("""
+The **confidence score (0–100)** summarises how reliably the recommended stack can
+achieve the compliance target under the stated conditions. It is not a probability —
+it is a calibrated engineering judgement.
+
+**How it is built:**
+
+| Penalty category | Deduction |
+|---|---|
+| TN target not achievable at median | −20 |
+| TN target not achievable at P95 | −20 |
+| Compliance gap (stack cannot close target) | −20 |
+| Nitrification uncertainty | −10 |
+| Peak performance risk | −10 |
+| Carbon limitation (COD:TN < 5) | −5 |
+| Cold temperature (< 12°C) | −5 |
+| Operator capability concern | −5 |
+| Sludge production (COD ≥ 500 or TKN ≥ 60) | −5 |
+| MABR / advanced configuration complexity | −5 |
+
+**Confidence bands:**
+
+| Score | Label | Meaning |
+|---|---|---|
+| 80–100 | High | Compliant under average and peak conditions |
+| 60–79 | Moderate | Compliant at average; risk under peak |
+| 40–59 | Low | Conditionally compliant; constraint present |
+| 0–39 | Very Low | Compliance gap; escalation required |
+""")
+
+        st.markdown("---")
+        st.markdown("### Diagnosis and Closure Statements")
+        st.markdown("""
+Every compliance output includes three structured statements:
+
+**Diagnosis** — what is preventing or threatening compliance:
+- If TN is *Conditional* (not failing at median): *"Current configuration can meet the target under average conditions but carries performance risk under peak or stressed conditions due to: [cause]."*
+- If TN is *Not credible* (failing): *"Current configuration cannot meet the target under current constraints due to: [cause]."*
+- If greenfield and score < 20: *"Current concept is not viable under the defined configuration and requires redesign."*
+
+**Clarifier root-cause correction:** When SVI ≥ 140 mL/g or clarifier is flagged as overloaded, the diagnosis correctly cites **clarifier settling and hydraulic limitation** as the primary cause — not nitrification uncertainty.
+
+**Dual-cause diagnosis:** When both a compliance failure and high sludge production coexist, the diagnosis includes a second sentence for the operational constraint.
+
+**Closure** — what tertiary element is required to close the compliance gap (e.g. DNF, PdNA, CoMag). Only shown when escalation fires.
+""")
+
+        st.markdown("---")
+        st.markdown("### Technology Stack Generation")
+        st.markdown("""
+The upgrade stack is generated by `stack_generator.py` using a rule-based engine
+that reads plant context signals and selects technologies in priority order.
+
+**Key selection rules:**
+
+| Signal | Technology triggered |
+|---|---|
+| SVI ≥ 120 mL/g, clarifier overloaded, no storm | inDENSE (steady-state settling) |
+| Storm risk (overflow_risk + wet_weather_peak) | CoMag (peak flow ballasted clarification) |
+| Both SVI and storm present | CoMag → inDENSE (CoMag leads — storm priority) |
+| TN ≤ 3 mg/L, carbon-limited, biofilm available | PdNA (partial denitrification-anammox) |
+| TN ≤ 5 mg/L, escalation mode, DNF required | Denitrification Filter |
+| Aeration-constrained | MABR (OxyFAS retrofit) |
+
+**CoMag escalation guard:** CoMag only fires when `peak_flow_ratio ≥ 3.0` OR explicit storm/overflow flags are present. A clarifier overload signal alone at low flow ratios is insufficient — a conventional design management note is added instead.
+
+**Hybrid ordering:** When both CoMag and inDENSE are selected, CoMag always appears first in the stack. CoMag addresses acute storm safety risk; inDENSE addresses sustained settling performance. The commissioning sequence follows the same order.
+""")
+
+        st.markdown("---")
+        st.markdown("### Greenfield Pathway Comparison")
+        st.markdown("""
+For greenfield scenarios, WaterPoint generates two concept paths alongside the primary stack:
+
+| Path | Description |
+|---|---|
+| **Conventional** | Bardenpho BNR, secondary clarifiers, tertiary P. Higher land; lower O&M complexity. |
+| **Intensified** | MABR-led stack. Lower footprint; higher operational expertise required. |
+
+**Scoring adjusts for:**
+- **Footprint constraint** — abundant land boosts conventional; constrained land boosts intensified
+- **Operator context** — remote location: conventional +5, intensified −5; metro: intensified +5
+- **Combined effect** — constrained + metro produces the largest spread (S17: Conv 60M vs Int 75M)
+
+**Primary stack override:** When `footprint_constraint = "abundant"` and the conventional path score ≥ intensified, the primary stack switches to conventional BNR (Bardenpho → Recycle/clarifier → Tertiary P) instead of MABR-led. This aligns the primary recommendation with the pathway comparison.
+
+**GF redesign framing:** When greenfield score < 20, the diagnosis reads *"requires redesign"* not *"cannot meet."* This distinguishes design incompleteness from physical impossibility.
+""")
+
+        st.markdown("---")
+        st.markdown("### Sludge and TKN Driver Visibility")
+        st.markdown("""
+**Sludge driver** appears in the top 3 confidence drivers when:
+- COD ≥ 500 mg/L, OR
+- TKN ≥ 60 mg/L, OR
+- Sludge flag is active
+
+Label: *"High solids production increases sludge handling, dewatering, and disposal requirements"*
+
+**TKN removal impossibility driver** is always in the top 3 when TKN ≥ 60 mg/L or required removal ≥ 90%:
+
+Label: *"High nitrogen removal requirement (>90%) exceeds typical biological limits"*
+
+Both drivers are **protected** — they cannot be displaced by operational complexity or hydraulic drivers. When both are triggered together, both appear in the panel alongside whichever compliance driver leads.
+""")
+
+        st.markdown("---")
+        st.markdown("### PdNA Selection Logic")
+        st.markdown("""
+PdNA (Partial Denitrification-Anammox) is selected when:
+
+**Standard path (brownfield or greenfield):**
+- TN target ≤ 5 mg/L
+- Carbon limited (COD:TN < 5 or `carbon_limited_tn = True`)
+- Biofilm available (IFAS, MBBR, or MABR in stack)
+- `nh4_near_limit = False` (stable nitrification)
+
+**Greenfield low-COD override:**
+- Greenfield mode
+- COD ≤ 200 mg/L
+- TN target ≤ 3 mg/L
+
+The override bypasses the `nh4_near_limit` suppression because on a greenfield design,
+nitrification capacity is engineered from scratch — it is not inherited from an existing
+plant with an unstable nitrification record. PdNA avoids methanol dependency and is preferred
+over DNF on new plants with weak sewage.
+
+When PdNA is selected, a mandatory carbon verification note is added to the delivery
+considerations: *"Accurate characterisation of influent carbon is a critical prerequisite
+for selecting the optimal nitrogen removal pathway."*
+""")
+
+        st.markdown("---")
+        st.markdown("### Brownfield Asset Capture (Phase 2 Input Schema)")
+        st.markdown("""
+The `brownfield_asset_capture` module provides a structured ingestion schema
+for plant-specific data. It validates inputs, derives engineering flags, and
+produces a `plant_context` dict that bridges into the decision engine.
+
+**Three-tier completeness:**
+
+| Status | Condition | Behaviour |
+|---|---|---|
+| **COMPLETE** | All critical + secondary fields present | Full analysis; confidence up to 100 |
+| **PARTIAL** | Missing secondary fields (SVI, aeration util, clarifier flag) | Analysis continues with warning; −10 per missing field |
+| **INSUFFICIENT** | Missing any critical field (flow, temperature, TN target) | Analysis blocked; missing fields listed |
+
+**Critical fields:** `average_flow_MLD`, `peak_flow_MLD`, `TN_target_mgL`, `temperature_typical_C`
+
+**Secondary fields:** `average_SVI_mLg`, `peak_utilisation_percent`, `clarifier_limited`
+
+**Consistency checks:** flow ordering (peak > average), temperature range (min ≤ typical ≤ max), blower count (duty ≤ total), SVI sanity (50–300 mL/g warning).
+
+**Derived flags auto-computed:**
+- `storm_flag` — peak/average ≥ 3.0
+- `aeration_constraint_flag` — peak utilisation ≥ 90%
+- `clarifier_constraint_flag` — SVI ≥ 140 mL/g
+- `sludge_constraint_flag` — capacity_status = "overloaded"
+
+**Data confidence score:** Starts at 100. Deducts −10 per missing secondary field, −5 per warning, −15 per estimated/default value used.
+""")
+
+        st.markdown("---")
+        st.markdown("### Refinement Layer (Phase 1 → Phase 2)")
+        st.markdown("""
+After Phase 1 results are shown, WaterPoint evaluates whether to prompt the user
+to add plant-specific data. This is **never blocking** — the user can always continue
+with the current assessment.
+
+**Trigger conditions (any one fires the prompt):**
+
+| Condition | Threshold |
+|---|---|
+| Low confidence | score < 70 |
+| Brownfield mode | always |
+| High peak flow | ratio ≥ 2.5× |
+| Tight TN target | ≤ 5 mg/L |
+| Any constraint flag | clarifier, aeration, carbon, or sludge |
+
+**Severity levels:**
+
+| Severity | Condition | Body text |
+|---|---|---|
+| HIGH | score < 50, OR flow ≥ 3×, OR TN ≤ 3 | "This solution carries significant uncertainty..." |
+| MEDIUM | score 50–69, OR any constraint flag | "This assessment is based on typical assumptions..." |
+| LOW | otherwise triggered | "Add plant-specific data to refine this solution..." |
+
+**Confidence uplift from plant data:**
+
+| Data confidence | Uplift |
+|---|---|
+| ≥ 85 | +15 |
+| 70–84 | +10 |
+| 50–69 | +5 |
+| < 50 | 0 |
+
+**Caps:** Complex scenarios (flow ≥ 3× or TN ≤ 3 mg/L) — maximum 90.
+Moderate scenarios — maximum 85.
+
+After refinement, the display reads: *"Refined Confidence: XX (+YY from plant data)"*
+
+The **Compare Initial vs Refined** toggle shows score change, stack differences,
+and driver changes between Phase 1 and Phase 2 outputs.
+""")
+
+        st.markdown("---")
+        st.markdown("### Carbon Verification Note")
+        st.markdown("""
+A mandatory carbon verification note is injected into the delivery considerations
+when any of the following are true:
+- COD ≤ 200 mg/L
+- COD:TN ratio < 5
+- TN target ≤ 3 mg/L
+- PdNA is in the stack
+- Carbon limitation flag is set
+
+**Standard note:** *"Verification of biodegradable carbon availability is required
+to confirm the nitrogen removal strategy and operating assumptions."*
+
+**Strengthened note (PdNA or DNF+carbon-limited):** *"Accurate characterisation of
+influent carbon is a critical prerequisite for selecting the optimal nitrogen removal
+pathway and managing long-term operating requirements."*
+
+This note is presented as a mandatory decision input, not a cost item or optional step.
+""")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # TAB 8 — ENGINEERING NOTES
     # ─────────────────────────────────────────────────────────────────────
     with tab_eng:
         st.markdown("## Engineering notes and key references")
