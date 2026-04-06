@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
-    ("v24Z44", "7 Apr 2026", [
+    ("v24Z64", "7 Apr 2026", [
         "Refinement Layer — Phase 1 → Phase 2 upgrade path",
         "New module: apps/wastewater_app/refinement_layer.py",
         "Part 1: evaluate_refinement_trigger() — 5 trigger conditions (confidence<70, brownfield, flow≥2.5×, TN≤5, constraint flags), 3 severity levels (HIGH/MEDIUM/LOW)",
