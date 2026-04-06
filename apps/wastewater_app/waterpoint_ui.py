@@ -853,6 +853,22 @@ def _render_adaptive_pathways(pathway, ctx: dict) -> None:
             for item in ap.monitoring:
                 st.markdown(f"📊 {item}")
 
+        # ── Additional Regulatory and Strategic Drivers ──────────────
+        if ap.regulatory_drivers:
+            st.markdown("---")
+            st.markdown("### Additional Regulatory and Strategic Drivers")
+            st.caption(
+                "Classified triggers that influence future pathway timing, "
+                "technology selection, and investment decisions."
+            )
+            _cls_icon = {"compliance": "🔴", "strategic": "🟡", "system": "🔵"}
+            for rd in ap.regulatory_drivers:
+                icon = _cls_icon.get(rd.classification, "⚪")
+                st.markdown(
+                    f"{icon} **{rd.name}** "
+                    f"_({rd.classification})_ — {rd.implication}"
+                )
+
 
 def _build_context(scenario, project) -> dict | None:
     """

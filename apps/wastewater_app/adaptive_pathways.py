@@ -47,6 +47,15 @@ class DecisionPoint:
 
 
 @dataclass
+class RegulatoryDriver:
+    """An additional regulatory, environmental, or system-level trigger."""
+    name:           str    # driver label
+    classification: str    # 'compliance' | 'strategic' | 'system'
+    implication:    str    # plain-language consequence
+    priority:       int    # 1 = highest (see Part 5 priority order)
+
+
+@dataclass
 class AdaptivePathwaysResult:
     # Part 3 — Baseline
     baseline_stack:       List[str]
@@ -67,8 +76,15 @@ class AdaptivePathwaysResult:
     # Part 7 — Monitoring priorities
     monitoring:           List[str]
 
+    # Part (new) — Regulatory and strategic drivers
+    regulatory_drivers:   List["RegulatoryDriver"] = None
+
     # Mode flag
     is_greenfield:        bool = False
+
+    def __post_init__(self):
+        if self.regulatory_drivers is None:
+            object.__setattr__(self, 'regulatory_drivers', [])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -425,6 +441,244 @@ def build_adaptive_pathways(
     # Cap at 6
     monitoring = monitoring[:6]
 
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Extended Trigger Engine (Parts 1–5 of the trigger spec)
+    # ─────────────────────────────────────────────────────────────────────────
+    regulatory_drivers: List[RegulatoryDriver] = []
+
+    # Read new ctx flags
+    tp_tgt_v2   = float(ctx.get("tp_target_mg_l",  1.0) or 1.0)
+    reuse_flag  = bool(ctx.get("reuse_flag",        False))
+    ecoli_tight = bool(ctx.get("ecoli_tight",       False) or reuse_flag)
+    pfas_flag   = bool(ctx.get("pfas_flag",         False))
+    micro_flag  = bool(ctx.get("microplastics_flag",False))
+    ec_flag     = bool(ctx.get("emerging_contaminants_flag", False))
+    growth_rate = float(ctx.get("growth_rate_percent",   0.) or 0.)
+    horizon_yr  = float(ctx.get("planning_horizon_years", 20.) or 20.)
+    disposal_c  = ctx.get("biosolids_disposal_constraint", "none") or "none"
+    sludge_c    = disposal_c in ("cost", "capacity") or bool(ctx.get("high_load", False))
+
+    existing_techs = set(stack_labels)
+
+    # ── Part 1: Hard Compliance Triggers ─────────────────────────────────────
+
+    # 1a. Total Phosphorus
+    if tp_tgt_v2 <= 0.1:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "TP ≤ 0.1 mg/L licence",
+            classification = "compliance",
+            implication    = ("Strong TP compliance trigger — chemical P removal, "
+                              "enhanced clarification (CoMag or equivalent), and tertiary "
+                              "filtration are mandatory. Biological P alone is insufficient."),
+            priority       = 4,
+        ))
+        # Add to tipping points if not already present
+        if not any("phosphorus" in t.name.lower() for t in tipping_points):
+            tipping_points.append(TippingPoint(
+                name    = "Phosphorus limit tipping point",
+                trigger = "TP licence ≤ 0.1 mg/L (currently active)",
+                consequence = ("Biological P removal is insufficient. Chemical dosing, "
+                               "enhanced clarification, and tertiary filtration are required."),
+            ))
+        # Add tertiary filtration to Stage 3 if not present
+        for s in future_stages:
+            if "Stage 3" in s.stage and "filtration" not in " ".join(s.stack).lower():
+                s.stack.append("Tertiary filtration (TP polishing)")
+
+    elif tp_tgt_v2 <= 0.5:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "TP ≤ 0.5 mg/L licence",
+            classification = "compliance",
+            implication    = ("Moderate TP compliance trigger — chemical P removal is likely "
+                              "required. Biological P removal alone is unreliable at this target."),
+            priority       = 4,
+        ))
+
+    # 1b. E. coli / Disinfection
+    if ecoli_tight:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "Disinfection / E. coli limit",
+            classification = "compliance",
+            implication    = ("Reuse or stringent E. coli limits require UV or membrane "
+                              "disinfection. Tertiary filtration is a prerequisite if "
+                              "effluent solids risk is present."),
+            priority       = 4,
+        ))
+        # Ensure disinfection appears in Stage 3
+        for s in future_stages:
+            if "Stage 3" in s.stage and "UV" not in " ".join(s.stack):
+                s.stack.append("UV disinfection (E. coli / reuse compliance)")
+
+    # 1c. Reuse
+    if reuse_flag:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "Recycled water / reuse requirement",
+            classification = "compliance",
+            implication    = ("Reuse pathway mandates: tertiary filtration, nutrient polishing "
+                              "(DNF if TN critical), and disinfection upgrade. "
+                              "Advanced treatment train required for Class A+."),
+            priority       = 4,
+        ))
+        if not any("reuse" in s.purpose.lower() or "reuse" in " ".join(s.stack).lower()
+                   for s in future_stages):
+            # Replace Stage 3 or append if only 2 stages exist
+            if len(future_stages) >= 3:
+                s3 = future_stages[2]
+                if "filtration" not in " ".join(s3.stack).lower():
+                    s3.stack.append("Tertiary filtration (reuse pre-treatment)")
+                if "UV" not in " ".join(s3.stack):
+                    s3.stack.append("UV / AOP disinfection")
+                s3.purpose = s3.purpose + " Reuse pathway confirmed."
+        decision_points.append(DecisionPoint(
+            issue  = "confirm recycled water class and pathogen log-reduction requirements",
+            before = "Stage 3 — before committing to advanced treatment train selection",
+        ))
+        monitoring.append(
+            "Effluent TSS and turbidity — daily for reuse pre-treatment compliance"
+        )
+
+    # ── Part 2: Strategic / Emerging Triggers ────────────────────────────────
+
+    # 2a. PFAS
+    if pfas_flag:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "PFAS regulatory risk",
+            classification = "strategic",
+            implication    = ("Future PFAS removal stage likely required — GAC, IX, or "
+                              "NF/RO membrane. Does not alter biological or hydraulic stack. "
+                              "Biosolids PFAS may constrain land application."),
+            priority       = 6,
+        ))
+        # Add future pathway stage — does NOT modify biological stack
+        future_stages.append(PathwayStageAP(
+            stage   = "Stage 4 — PFAS management (future)",
+            purpose = "Address PFAS removal from liquid and biosolids streams as regulation tightens.",
+            stack   = ["GAC (granular activated carbon) or IX (ion exchange)",
+                       "NF/RO membrane (if required for reuse or stringent limits)",
+                       "PFAS-compliant biosolids management pathway"],
+            solves  = ("PFAS removal from treated effluent and management of PFAS-affected "
+                       "biosolids. Avoids regulatory non-compliance as limits are set."),
+            trigger = ("Triggered when: PFAS licence values are set, biosolids land "
+                       "application is restricted, or reuse pathway requires PFAS removal."),
+        ))
+        tipping_points.append(TippingPoint(
+            name    = "PFAS regulatory tipping point",
+            trigger = "When PFAS licence limits are established or biosolids land application is restricted",
+            consequence = ("Advanced adsorption or membrane treatment required. Biosolids "
+                           "disposal pathway must be reviewed."),
+        ))
+        decision_points.append(DecisionPoint(
+            issue  = "confirm PFAS concentrations in influent and biosolids through targeted sampling",
+            before = "Stage 4 — before selecting GAC, IX, or membrane technology",
+        ))
+        monitoring.append(
+            "PFAS influent concentration — quarterly sampling until regulatory limits are set"
+        )
+
+    # 2b. Microplastics
+    if micro_flag:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "Microplastics",
+            classification = "strategic",
+            implication    = ("Tertiary filtration and enhanced clarification are favoured — "
+                              "these provide incidental microplastic removal. "
+                              "No dedicated process required at current regulatory maturity."),
+            priority       = 6,
+        ))
+        monitoring.append(
+            "Microplastic removal performance — periodic monitoring as regulatory framework develops"
+        )
+
+    # 2c. Emerging contaminants
+    if ec_flag:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "Emerging contaminants",
+            classification = "strategic",
+            implication    = ("Future advanced oxidation or adsorption stage may be required "
+                              "as limits are established. Core BNR logic is unaffected."),
+            priority       = 6,
+        ))
+        future_stages.append(PathwayStageAP(
+            stage   = "Stage 4 — Emerging contaminants (future)",
+            purpose = "Address trace organic contaminants (pharmaceuticals, hormones, etc.) as regulation develops.",
+            stack   = ["Advanced oxidation (O₃/H₂O₂ or UV/AOP)",
+                       "Activated carbon adsorption (GAC or PAC)"],
+            solves  = ("Removal of trace organics, EDCs, and pharmaceuticals not addressed "
+                       "by conventional biological treatment."),
+            trigger = ("Triggered when: regulatory limits are set for specific compounds, "
+                       "receiving water sensitivity is identified, or reuse pathway requires "
+                       "trace organic removal."),
+        ))
+
+    # ── Part 3: System / External Triggers ───────────────────────────────────
+
+    # 3a. Population growth
+    if growth_rate > 0 and horizon_yr > 0:
+        projected_ratio = (1 + growth_rate / 100.) ** horizon_yr
+        if projected_ratio >= 2.0:
+            regulatory_drivers.append(RegulatoryDriver(
+                name           = f"Population growth ({growth_rate:.1f}%/yr × {int(horizon_yr)} yr)",
+                classification = "system",
+                implication    = (f"Projected flow ≥ {projected_ratio:.1f}× current ADWF over "
+                                  f"{int(horizon_yr)} years. Stage 2 and Stage 3 upgrades "
+                                  "required within planning horizon. Stage 3 is a major "
+                                  "capacity expansion or process replacement."),
+                priority       = 5,
+            ))
+            tipping_points.append(TippingPoint(
+                name    = "Growth-driven capacity tipping point",
+                trigger = (f"When ADWF reaches {min(projected_ratio, 1.5):.1f}× current flow "
+                           f"(Stage 2) or {min(projected_ratio, 2.0):.1f}× (Stage 3)"),
+                consequence = ("Hydraulic and biological capacity is exceeded. Major "
+                               "process augmentation or replacement is required."),
+            ))
+        elif projected_ratio >= 1.4:  # ~2%/yr × 20yr = 1.49× — catch moderate growth
+            regulatory_drivers.append(RegulatoryDriver(
+                name           = f"Population growth ({growth_rate:.1f}%/yr × {int(horizon_yr)} yr)",
+                classification = "system",
+                implication    = (f"Projected flow ≥ {projected_ratio:.1f}× current ADWF — "
+                                  "Stage 2 upgrade required within planning horizon."),
+                priority       = 5,
+            ))
+        if projected_ratio >= 1.4:
+            monitoring.append(
+                f"ADWF trend — annual flow reconciliation against {growth_rate:.1f}%/yr growth projection"
+            )
+
+    # 3b. Biosolids disposal constraint
+    if sludge_c:
+        regulatory_drivers.append(RegulatoryDriver(
+            name           = "Biosolids disposal constraint",
+            classification = "system",
+            implication    = ("Sludge disposal pathway is cost- or capacity-constrained. "
+                              "High-sludge processes are penalised. Sludge minimisation, "
+                              "thermal hydrolysis, enhanced digestion, or drying are favoured."),
+            priority       = 5,
+        ))
+        for s in future_stages:
+            if "Stage 2" in s.stage or "Stage 3" in s.stage:
+                if not any("sludge" in t.lower() or "biosolids" in t.lower()
+                           for t in s.stack):
+                    s.stack.append("Sludge minimisation / enhanced digestion (biosolids pathway)")
+                break
+        decision_points.append(DecisionPoint(
+            issue  = "confirm long-term biosolids disposal pathway and gate cost",
+            before = "Stage 1 — before selecting high-yield biological processes",
+        ))
+        monitoring.append(
+            "Sludge production and dewatering performance — monthly mass balance against disposal capacity"
+        )
+
+    # ── Part 5: Sort regulatory_drivers by priority ───────────────────────────
+    regulatory_drivers.sort(key=lambda d: d.priority)
+
+    # ── Re-cap lists after trigger engine additions ───────────────────────────
+    tipping_points  = tipping_points[:6]   # extended cap for richer scenarios
+    future_stages   = future_stages[:5]    # allow up to 5 with PFAS/EC stages
+    decision_points = decision_points[:5]
+    monitoring      = monitoring[:8]
+
     return AdaptivePathwaysResult(
         baseline_stack       = stack_labels,
         baseline_confidence  = score,
@@ -435,5 +689,6 @@ def build_adaptive_pathways(
         future_stages        = future_stages,
         decision_points      = decision_points,
         monitoring           = monitoring,
+        regulatory_drivers   = regulatory_drivers,
         is_greenfield        = gf,
     )
