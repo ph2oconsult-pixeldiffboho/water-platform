@@ -19,6 +19,18 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z52", "7 Apr 2026", [
+        "Cause-before-consequence logic for Confidence Drivers Panel",
+        "Rule 1+2: when all top 3 drivers are compliance consequences, highest-penalty non-compliance cause replaces slot 3",
+        "Rule 3: at least one compliance consequence always retained in panel",
+        "Rule 4: operator capability override — when op_flag=True at remote/regional location, operator driver displaces lowest-ranked consequence",
+        "Rule 5: final deduplication pass guards against edge-case duplicates after override",
+        "S3 (extreme hydraulic): carbon cause now injected (eff_codn 4.8 is genuinely limiting — correct behaviour)",
+        "S3b (pure hydraulic, COD 350): hydraulic cause correctly surfaces when carbon is not limiting",
+        "S4 (remote plant): operator driver now visible in panel",
+        "S5 (greenfield): carbon cause injected alongside compliance consequences",
+        "19/19 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z51", "7 Apr 2026", [
         "Confidence Drivers Panel — plain-language engineering drivers sorted by penalty magnitude",
         "Drivers now ranked by penalty points descending (largest impact listed first); previously reported in calculation order",

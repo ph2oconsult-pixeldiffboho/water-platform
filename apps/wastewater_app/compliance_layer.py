@@ -1249,16 +1249,60 @@ def build_compliance_report(
             _c_label = "Moderate"
             _score   = min(_score, 79)
 
-    # Sort by penalty magnitude descending; take top 3 unique labels
+    # ── Cause-before-consequence driver selection ───────────────────────
+    # Compliance outcomes (consequences) — never show only these
+    _CONSEQUENCE_SET = {
+        "Target not achievable under average conditions",
+        "Target not achievable under peak conditions",
+        "Selected process cannot meet target without upgrade",
+        "Target achievable under average conditions only",
+        "Performance risk under peak conditions",
+    }
+
+    # Sort all penalties descending; deduplicate by label
     _seen: set = set()
-    _ranked: list = []
+    _all_ranked: list = []   # (pts, label) in descending penalty order
     for _pts, _lbl in sorted(_pen, key=lambda x: x[0], reverse=True):
         if _lbl not in _seen:
             _seen.add(_lbl)
-            _ranked.append(_lbl)
-        if len(_ranked) == 3:
-            break
-    _top_drivers = _ranked
+            _all_ranked.append((_pts, _lbl))
+
+    # Take top 3 by magnitude
+    _ranked = [_lbl for _, _lbl in _all_ranked[:3]]
+
+    # Rule 1+2: If all top 3 are consequences, inject highest-penalty cause
+    if _ranked and all(d in _CONSEQUENCE_SET for d in _ranked):
+        _cause_candidate = next(
+            (_lbl for _, _lbl in _all_ranked if _lbl not in _CONSEQUENCE_SET),
+            None)
+        if _cause_candidate is not None:
+            # Rule 3: keep at least 1 consequence — replace only position 2 (index 2)
+            _insert_at = min(2, len(_ranked) - 1)
+            _ranked[_insert_at] = _cause_candidate
+
+    # Rule 4: Operator override — ensure op flag visible for remote/regional
+    _OP_DRIVER = "Operator capability may not support process complexity"
+    if (_op_flag
+            and _OP_DRIVER not in _ranked
+            and ctx.get("location_type", "metro") in ("remote", "regional")):
+        # Replace the lowest-ranked compliance consequence in _ranked
+        for _i in range(len(_ranked) - 1, -1, -1):
+            if _ranked[_i] in _CONSEQUENCE_SET:
+                _ranked[_i] = _OP_DRIVER
+                break
+        else:
+            # No consequence to displace — append if room
+            if len(_ranked) < 3:
+                _ranked.append(_OP_DRIVER)
+
+    # Rule 5: Final deduplication pass (guard against edge cases)
+    _final: list = []
+    _fseen: set = set()
+    for _d in _ranked:
+        if _d not in _fseen:
+            _fseen.add(_d)
+            _final.append(_d)
+    _top_drivers = _final[:3]
 
     return ComplianceReport(
         parameters             = params,
