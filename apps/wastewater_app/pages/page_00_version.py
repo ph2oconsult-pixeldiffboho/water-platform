@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z48", "7 Apr 2026", [
+        "Compliance consistency enforcement — four rules applied after all Phase 2 adjustments",
+        "Rule 1: TN median = Not credible ⇒ TN P95 forced to Not credible; flag added to P95 conditions",
+        "Rule 2: NH₄ P95 ≠ Achievable ⇒ TN P95 degraded one level; 'TN reliability limited by nitrification performance' flag added",
+        "Rule 3 (extended): stack_compliance_gap fires when TN median OR P95 = Not credible (previously only P95 at P95 basis)",
+        "Invariant enforced: TN P95 is never more optimistic than TN median",
+        "Fixes S3 (Cold MLE: TN P95=Achievable / NH4 P95=Conditional) and S7 (TN median=Not credible / P95=Achievable) identified in Phase 2 audit",
+        "14/14 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z47", "7 Apr 2026", [
         "Phase 2 Engineering Realism Upgrades — 5 fixes from extreme red team audit",
         "Fix 1 (Critical): High TKN removal realism — when TKN>50 mg/L + TN≤5 mg/L + P95 basis + removal≥90%, TN P95 downgraded one level and flag added to decision variables",

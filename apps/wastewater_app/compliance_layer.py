@@ -1073,19 +1073,54 @@ def build_compliance_report(
 
     params[_tn_idx] = _tn_p
 
+    # ── Compliance consistency enforcement (Rules 1-3) ───────────────────
+    # Applied AFTER all base/Phase-2 adjustments are complete.
+    # References are re-fetched so they reflect the latest state.
 
-    # Fix 1: stack↔compliance consistency
-    _tn_param  = next(p for p in params if p.parameter == "TN")
+    from dataclasses import replace as _dcr
+
+    _tn_p2  = next(p for p in params if p.parameter == "TN")
+    _nh4_p2 = next((p for p in params if p.parameter == "NH₄"), None)
+    _tn_idx2 = params.index(_tn_p2)
+    _changed = False
+
+    # Rule 1: TN median Not credible ⇒ TN P95 must also be Not credible
+    if (_tn_p2.median_outcome == NOT_YET_CREDIBLE
+            and _tn_p2.p95_outcome != NOT_YET_CREDIBLE):
+        _r1_flag = ("P95 downgraded due to median non-credibility — "
+                    "target not achievable under average conditions.")
+        _tn_p2 = _dcr(_tn_p2,
+            p95_outcome   = NOT_YET_CREDIBLE,
+            p95_conditions= [_r1_flag] + list(_tn_p2.p95_conditions),
+            decision_variables = list(_tn_p2.decision_variables) + [_r1_flag])
+        _changed = True
+
+    # Rule 2: NH4 P95 ≠ Achievable ⇒ degrade TN P95 by one level
+    if _nh4_p2 is not None and _nh4_p2.p95_outcome != ACHIEVABLE:
+        if _tn_p2.p95_outcome != NOT_YET_CREDIBLE:   # don't degrade floor twice
+            _r2_flag = "TN reliability limited by nitrification performance."
+            _tn_p2 = _dcr(_tn_p2,
+                p95_outcome   = _downgrade_outcome(_tn_p2.p95_outcome),
+                p95_conditions= [_r2_flag] + list(_tn_p2.p95_conditions),
+                decision_variables = list(_tn_p2.decision_variables) + [_r2_flag])
+            _changed = True
+
+    if _changed:
+        params[_tn_idx2] = _tn_p2
+
+    # Rule 3 + original Fix-1 gap: fire gap whenever TN median or P95 = Not credible
+    _tn_final = next(p for p in params if p.parameter == "TN")
     _gap = (
-        tn_tgt <= 3.0
-        and tn_basis in (BASIS_P95, BASIS_P99)
-        and _tn_param.p95_outcome == NOT_YET_CREDIBLE
+        _tn_final.median_outcome == NOT_YET_CREDIBLE
+        or _tn_final.p95_outcome == NOT_YET_CREDIBLE
     )
     _gap_note = (
-        "The recommended stack cannot credibly meet TN ≤{:.0f} mg/L at {} basis "
-        "without advanced nitrogen removal (DNF or PdNA). Add either to close this gap."
-        .format(tn_tgt, tn_basis) if _gap else ""
+        "Current process stack cannot meet TN ≤{:.0f} mg/L target — "
+        "upgrade or process change required (DNF or PdNA minimum)."
+        .format(tn_tgt)
+        if _gap else ""
     )
+
 
     # Fix 4: operator capability vs stack complexity
     _remote = ctx.get("location_type", "metro") in ("remote", "regional")
