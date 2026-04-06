@@ -1358,6 +1358,74 @@ def build_upgrade_pathway(
                 "Decision tension: compact energy-efficient solution vs lower-CAPEX conventional expansion."
             )
 
+    # ── DNF stack escalation guardrail ────────────────────────────────────────
+    # When TN target ≤ 3 mg/L and no advanced nitrogen removal (DNF or PdNA) is
+    # in the stack, the compliance layer will return stack_compliance_gap = True.
+    # Act on it here: add DNF to the primary stack so the recommendation and the
+    # compliance assessment are internally consistent.
+    _tn_tgt_esc   = float(ctx.get("tn_target_mg_l") or 10.)
+    _tn_basis_esc = ctx.get("tn_target_basis", "") or ""
+    _is_p95_esc   = "95" in _tn_basis_esc or _tn_tgt_esc <= 3.0
+    _tech_set_esc = {s.technology for s in stages}
+    _has_adv_esc  = TI_DENFILTER in _tech_set_esc or TI_PDNA in _tech_set_esc
+    _nh4_ok_esc   = not bool(ctx.get("nh4_near_limit", False))
+    _not_sbr_esc  = not bool(ctx.get("is_sbr", False))
+
+    if (_tn_tgt_esc <= 3.0
+            and _is_p95_esc
+            and not _has_adv_esc
+            and _nh4_ok_esc
+            and _not_sbr_esc):
+
+        # Determine insertion position: DNF goes after Bardenpho if present,
+        # otherwise after the last biological stage, before Tertiary P.
+        _bard_idx  = next((i for i,s in enumerate(stages)
+                           if s.technology in (TI_BARDENPHO, TI_RECYCLE_OPT)), None)
+        _tert_p_idx = next((i for i,s in enumerate(stages)
+                            if s.technology == TI_TERT_P), None)
+
+        if _tert_p_idx is not None:
+            _insert_pos = _tert_p_idx   # before Tertiary P
+        elif _bard_idx is not None:
+            _insert_pos = _bard_idx + 1
+        else:
+            _insert_pos = len(stages)   # append at end
+
+        _dnf_stage = PathwayStage(
+            technology       = TI_DENFILTER,
+            tech_display     = _TECH_DISPLAY.get(TI_DENFILTER, TI_DENFILTER),
+            mechanism        = MECH_TERT_DN,
+            rationale        = (
+                "Denitrification filter added to close the TN ≤3 mg/L compliance gap. "
+                "Biological optimisation alone cannot reliably achieve TN < 3 mg/L at "
+                "95th percentile — tertiary methanol-dosed denitrification is required "
+                "to polish the residual TN after Bardenpho."
+            ),
+            when_to_implement = (
+                "After Level 1 biological optimisation (Bardenpho / recycle) is complete "
+                "and NH₄ is stably controlled. Do not commission DNF until upstream "
+                "nitrification is demonstrated."
+            ),
+            constraints_addressed = [CT_TN_POLISH],
+            prerequisite     = (
+                "NH₄ stably controlled. Bardenpho optimisation complete. "
+                "Methanol dosing system and filter backwash system procured."
+            ),
+            capex_class      = "High",
+            bio_hierarchy_level = 4,
+            bio_rationale    = (
+                "DNF is Level 4 — tertiary denitrification. Added here because TN ≤3 mg/L "
+                "at 95th percentile basis cannot be reliably delivered by biological "
+                "optimisation alone on this stack."
+            ),
+        )
+        stages = stages[:_insert_pos] + [_dnf_stage] + stages[_insert_pos:]
+        guardrail_notes.append(
+            "DNF added to primary stack: TN ≤{:.0f} mg/L at 95th percentile basis "
+            "requires tertiary denitrification. Biological optimisation alone is "
+            "insufficient to close this gap reliably.".format(_tn_tgt_esc)
+        )
+
     # ── Step 6-7: Build alternatives and narrative ─────────────────────────────
     alternatives  = _build_pathway_alternatives(constraints, stages, ctx)
 

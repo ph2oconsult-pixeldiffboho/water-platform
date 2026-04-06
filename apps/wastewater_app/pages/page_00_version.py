@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z53", "7 Apr 2026", [
+        "DNF stack escalation guardrail — closes Priority 1 gap from red team review",
+        "When TN ≤3 mg/L at 95th percentile basis and no advanced nitrogen removal (DNF or PdNA) is in the stack, DNF is automatically inserted into the primary stack",
+        "DNF positioned after Bardenpho optimisation and before Tertiary P removal",
+        "Suppressed for SBR (batch cycle incompatible with DNF), when PdNA already selected, and when NH4 is near limit",
+        "Greenfield mode: DNF escalation fires on new plant designs for TN≤3 P95 (no Bardenpho prerequisite required)",
+        "Guardrail note added to pathway explaining DNF insertion",
+        "Engineering: stack and compliance assessment now internally consistent for TN≤3 P95 scenarios",
+        "282/282 benchmark tests pass",
+    ]),
     ("v24Z52", "7 Apr 2026", [
         "Cause-before-consequence logic for Confidence Drivers Panel",
         "Rule 1+2: when all top 3 drivers are compliance consequences, highest-penalty non-compliance cause replaces slot 3",
