@@ -439,6 +439,9 @@ def _render_synthesis_layers(result, scenario, project) -> None:
     # ── E8. REFINEMENT PROMPT (Phase 1 → Phase 2) ─────────────────────────
     _render_refinement_section(pathway, ctx)
 
+    # ── E9. ADAPTIVE PATHWAYS ─────────────────────────────────────────────
+    _render_adaptive_pathways(pathway, ctx)
+
 
 def _render_refinement_section(pathway, ctx: dict) -> None:
     """
@@ -726,6 +729,129 @@ def _render_refinement_section(pathway, ctx: dict) -> None:
                 st.caption("New drivers after refinement: " + "; ".join(cmp["added_drivers"][:3]))
             if cmp["removed_drivers"]:
                 st.caption("Resolved drivers: " + "; ".join(cmp["removed_drivers"][:3]))
+
+
+def _render_adaptive_pathways(pathway, ctx: dict) -> None:
+    """
+    E9: Adaptive Pathways — staged planning output.
+    Shows: Baseline → Tipping Points → Future Stages → Decision Points → Monitoring.
+    Pure read-only; never alters engineering outputs.
+    """
+    import streamlit as st
+    try:
+        from apps.wastewater_app.adaptive_pathways import build_adaptive_pathways
+        from apps.wastewater_app.feasibility_layer import assess_feasibility
+        from apps.wastewater_app.compliance_layer import build_compliance_report
+
+        feas_e9 = assess_feasibility(pathway, ctx)
+        co_e9   = build_compliance_report(pathway, feas_e9, ctx)
+        ap      = build_adaptive_pathways(pathway, co_e9, ctx)
+    except Exception as e:
+        with st.expander("📍 Adaptive Pathways — error loading", expanded=False):
+            st.warning(f"Adaptive Pathways could not load: {e}")
+        return
+
+    st.markdown("---")
+
+    with st.expander("📍 Adaptive Pathways", expanded=False):
+        st.caption(
+            "A staged planning view connecting current constraints to future investment logic. "
+            "Answers: What works now? What breaks next? What do we do then?"
+        )
+
+        # ── Baseline Pathway ────────────────────────────────────────────────
+        st.markdown("### Baseline Pathway")
+        st.markdown(
+            "The minimum credible set of works required to maintain compliance "
+            "and service under current assumptions."
+        )
+
+        col_score, col_constraint = st.columns([1, 2])
+        conf_colour = {
+            "High": "🟢", "Moderate": "🟡", "Low": "🟠", "Very Low": "🔴"
+        }.get(ap.baseline_label, "🟡")
+        col_score.metric(
+            "Baseline Confidence",
+            f"{conf_colour} {ap.baseline_confidence}/100",
+            help="Confidence that the baseline pathway achieves compliance."
+        )
+        col_constraint.markdown(f"**Primary constraint:** {ap.baseline_constraint}")
+
+        if ap.baseline_stack:
+            st.markdown("**Representative stack:**  " +
+                        "  →  ".join(ap.baseline_stack))
+
+        st.info(ap.baseline_summary)
+
+        st.markdown("---")
+
+        # ── Adaptation Tipping Points ────────────────────────────────────────
+        st.markdown("### Adaptation Tipping Points")
+        st.caption(
+            "Conditions under which the baseline pathway is no longer credible "
+            "and the next pathway stage must be activated."
+        )
+
+        for tp in ap.tipping_points:
+            with st.container():
+                st.markdown(f"**⚡ {tp.name}**")
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    st.caption("Trigger condition")
+                    st.markdown(tp.trigger)
+                with c2:
+                    st.caption("Likely consequence")
+                    st.markdown(tp.consequence)
+                st.markdown(
+                    "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                    unsafe_allow_html=True,
+                )
+
+        # ── Future Pathway Stages ────────────────────────────────────────────
+        st.markdown("### Future Pathway Stages")
+
+        stage_icons = ["1️⃣", "2️⃣", "3️⃣"]
+        for i, stage in enumerate(ap.future_stages):
+            icon = stage_icons[i] if i < len(stage_icons) else "▶️"
+            with st.expander(f"{icon} {stage.stage}", expanded=(i == 0)):
+                st.markdown(f"**Purpose:** {stage.purpose}")
+
+                if stage.stack:
+                    st.markdown("**Next credible pathway:**")
+                    for tech in stage.stack:
+                        st.markdown(f"  → {tech}")
+
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    st.caption("What it solves")
+                    st.markdown(stage.solves)
+                with c2:
+                    st.caption("Why it is triggered")
+                    st.markdown(stage.trigger)
+
+        # ── Decision Points ──────────────────────────────────────────────────
+        if ap.decision_points:
+            st.markdown("---")
+            st.markdown("### Decision Points")
+            st.caption(
+                "Uncertainties that must be resolved before committing to the next pathway stage."
+            )
+            for dp in ap.decision_points:
+                st.markdown(
+                    f"🔷 **Decision Point:** confirm *{dp.issue}* "
+                    f"— before: *{dp.before}*"
+                )
+
+        # ── Monitoring Priorities ────────────────────────────────────────────
+        if ap.monitoring:
+            st.markdown("---")
+            st.markdown("### Monitoring Priorities")
+            st.caption(
+                "Practical observations linked directly to future tipping points. "
+                "These inform the timing of the next pathway stage."
+            )
+            for item in ap.monitoring:
+                st.markdown(f"📊 {item}")
 
 
 def _build_context(scenario, project) -> dict | None:

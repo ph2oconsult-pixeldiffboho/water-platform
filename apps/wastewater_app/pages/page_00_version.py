@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z66", "7 Apr 2026", [
+        "Adaptive Pathways Mode — staged planning output for brownfield and greenfield",
+        "New module: apps/wastewater_app/adaptive_pathways.py",
+        "AdaptivePathwaysResult dataclass: baseline pathway, tipping points (≤5), future stages (3), decision points (≤4), monitoring priorities (≤6)",
+        "Part 3: Baseline Pathway — current stack, confidence, primary constraint, board summary from diagnosis statement",
+        "Part 4: Tipping Points — hydraulic/storm, clarifier settling, aeration headroom, carbon availability, licence tightening, cold-season, TP limit",
+        "Part 5: Future Stages — Stage 1 (constraint relief/establish baseline), Stage 2 (hydraulic relief/intensify), Stage 3 (tertiary closure/process renewal); BF and GF logic separated",
+        "Part 6: Decision Points — carbon fractionation, clarifier SVI trend, aeration audit, operator capability, licence trajectory",
+        "Part 7: Monitoring Priorities — SVI trend, blower loading, peak flow duration, biodegradable COD, return liquor NH4, process temperature, effluent TN",
+        "waterpoint_ui.py: E9 section added after E8 — _render_adaptive_pathways() with expandable sections per part",
+        "Planning language enforced: baseline pathway, adaptation tipping point, decision point, next credible pathway, monitoring priority",
+        "34/34 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z64", "7 Apr 2026", [
         "Refinement Layer — Phase 1 → Phase 2 upgrade path",
         "New module: apps/wastewater_app/refinement_layer.py",
