@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z44", "7 Apr 2026", [
+        "Refinement Layer — Phase 1 → Phase 2 upgrade path",
+        "New module: apps/wastewater_app/refinement_layer.py",
+        "Part 1: evaluate_refinement_trigger() — 5 trigger conditions (confidence<70, brownfield, flow≥2.5×, TN≤5, constraint flags), 3 severity levels (HIGH/MEDIUM/LOW)",
+        "Part 2: Dynamic body copy keyed to severity; benefits panel; primary/secondary CTA buttons",
+        "Part 3: Structured input scope per scenario (tank volumes, blower, clarifier, sludge, constraints)",
+        "Part 4: apply_refinement_uplift() — +15/+10/+5/0 based on data_confidence; caps at 90 (complex) or 85 (moderate)",
+        "Part 5: RefinementResult.display_text — 'Refined Confidence: XX (+YY from plant data, capped at ZZ)'",
+        "Part 6: Behavioural rules — no auto-trigger, no block, skip button persists, Phase 1 result preserved",
+        "Part 7: build_comparison_summary() — driver changes, stack diffs, score delta for compare toggle",
+        "waterpoint_ui.py: E8 section added after E7, calls _render_refinement_section() with Streamlit form, session state, and comparison toggle",
+        "40/40 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z63", "7 Apr 2026", [
         "New module: apps/wastewater_app/brownfield_asset_capture.py",
         "BrownfieldAssetResult dataclass: status (COMPLETE/PARTIAL/INSUFFICIENT), ctx (plant_context), data_confidence (0-100), errors, warnings, missing_critical, missing_secondary, assumptions, guidance",

@@ -436,6 +436,298 @@ def _render_synthesis_layers(result, scenario, project) -> None:
             )
 
 
+    # ── E8. REFINEMENT PROMPT (Phase 1 → Phase 2) ─────────────────────────
+    _render_refinement_section(pathway, ctx)
+
+
+def _render_refinement_section(pathway, ctx: dict) -> None:
+    """
+    E8: Show the Phase 1 → Phase 2 refinement prompt after all synthesis layers.
+
+    Uses st.session_state to:
+    - store whether the user has clicked "Add Plant Data"
+    - store Phase 2 data if entered
+    - preserve Phase 1 result for comparison
+
+    Never blocks the user — the full Phase 1 result is already rendered above.
+    """
+    import streamlit as st
+    from apps.wastewater_app.refinement_layer import (
+        evaluate_refinement_trigger, apply_refinement_uplift,
+        build_comparison_summary, SEV_HIGH, SEV_MEDIUM, SEV_LOW,
+    )
+    from apps.wastewater_app.compliance_layer import build_compliance_report
+    from apps.wastewater_app.feasibility_layer import assess_feasibility
+
+    # ── Derive confidence score from compliance report ─────────────────────
+    try:
+        from apps.wastewater_app.credibility_layer import build_credible_output
+        feas_e8   = assess_feasibility(pathway, ctx)
+        cred_e8   = build_credible_output(pathway, feas_e8, ctx)
+        from apps.wastewater_app.waterpoint_adapter import build_waterpoint_input
+        # Use the compliance layer to get the confidence score
+        co_e8     = build_compliance_report(pathway, feas_e8, ctx)
+        p1_score  = co_e8.confidence_score
+        p1_drivers = co_e8.confidence_drivers
+        p1_stack   = [s.technology for s in pathway.stages]
+    except Exception:
+        return   # fail silently — E8 is optional enhancement
+
+    # ── Evaluate trigger ───────────────────────────────────────────────────
+    trigger = evaluate_refinement_trigger(ctx, p1_score)
+    if not trigger.triggered:
+        return
+
+    # ── Session state keys (unique per pathway) ───────────────────────────
+    _key_base   = f"refine_{id(pathway)}"
+    _key_open   = f"{_key_base}_open"
+    _key_done   = f"{_key_base}_done"
+    _key_skip   = f"{_key_base}_skip"
+    _key_p2data = f"{_key_base}_p2data"
+    _key_compare= f"{_key_base}_compare"
+
+    if st.session_state.get(_key_skip):
+        return   # Part 6: user chose "Continue with Current Assessment" — respect it
+
+    st.markdown("---")
+
+    # ── Severity styling ───────────────────────────────────────────────────
+    sev_colour = {SEV_HIGH: "#8b0000", SEV_MEDIUM: "#7a4200", SEV_LOW: "#1b4f7a"}
+    sev_icon   = {SEV_HIGH: "🔴", SEV_MEDIUM: "🟡", SEV_LOW: "🔵"}
+    colour = sev_colour.get(trigger.severity, "#1b4f7a")
+    icon   = sev_icon.get(trigger.severity, "🔵")
+
+    # ── Part 2: UI prompt (always shown when triggered, before user acts) ──
+    if not st.session_state.get(_key_done):
+        st.markdown(
+            f'<div style="border-left:4px solid {colour}; padding:10px 14px; '
+            f'background:#f8f9fb; border-radius:4px; margin:8px 0;">'
+            f'<b>{icon} Refine with Existing Plant Data</b><br>'
+            f'<span style="color:#444; font-size:0.92rem;">{trigger.body_text}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Benefits panel
+        with st.expander("What refinement adds", expanded=False):
+            for b in [
+                "📈  Improve confidence score",
+                "🔍  Identify actual plant bottlenecks",
+                "✂️  Refine upgrade scope",
+                "🛡️  Reduce risk of overdesign",
+            ]:
+                st.markdown(f"- {b}")
+            if trigger.reasons:
+                st.markdown("---")
+                st.caption("Why this scenario warrants refinement:")
+                for r in trigger.reasons[:4]:
+                    st.caption(f"→  {r}")
+
+        # CTA buttons (Part 2)
+        col_add, col_skip, _ = st.columns([1.4, 1.8, 2.8])
+        if col_add.button("➕  Add Plant Data", key=f"{_key_base}_btn_add",
+                          type="primary"):
+            st.session_state[_key_open] = True
+            st.rerun()
+        if col_skip.button("Continue with Current Assessment",
+                           key=f"{_key_base}_btn_skip"):
+            st.session_state[_key_skip] = True
+            st.rerun()
+
+    # ── Part 3: Data entry form (shown only after "Add Plant Data" clicked) ─
+    if st.session_state.get(_key_open) and not st.session_state.get(_key_done):
+        with st.expander("📋 Enter Plant Data — Phase 2 Inputs", expanded=True):
+            st.caption(
+                "Provide what you have — partial data still improves confidence. "
+                "Fields left blank retain Phase 1 assumptions."
+            )
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.markdown("**Biological reactors**")
+                reactor_vol = st.number_input(
+                    "Total reactor volume (m³)", min_value=0., value=0.,
+                    key=f"{_key_base}_rvol",
+                    help="Sum of all biological treatment zone volumes.")
+                anoxic_frac = st.slider(
+                    "Anoxic fraction (%)", 0, 60, 30,
+                    key=f"{_key_base}_anox",
+                    help="Percentage of reactor volume in anoxic zones.")
+
+                st.markdown("**Clarifier performance**")
+                svi = st.number_input(
+                    "Average SVI (mL/g)", min_value=0., max_value=400.,
+                    value=float(ctx.get("svi_ml_g") or 0.),
+                    key=f"{_key_base}_svi",
+                    help="Mixed liquor settleability. 0 = unknown.")
+                cl_limited = st.checkbox(
+                    "Clarifier identified as a bottleneck",
+                    value=bool(ctx.get("clarifier_overloaded")),
+                    key=f"{_key_base}_cllim")
+
+            with c2:
+                st.markdown("**Aeration system**")
+                aer_util = st.slider(
+                    "Peak blower utilisation (%)", 0, 100,
+                    int(ctx.get("clarifier_util", 0.) * 100),
+                    key=f"{_key_base}_aerutil",
+                    help="Maximum recorded blower load at peak flow.")
+                aer_limited = st.checkbox(
+                    "Aeration system identified as a bottleneck",
+                    value=bool(ctx.get("aeration_constrained")),
+                    key=f"{_key_base}_aerlim")
+
+                st.markdown("**Sludge handling**")
+                sludge_status = st.selectbox(
+                    "Dewatering / disposal capacity",
+                    ["adequate", "constrained", "overloaded"],
+                    key=f"{_key_base}_slstatus")
+
+                st.markdown("**Operational context**")
+                pain = st.text_area(
+                    "Known operational constraints (free text)",
+                    placeholder="e.g. winter nitrification failure, wet weather overflow",
+                    key=f"{_key_base}_pain", height=68)
+
+            confirm_col, _ = st.columns([1, 3])
+            if confirm_col.button("✅  Confirm Plant Data", key=f"{_key_base}_confirm",
+                                  type="primary"):
+                # Build Phase 2 asset dict and ingest it
+                from apps.wastewater_app.brownfield_asset_capture import (
+                    ingest_brownfield_asset, COMPLETE, PARTIAL)
+
+                asset_data = {
+                    "plant_overview": {
+                        "average_flow_MLD":      ctx.get("plant_size_mld", 10.),
+                        "peak_flow_MLD":         ctx.get("plant_size_mld", 10.) *
+                                                  ctx.get("flow_ratio", 1.5),
+                        "TN_target_mgL":         ctx.get("tn_target_mg_l", 8.),
+                        "temperature_typical_C": ctx.get("temp_celsius", 18.),
+                        "footprint_constraint":  ctx.get("footprint_constraint", "abundant"),
+                        "operator_context":      ctx.get("location_type", "metro"),
+                    },
+                    "aeration_system": {
+                        "peak_utilisation_percent": aer_util,
+                        "aeration_limited":          aer_limited,
+                        "blower_count":              4,   # neutral default
+                        "duty_blowers":              3,
+                    },
+                    "clarifiers": {
+                        "average_SVI_mLg":  svi if svi > 0 else None,
+                        "clarifier_limited": cl_limited,
+                        "total_surface_area_m2": ctx.get("clarifier_area_m2"),
+                    },
+                    "sludge_system":  {"capacity_status": sludge_status},
+                    "biological_reactors": (
+                        [{"tank_id": "R1", "function": "mixed",
+                          "volume_m3": reactor_vol, "depth_m": 5.,
+                          "convertible_to_anoxic": True,
+                          "convertible_to_aerobic": True,
+                          "MABR_compatible": True,
+                          "media_compatible": False}]
+                        if reactor_vol > 0 else []
+                    ),
+                    "pain_points": [p.strip() for p in pain.split(",") if p.strip()],
+                }
+
+                p2_result = ingest_brownfield_asset(asset_data)
+
+                if p2_result.status in (COMPLETE, PARTIAL):
+                    st.session_state[_key_p2data] = p2_result
+                    st.session_state[_key_done]   = True
+                    st.session_state[_key_open]   = False
+                    st.rerun()
+                else:
+                    st.error(
+                        "Insufficient data provided. Please enter at least average flow "
+                        "and temperature to confirm."
+                    )
+
+    # ── Part 5: Post-refinement display ───────────────────────────────────
+    if st.session_state.get(_key_done):
+        p2_result = st.session_state.get(_key_p2data)
+        if not p2_result:
+            return
+
+        ref = apply_refinement_uplift(p1_score, p2_result.data_confidence, ctx)
+
+        # Score display
+        delta_sign = f"+{ref.delta}" if ref.delta >= 0 else str(ref.delta)
+        col_orig, col_ref, col_delta = st.columns(3)
+        col_orig.metric("Phase 1 Confidence",  f"{ref.original_score}/100")
+        col_ref.metric("Refined Confidence",   f"{ref.refined_score}/100",
+                       delta=delta_sign)
+        col_delta.metric("Input Data Quality", f"{p2_result.data_confidence}/100")
+
+        if ref.uplift_reasons:
+            st.success(
+                f"**{ref.display_text}**  \n"
+                "Confidence improved due to: "
+                + ", ".join(ref.uplift_reasons) + "."
+            )
+        if ref.cap_applied:
+            st.caption(
+                f"ℹ️ Score capped at {ref.cap_value} — this scenario type carries "
+                "inherent uncertainty that plant data alone cannot eliminate."
+            )
+
+        if p2_result.assumptions:
+            with st.expander("Assumptions retained from Phase 1", expanded=False):
+                for a in p2_result.assumptions:
+                    st.caption(f"~  {a}")
+        if p2_result.guidance:
+            with st.expander("Data improvement suggestions", expanded=False):
+                for g in p2_result.guidance:
+                    st.caption(f"→  {g}")
+
+        # ── Part 7: Comparison view ────────────────────────────────────────
+        if st.toggle("Compare Initial vs Refined", key=f"{_key_base}_cmp_toggle"):
+            try:
+                from apps.wastewater_app.stack_generator import build_upgrade_pathway
+                from apps.wastewater_app.waterpoint_adapter import build_waterpoint_input
+                from apps.wastewater_app.waterpoint_engine import analyse
+
+                # Merge p2 ctx over p1 ctx for re-evaluation
+                p2_ctx = {**ctx, **p2_result.ctx}
+                p2_pathway = build_upgrade_pathway(
+                    analyse(build_waterpoint_input(None.__class__(), None)),  # dummy — fallback
+                    p2_ctx)
+                p2_stack   = [s.technology for s in p2_pathway.stages]
+                p2_co      = build_compliance_report(
+                    p2_pathway, assess_feasibility(p2_pathway, p2_ctx), p2_ctx)
+                p2_drivers = p2_co.confidence_drivers
+            except Exception:
+                # Fallback: show what we have without re-running full analysis
+                p2_stack   = p1_stack
+                p2_drivers = p1_drivers
+
+            cmp = build_comparison_summary(p1_drivers, p2_drivers,
+                                           p1_stack, p2_stack, ref)
+
+            st.markdown("**Comparison: Initial vs Refined**")
+            c_a, c_b = st.columns(2)
+            with c_a:
+                st.caption("Phase 1 (Initial)")
+                st.metric("Confidence", f"{cmp['original_score']}/100")
+                for s in cmp.get("removed_stages") or p1_stack[:3]:
+                    st.markdown(f"→ {s}")
+            with c_b:
+                st.caption("Phase 2 (Refined)")
+                st.metric("Confidence", f"{cmp['refined_score']}/100",
+                           delta=f"+{cmp['score_change']}" if cmp['score_change'] >= 0
+                           else str(cmp['score_change']))
+                for s in cmp.get("added_stages") or p2_stack[:3]:
+                    st.markdown(f"→ {s}")
+
+            if cmp["stack_unchanged"]:
+                st.info("Stack unchanged — refinement improved data confidence, not technology selection.")
+            if cmp["added_drivers"]:
+                st.caption("New drivers after refinement: " + "; ".join(cmp["added_drivers"][:3]))
+            if cmp["removed_drivers"]:
+                st.caption("Resolved drivers: " + "; ".join(cmp["removed_drivers"][:3]))
+
+
 def _build_context(scenario, project) -> dict | None:
     """
     Build plant_context dict from scenario / project fields.
