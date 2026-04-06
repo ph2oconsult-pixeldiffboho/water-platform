@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z56", "7 Apr 2026", [
+        "Delivery and Operational Considerations layer added to ComplianceReport",
+        "New field: delivery_considerations (List[str]) on ComplianceReport dataclass",
+        "New function: _build_delivery_considerations() in compliance_layer.py",
+        "Triggered when: intensified process in stack, greenfield mode, confidence ≤70, op_flag=True, or TN≤5 mg/L at P95",
+        "Content: volume buffer (greenfield), operational complexity, response time, regulatory defensibility (greenfield+intensified), remote operator burden, lifecycle complexity, strategic trade-off closing",
+        "Maximum 4 content points + 1 mandatory closing = 5 total; no duplicates",
+        "Does not modify process selection, compliance results, or confidence score",
+        "15/15 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z55", "7 Apr 2026", [
         "Five mandatory engineering fixes from senior review",
         "Fix 1: DNF stack escalation — NH₄ near-limit no longer blocks DNF; fires for all TN≤3 P95 gap scenarios; commissioning caveat injected into stage notes when NH₄ is near limit",

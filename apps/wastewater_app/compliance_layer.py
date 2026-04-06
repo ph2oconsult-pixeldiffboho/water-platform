@@ -153,6 +153,7 @@ class ComplianceReport:
     confidence_score:   int  = 100
     confidence_label:   str  = "High"
     confidence_drivers: list = None  # List[str] — top penalty drivers
+    delivery_considerations: list = None  # List[str] — institutional/operational rationale
 
     def __post_init__(self):
         if self.confidence_drivers is None:
@@ -967,6 +968,117 @@ def _assess_tn_pdna(pathway, ctx, tn_target, target_basis):
     )
 
 
+def _build_delivery_considerations(
+    pathway,
+    ctx: dict,
+    op_flag: bool,
+    confidence_score: int,
+) -> list:
+    """
+    Delivery and Operational Considerations layer.
+
+    Triggered when any of:
+      - intensified/specialist process in stack
+      - greenfield mode
+      - confidence <= 70
+      - operator_flag = True
+      - TN target <= 5 mg/L at P95
+
+    Returns a list of 3-4 plain-language consideration strings,
+    or an empty list when none of the trigger conditions are met.
+    """
+    tech_set = {s.technology for s in pathway.stages}
+
+    INTENSIFIED = {
+        TI_MABR, TI_COMAG, TI_BIOMAG, TI_PDNA, TI_DENFILTER,
+        TI_IFAS, TI_HYBAS,
+    }
+    has_intensified = bool(tech_set & INTENSIFIED)
+    has_specialist  = bool(tech_set & {TI_MABR, TI_COMAG, TI_BIOMAG, TI_PDNA})
+    has_mabr_comag  = bool(tech_set & {TI_MABR, TI_COMAG, TI_BIOMAG})
+    is_greenfield   = bool(ctx.get("greenfield", False))
+    tn_tgt          = float(ctx.get("tn_target_mg_l") or 10.)
+    is_p95          = "95" in (ctx.get("tn_target_basis") or "")
+    tight_tn        = tn_tgt <= 5. and is_p95
+    loc             = ctx.get("location_type", "metro")
+
+    # Trigger gate
+    triggered = (
+        has_intensified
+        or is_greenfield
+        or confidence_score <= 70
+        or op_flag
+        or tight_tn
+    )
+    if not triggered:
+        return []
+
+    points: list = []
+
+    # 1. Volume as buffer (greenfield)
+    if is_greenfield:
+        points.append(
+            "Conventional high-volume systems provide hydraulic and biological "
+            "buffering, offering greater tolerance to shock loads and operational "
+            "variability. This should be weighed against the efficiency advantages "
+            "of the selected configuration."
+        )
+
+    # 2. Operational complexity
+    if has_intensified:
+        points.append(
+            "The selected process configuration requires tighter operational "
+            "control, higher instrumentation reliability, and more specialist "
+            "operator capability than conventional activated sludge."
+        )
+
+    # 3. Response time
+    if has_intensified:
+        points.append(
+            "High-rate and intensified systems reduce hydraulic and biological "
+            "reaction time, requiring faster operator response to disturbances "
+            "compared to conventional systems with greater inherent buffering."
+        )
+
+    # 4. Regulatory defensibility (greenfield + intensified) — before lifecycle
+    if is_greenfield and has_intensified:
+        points.append(
+            "In a greenfield context, regulators and owners may favour proven "
+            "conventional configurations unless a clear technical or capacity "
+            "driver justifies advanced process selection."
+        )
+
+    # 5. Maintenance / lifecycle complexity
+    if has_mabr_comag:
+        points.append(
+            "This configuration relies on specialist components — including "
+            "membrane modules, magnetic ballast recovery, or biofilm carriers — "
+            "with maintenance cycles and supply chains that may increase lifecycle "
+            "complexity compared to conventional concrete-based assets."
+        )
+
+    # 6. Remote / operator burden flag
+    if op_flag and loc in ("remote", "regional"):
+        points.append(
+            "At a remote or regional site, operator access, training, and "
+            "specialist support availability are material constraints on the "
+            "long-term reliability of an intensified process stack."
+        )
+
+    # Cap at 4 content points before appending the mandatory closing statement
+    points = points[:4]
+
+    # 7. Strategic trade-off — always last
+    points.append(
+        "This configuration represents a trade-off between process efficiency "
+        "and operational simplicity. Selection should align with utility "
+        "capability, risk tolerance, and long-term asset strategy."
+    )
+
+    return points
+
+
+
 def build_compliance_report(
     pathway: UpgradePathway,
     feasibility: FeasibilityReport,
@@ -1353,6 +1465,9 @@ def build_compliance_report(
             _top_drivers.append(_d)
     _top_drivers = _top_drivers[:3]
 
+    _delivery = _build_delivery_considerations(
+        pathway, ctx, _op_flag, _score)
+
     return ComplianceReport(
         parameters             = params,
         drivers                = drivers,
@@ -1371,4 +1486,5 @@ def build_compliance_report(
         confidence_score              = _score,
         confidence_label              = _c_label,
         confidence_drivers            = _top_drivers,
+        delivery_considerations       = _delivery,
     )
