@@ -115,6 +115,10 @@ def ingest_brownfield_asset(raw: dict) -> BrownfieldAssetResult:
     sludge = raw.get("sludge_system") or {}
     fp   = raw.get("footprint") or {}
     pain = raw.get("pain_points") or []
+    # Part 2: sidestream / THP data (optional)
+    ss   = raw.get("sidestream_data") or {}
+    # Part 3: SVI distribution (optional)
+    svi_dist = raw.get("svi_distribution") or {}
 
     # ── Part 2: Completeness — critical fields ─────────────────────────────────
     if avg_flow is None:
@@ -146,6 +150,23 @@ def ingest_brownfield_asset(raw: dict) -> BrownfieldAssetResult:
     # ── Part 2: Secondary fields ───────────────────────────────────────────────
     cl_limited    = _get(clar, "clarifier_limited")
     svi           = _num(clar, "average_SVI_mLg")
+    # Part 3: SVI distribution
+    svi_median    = _num(svi_dist, "SVI_median") or svi
+    svi_p95       = _num(svi_dist, "SVI_P95")
+    svi_max       = _num(svi_dist, "SVI_max")
+    svi_range_known = bool(svi_dist.get("SVI_range_known", False))
+    # Use P95 SVI for hydraulic / clarifier risk if provided
+    svi_design    = svi_p95 if svi_p95 else (svi_max * 0.85 if svi_max else svi)
+    if svi_range_known and not svi_p95 and svi:
+        svi_design = svi * 1.4  # conservative P95 inference when range is known
+        warnings.append("SVI variability is high; conservative clarifier design case applied.")
+        confidence -= 5
+    # Part 2: sidestream / THP
+    ss_nh4_pct    = _num(ss, "return_liquor_NH4_percent") or 0.
+    ss_tn_pct     = _num(ss, "return_liquor_TN_percent")  or 0.
+    thp_present   = bool(ss.get("THP_present", False))
+    thp_nh4_inc   = _num(ss, "THP_NH4_increase_percent") or 0.
+    ss_treatment  = bool(ss.get("sidestream_treatment_present", False))
     aer_util_pct  = _num(aer,  "peak_utilisation_percent")
     blower_count  = _num(aer,  "blower_count")
     duty_blowers  = _num(aer,  "duty_blowers")
@@ -314,13 +335,24 @@ def ingest_brownfield_asset(raw: dict) -> BrownfieldAssetResult:
         # Clarifier / settling
         "clarifier_overloaded":  cl_overloaded,
         "svi_ml_g":              svi or 0.,
+        "svi_design":            svi_design or svi or 0.,
+        "svi_p95":               svi_p95 or 0.,
+        "svi_range_known":       svi_range_known,
+        # Sidestream / THP
+        "ss_nh4_pct":            ss_nh4_pct,
+        "thp_present":           thp_present,
+        "thp_nh4_inc_pct":       thp_nh4_inc,
+        "ss_treatment_present":  ss_treatment,
+        "sidestream_material":   (ss_nh4_pct >= 10. or thp_present),
         "clarifier_util":        (aer_util_pct or 0.) / 100.,
 
         # Hydraulics
         "tn_at_limit":           True,   # conservative default for BF
         "tp_at_limit":           tp_tgt is not None and tp_tgt <= 1.0,
-        "nh4_near_limit":        aer_flag,
-        "nitrification_flag":    aer_flag or cold,
+        # Part 2: sidestream NH4 materially increases nitrification load
+        "nh4_near_limit":        aer_flag or (ss_nh4_pct >= 10.) or thp_present,
+        "nitrification_flag":    aer_flag or cold or (ss_nh4_pct >= 10.) or thp_present,
+
 
         # Carbon
         "carbon_limited_tn":     carbon_limited,

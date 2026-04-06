@@ -1559,7 +1559,14 @@ def build_upgrade_pathway(
     _esc_gap    = bool(ctx.get("stack_compliance_gap", False))
     _esc_tn_tgt = float(ctx.get("tn_target_mg_l") or 99.)
     _esc_tp_tgt = float(ctx.get("tp_target_mg_l") or 99.)
-    _esc_strict = (_esc_tn_tgt <= 3.0 or _esc_tp_tgt <= 0.1)
+    # Part 1: carbon-limited TN ≤ 5 is also a strict escalation scenario
+    _esc_codn   = float(ctx.get("cod_tn_ratio") or ctx.get("eff_codn_val") or 10.)
+    _esc_carbon_dnf = (
+        _esc_codn < 4.5
+        and _esc_tn_tgt <= 5.
+        and bool(ctx.get("carbon_limited_tn", False))
+    )
+    _esc_strict = (_esc_tn_tgt <= 3.0 or _esc_tp_tgt <= 0.1 or _esc_carbon_dnf)
     _esc_cs     = int(ctx.get("confidence_score", 100))   # injected by caller if available
     _esc_low_cs = _esc_cs < 20
 
@@ -1578,8 +1585,8 @@ def build_upgrade_pathway(
                        or bool(ctx.get("wet_weather_peak", False)))
         _esc_hyd    = (_esc_storm or _esc_fr >= 3.)  # CT_HYDRAULIC alone insufficient
 
-        # 1. DNF closure for TN ≤3 mg/L
-        if (_esc_tn_tgt <= 3.0
+        # 1. DNF closure for TN ≤3 mg/L OR carbon-limited TN ≤5 (Part 1)
+        if ((_esc_tn_tgt <= 3.0 or _esc_carbon_dnf)
                 and TI_DENFILTER not in _esc_tech
                 and TI_PDNA not in _esc_tech):
             _esc_dnf_prereq = (
@@ -1598,8 +1605,10 @@ def build_upgrade_pathway(
                 mechanism           = MECH_TERT_DN,
                 mechanism_label     = _MECH_LABELS_V1.get(MECH_TERT_DN, MECH_TERT_DN),
                 purpose             = (
-                    "Tertiary denitrification filter included as closure layer to ensure "
-                    "TN ≤3 mg/L compliance under constrained upstream conditions."
+                    "Tertiary denitrification filter included as nitrogen closure layer. "
+                    "Required because available biodegradable carbon is insufficient "
+                    "for biological denitrification alone to meet the nitrogen target "
+                    "under peak or stressed conditions."
                 ),
                 engineering_basis   = (
                     "Methanol-dosed tertiary denitrification: ~2.5–3.0 mg MeOH per mg NO₃-N. "

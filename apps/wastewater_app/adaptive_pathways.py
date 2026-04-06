@@ -114,6 +114,14 @@ def build_adaptive_pathways(
     tn_tgt     = float(ctx.get("tn_target_mg_l",  10.) or 10.)
     tp_tgt     = float(ctx.get("tp_target_mg_l",  1.0) or 1.0)
     svi        = float(ctx.get("svi_ml_g",         0.) or 0.)
+    svi_p95    = float(ctx.get("svi_p95",          0.) or
+                       ctx.get("svi_design",       0.) or svi)
+    svi_range  = bool(ctx.get("svi_range_known",  False))
+    ss_material= bool(ctx.get("sidestream_material", False))
+    ss_nh4_pct = float(ctx.get("ss_nh4_pct",       0.) or 0.)
+    thp        = bool(ctx.get("thp_present",      False))
+    thp_nh4_inc= float(ctx.get("thp_nh4_inc_pct",  0.) or 0.)
+    ss_treat   = bool(ctx.get("ss_treatment_present", False))
     cold       = bool(ctx.get("cold_temperature", False))
     aer_con    = bool(ctx.get("aeration_constrained", False))
     cl_over    = bool(ctx.get("clarifier_overloaded", False))
@@ -172,13 +180,25 @@ def build_adaptive_pathways(
             ))
 
     # Clarifier settling
-    if svi >= 100. or cl_over:
+    _svi_design_ap = svi_p95 if svi_p95 > 0 else svi
+    if _svi_design_ap >= 100. or svi >= 100. or cl_over:
+        _svi_above = _svi_design_ap >= 140. or svi >= 140.
+        _svi_extra = " SVI variability is high; P95 design case used." if svi_range else ""
         tipping_points.append(TippingPoint(
             name    = "Clarifier settling tipping point",
             trigger = (f"When average SVI rises above 140 mL/g "
-                       f"(currently {'above' if svi>=140 else 'approaching'} threshold)"),
+                       f"(currently {'above' if _svi_above else 'approaching'} threshold)"
+                       + _svi_extra),
             consequence = ("Clarifier overflow risk emerges under peak flow. "
                            "Sludge blanket management becomes operationally critical."),
+        ))
+    # SVI P95 / variability tipping point
+    if svi_range or svi_p95 >= 180.:
+        tipping_points.append(TippingPoint(
+            name    = "SVI variability tipping point",
+            trigger = f"High-SVI tail events (P95 SVI {svi_p95:.0f} mL/g) at design peak flow",
+            consequence = ("Clarifier risk driven by SVI tail, not median. "
+                           "Conservative design case understates peak-flow clarifier stress."),
         ))
 
     # Aeration headroom
@@ -195,10 +215,20 @@ def build_adaptive_pathways(
     if carbon_lim or tn_tgt <= 5.:
         tipping_points.append(TippingPoint(
             name    = "Carbon availability tipping point",
-            trigger = ("When licence tightens to TN ≤ 5 mg/L or COD:TN ratio "
-                       "falls below 5 due to catchment change or wet weather dilution"),
+            trigger = ("When effective COD:TN ratio falls below 4.5 or licence "
+                       "tightens to TN ≤ 5 mg/L due to catchment change or dilution"),
             consequence = ("Biological denitrification cannot reliably close the gap. "
-                           "External carbon dosing or PdNA becomes necessary."),
+                           "Tertiary nitrogen closure (DNF or PdNA) becomes required."),
+        ))
+    # Sidestream / THP tipping point
+    if ss_material or thp:
+        tipping_points.append(TippingPoint(
+            name    = "Return liquor / sidestream tipping point",
+            trigger = (f"Return liquor NH₄ contributes {ss_nh4_pct:.0f}% of mainstream TKN load"
+                       + ("; THP amplifies this further" if thp else "")),
+            consequence = ("Mainstream nitrification load is materially increased. "
+                           "Nitrification capacity sizing must reflect sidestream load. "
+                           "Sidestream treatment (PN/A or equivalent) should be evaluated."),
         ))
 
     # TN tightening
@@ -228,8 +258,7 @@ def build_adaptive_pathways(
                            "Chemical dosing and tertiary filtration become necessary."),
         ))
 
-    # Cap at 5 most relevant
-    tipping_points = tipping_points[:5]
+    # (Cap is applied by the extended trigger engine at end of function)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Part 5: Future Pathway Stages
@@ -317,6 +346,8 @@ def build_adaptive_pathways(
             s2_stack.append("CoMag (peak flow ballasted clarification)")
         if tn_tgt <= 5. and not gap:
             s2_stack.append("Denitrification Filter or PdNA")
+        if ss_material or thp:
+            s2_stack.append("Sidestream ammonia treatment (PN/A — evaluate feasibility)")
         if not s2_stack:
             s2_stack = ["Secondary clarifier upgrade or addition",
                         "Anoxic zone conversion or expansion"]
@@ -392,6 +423,26 @@ def build_adaptive_pathways(
             before = "Stage 2 or 3 — to determine whether TN ≤ 5 or TN ≤ 3 is the design target",
         ))
 
+    # Sidestream / THP decision points
+    if ss_material or thp:
+        decision_points.append(DecisionPoint(
+            issue  = "confirm sidestream TKN load and THP ammonia surge through return liquor monitoring",
+            before = "Stage 1 — before finalising nitrification capacity sizing",
+        ))
+        if not ss_treat and tn_tgt <= 5.:
+            decision_points.append(DecisionPoint(
+                issue  = "evaluate sidestream ammonia treatment (PN/A or equivalent) "
+                         "to reduce mainstream nitrogen load",
+                before = "Stage 2 or Stage 3 — where TN compliance is tight",
+            ))
+    # Carbon characterisation decision point
+    if carbon_lim and not any("carbon" in dp.issue.lower() for dp in decision_points):
+        decision_points.append(DecisionPoint(
+            issue  = "confirm tertiary nitrogen closure technology (DNF vs PdNA) through "
+                     "influent carbon fractionation and temperature feasibility assessment",
+            before = "Stage 2 — before committing to methanol dosing infrastructure",
+        ))
+
     if not decision_points:
         decision_points.append(DecisionPoint(
             issue  = "confirm future licence requirements and catchment growth projections",
@@ -415,8 +466,23 @@ def build_adaptive_pathways(
     if carbon_lim or tn_tgt <= 5.:
         monitoring.append("Biodegradable COD availability — quarterly fractionation; "
                           "flag if readily biodegradable COD:TN falls below 4")
-    monitoring.append("Return liquor ammonia — daily during dewatering; alert if sidestream TKN load "
-                      "exceeds 10% of mainstream TKN load")
+    if ss_material or thp:
+        _thp_note = "; THP increases this significantly" if thp else ""
+        monitoring.append(
+            f"Return liquor ammonia — daily during dewatering; currently {ss_nh4_pct:.0f}% of "
+            f"mainstream TKN load{_thp_note}; alert if load exceeds 15%"
+        )
+    else:
+        monitoring.append(
+            "Return liquor ammonia — daily during dewatering; alert if sidestream TKN load "
+            "exceeds 10% of mainstream TKN load"
+        )
+    # SVI variability monitoring
+    if svi_range or svi_p95 >= 150.:
+        monitoring.append(
+            f"SVI distribution — track P95 SVI trend; current design case "
+            f"{svi_p95:.0f} mL/g; re-assess inDENSE relevance if P95 exceeds 180 mL/g"
+        )
     if cold or float(ctx.get("temp_celsius", 18.) or 18.) <= 16.:
         monitoring.append("Process temperature — log daily minimum; alert at 12°C for nitrification risk")
     monitoring.append("Effluent TN and NH₄ — weekly composites at minimum; "
@@ -674,7 +740,7 @@ def build_adaptive_pathways(
     regulatory_drivers.sort(key=lambda d: d.priority)
 
     # ── Re-cap lists after trigger engine additions ───────────────────────────
-    tipping_points  = tipping_points[:6]   # extended cap for richer scenarios
+    tipping_points  = tipping_points[:7]   # extended cap for richer scenarios
     future_stages   = future_stages[:5]    # allow up to 5 with PFAS/EC stages
     decision_points = decision_points[:5]
     monitoring      = monitoring[:8]

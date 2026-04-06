@@ -1201,6 +1201,8 @@ def build_compliance_report(
 
     # Fix 2: COD fractionation / effective COD:TN
     _eff_codn = _effective_cod_tn(_cod_in, _tkn_in) if _tkn_in > 0 else 999.
+    # Expose eff_codn in ctx for stack_generator Part 1 carbon DNF check
+    ctx["eff_codn_val"] = _eff_codn
     _fix3_note = ""
     if (_tkn_in > 50. or tn_tgt <= 5.) and _cod_in > 0.:
         if _eff_codn < 5.:
@@ -1574,10 +1576,13 @@ def build_compliance_report(
     _diag_cause = (_root_causes_4[0] if _root_causes_4
                    else _top_drivers[0] if _top_drivers else "")
 
-    # Part 3: clarifier/SVI limitation overrides biology as primary diagnosis cause
+    # Part 3 (updated): clarifier/SVI — use design/P95 SVI when available
+    _svi_p95_cl   = float(ctx.get("svi_p95") or ctx.get("svi_design") or
+                         ctx.get("svi_ml_g") or 0.)
     _cl_limited = (
         bool(ctx.get("clarifier_overloaded", False))
         or (ctx.get("svi_ml_g") or 0.) >= 140.
+        or _svi_p95_cl >= 180.  # P95/design SVI threshold
     )
     _CLARIFIER_CAUSE = "clarifier settling and hydraulic limitation"
     _NITRIF_CAUSES = {
@@ -1586,7 +1591,9 @@ def build_compliance_report(
         "Performance risk under peak conditions",
         "Target achievable under average conditions only",
     }
-    if _cl_limited and _diag_cause in _NITRIF_CAUSES:
+    # Apply clarifier override if _cl_limited AND any top driver is nitrif-related
+    _any_nitrif_driver = any(d in _NITRIF_CAUSES for d in _top_drivers)
+    if _cl_limited and (_diag_cause in _NITRIF_CAUSES or _any_nitrif_driver):
         _diag_cause = _CLARIFIER_CAUSE
     # Part 1: distinguish 'not credible' failure from 'conditional' risk
     _tn_med_nc_diag = (_tn_fp.median_outcome == NOT_YET_CREDIBLE)
