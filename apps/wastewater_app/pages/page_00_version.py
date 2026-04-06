@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z54", "7 Apr 2026", [
+        "Forced visibility for critical physical constraints in Confidence Drivers Panel",
+        "Rule 1 (Temperature): ≤12°C forces 'Low temperature limits biological reaction rates'; "
+        "≤10°C upgrades to 'Very low temperature — biological processes significantly impaired'",
+        "Rule 2 (Hydraulic): ≥3× ADWF forces 'High hydraulic variability reduces process stability'; "
+        "≥4× upgrades to 'Extreme hydraulic loading challenges system capacity'",
+        "Override logic: temperature and hydraulic drivers displace lowest non-protected slot; "
+        "severe carbon limitation, stack gap, and NH₄ not credible are protected from displacement",
+        "S7 (9°C road test): 'Very low temperature' now visible alongside carbon cause",
+        "S6 (11°C road test): 'Low temperature limits' now visible in driver panel",
+        "S8 vs S9: driver panels now differ — 'High hydraulic' vs 'Extreme hydraulic'",
+        "22/22 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z53", "7 Apr 2026", [
         "DNF stack escalation guardrail — closes Priority 1 gap from red team review",
         "When TN ≤3 mg/L at 95th percentile basis and no advanced nitrogen removal (DNF or PdNA) is in the stack, DNF is automatically inserted into the primary stack",

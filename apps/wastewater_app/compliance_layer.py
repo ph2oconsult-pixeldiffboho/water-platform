@@ -1295,14 +1295,63 @@ def build_compliance_report(
             if len(_ranked) < 3:
                 _ranked.append(_OP_DRIVER)
 
-    # Rule 5: Final deduplication pass (guard against edge cases)
+    # Rule 5: Final deduplication pass
     _final: list = []
     _fseen: set = set()
     for _d in _ranked:
         if _d not in _fseen:
             _fseen.add(_d)
             _final.append(_d)
-    _top_drivers = _final[:3]
+    _ranked = _final[:3]
+
+    # ── Forced-visibility overrides (Rule 1: temperature, Rule 2: hydraulic) ──
+    # Labels that must never be displaced by forced overrides
+    _PROTECTED = {
+        "Severe carbon limitation — denitrification unlikely without external carbon",
+        "Insufficient biologically available carbon for denitrification",
+        "Selected process cannot meet target without upgrade",
+        "Nitrification not reliable at peak conditions",
+    }
+
+    def _force_driver(candidate: str, ranked: list) -> list:
+        """Insert candidate at end, displacing lowest non-protected entry."""
+        if candidate in ranked:
+            return ranked
+        for _i in range(len(ranked) - 1, -1, -1):
+            if ranked[_i] not in _PROTECTED:
+                ranked = ranked[:_i] + ranked[_i+1:] + [candidate]
+                return ranked
+        # All slots protected — no override
+        return ranked
+
+    # Rule 1: Temperature forced visibility
+    if _temp <= 10.:
+        _temp_driver = "Very low temperature — biological processes significantly impaired"
+    elif _temp <= 12.:
+        _temp_driver = "Low temperature limits biological reaction rates"
+    else:
+        _temp_driver = None
+    if _temp_driver and _temp_driver not in _ranked:
+        _ranked = _force_driver(_temp_driver, _ranked)
+
+    # Rule 2: Hydraulic forced visibility
+    if _fr >= 4.:
+        _hyd_driver = "Extreme hydraulic loading challenges system capacity"
+    elif _fr >= 3.:
+        _hyd_driver = "High hydraulic variability reduces process stability"
+    else:
+        _hyd_driver = None
+    if _hyd_driver and _hyd_driver not in _ranked:
+        _ranked = _force_driver(_hyd_driver, _ranked)
+
+    # Final deduplication and cap
+    _seen2: set = set()
+    _top_drivers: list = []
+    for _d in _ranked:
+        if _d not in _seen2:
+            _seen2.add(_d)
+            _top_drivers.append(_d)
+    _top_drivers = _top_drivers[:3]
 
     return ComplianceReport(
         parameters             = params,
