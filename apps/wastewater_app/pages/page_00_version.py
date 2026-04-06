@@ -19,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z59", "7 Apr 2026", [
+        "Board-readiness upgrade: causal drivers, diagnosis/closure statements, escalation note",
+        "Part 1: Updated driver label 'Elevated nitrogen load' → 'High nitrogen load requires elevated removal efficiency' (spec-aligned causal language)",
+        "Part 2: Added diagnosis_statement, closure_statement, escalation_note fields to ComplianceReport",
+        "diagnosis_statement: plain-language cause of failure referencing root cause driver",
+        "closure_statement: 'Achieving compliance requires: [DNF/PdNA as tertiary nitrogen closure]; base biological optimisation alone is insufficient'",
+        "escalation_note: 'Escalation Mode — Compliance Closure Strategy' header with closure details when escalation fires",
+        "Part 3+4: Greenfield correction and design-vs-diagnostic language complete (v24Z55, v24Z58)",
+        "15/15 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z57", "7 Apr 2026", [
         "Greenfield Delivery Model Comparison section (E7) added to synthesis layer UI",
         "Trigger: greenfield=True OR intensified technology in stack (MABR, PdNA, DNF, IFAS, Hybas, MBBR, MOB)",

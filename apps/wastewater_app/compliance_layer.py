@@ -148,6 +148,9 @@ class ComplianceReport:
     operator_capability_note: str  = ""
     # Phase 2 realism
     sludge_flag:          str   = ""
+    diagnosis_statement:  str   = ""  # plain-language cause of failure
+    closure_statement:    str   = ""  # what is required to achieve compliance
+    escalation_note:      str   = ""  # escalation mode if triggered
     effective_cod_tn_val: float = 0.
     # Confidence score layer
     confidence_score:   int  = 100
@@ -1277,7 +1280,7 @@ def build_compliance_report(
         if _req_rem >= 0.90:
             _p(20, "High nitrogen removal requirement (>{:.0f}%)".format(int(_req_rem * 100)))
         else:
-            _p(10, "Elevated nitrogen load increases treatment difficulty")
+            _p(10, "High nitrogen load requires elevated removal efficiency")
 
     # 2. Carbon limitation
     if _eff_codn < 5. and _cod_in > 0.:
@@ -1468,6 +1471,52 @@ def build_compliance_report(
     _delivery = _build_delivery_considerations(
         pathway, ctx, _op_flag, _score)
 
+    # ── Diagnosis and closure statements (Part 4) ─────────────────────────────
+    _tn_fp = _tn_final_p
+    _root_causes_4 = [d for d in _top_drivers if d not in {
+        "Target not achievable under average conditions",
+        "Target not achievable under peak conditions",
+        "Selected process cannot meet target without upgrade",
+        "Target achievable under average conditions only",
+        "Performance risk under peak conditions",
+    }]
+    _diag_cause = (_root_causes_4[0] if _root_causes_4
+                   else _top_drivers[0] if _top_drivers else "")
+    _diagnosis = (
+        "Current configuration cannot meet the target due to: "
+        + _diag_cause.lower()
+        + (". Compliance is not credible at 95th percentile."
+           if _tn_fp.p95_outcome == NOT_YET_CREDIBLE else
+           ". Compliance is conditional.")
+    ) if _diag_cause else ""
+
+    _esc_in_notes = any("Escalation Mode" in n for n in pathway.guardrail_notes)
+    if _gap or _esc_in_notes:
+        _esc_tech_names = [s.technology for s in pathway.stages
+                           if s.technology in (
+                               "Denitrification Filter",
+                               "PdNA (Partial Denitrification-Anammox)")]
+        _closure_elems: list = []
+        if _esc_tech_names:
+            _closure_elems.append(" + ".join(_esc_tech_names)
+                                  + " as tertiary nitrogen closure")
+        if float(ctx.get("tp_target_mg_l") or 1.) <= 0.1:
+            _closure_elems.append("tertiary phosphorus removal")
+        _closure = (
+            "Achieving compliance requires: "
+            + "; ".join(_closure_elems) + ". "
+            "Base biological optimisation alone is insufficient."
+        ) if _closure_elems else ""
+        _esc_note = (
+            "Escalation Mode — Compliance Closure Strategy: "
+            "The base configuration cannot achieve the target under current constraints. "
+            + (_closure if _closure else
+               "Tertiary closure processes are required.")
+        ) if _esc_in_notes else ""
+    else:
+        _closure = ""
+        _esc_note = ""
+
     return ComplianceReport(
         parameters             = params,
         drivers                = drivers,
@@ -1487,4 +1536,7 @@ def build_compliance_report(
         confidence_label              = _c_label,
         confidence_drivers            = _top_drivers,
         delivery_considerations       = _delivery,
+        diagnosis_statement           = _diagnosis,
+        closure_statement             = _closure,
+        escalation_note               = _esc_note,
     )

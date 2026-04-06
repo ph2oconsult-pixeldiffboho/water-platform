@@ -526,7 +526,7 @@ def build_bf_gf_assessment(
         )
 
     # ── Classify ─────────────────────────────────────────────────────────
-    # Fix 4: escalate when compliance gap is proven (gap_in_ctx + TN median not credible)
+    # Fix 4: escalate when compliance gap is proven
     _gap_ctx = bool(ctx.get("stack_compliance_gap", False))
     _tn_med_nc = ctx.get("tn_median_not_credible", False)
     if _gap_ctx and _tn_med_nc:
@@ -535,6 +535,15 @@ def build_bf_gf_assessment(
             "Stack compliance gap confirmed: TN cannot be met under average conditions. "
             "Replacement pressure elevated."
         )
+
+    # Footprint constraint boost (from UpgradePathway)
+    _fp_boost = int(getattr(pathway, "footprint_bfgf_boost", 0) or 0)
+    if _fp_boost:
+        total = total + _fp_boost
+        if "Footprint" not in dim_notes:
+            dim_notes["Footprint"] = (
+                "Site footprint constraint increases replacement or compact intensification pressure."
+            )
 
     if total <= 4:
         recommendation = STRONG_BROWNFIELD

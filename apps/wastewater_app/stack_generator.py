@@ -187,6 +187,21 @@ class AlternativePathway:
 
 
 @dataclass
+class GreenfieldConceptPath:
+    """One concept design philosophy for a greenfield site."""
+    label:           str          # "Conventional" or "Intensified"
+    stack:           List[str]    # display names of representative technologies
+    confidence:      int          # adjusted 0–100
+    confidence_label: str         # High / Moderate / Low / Very Low
+    footprint:       str          # High / Moderate / Low
+    complexity:      str          # Low / Moderate / High
+    credible:        bool         # False = shown but labelled non-credible
+    non_credible_reason: str = "" # why it is non-credible if credible=False
+    tradeoffs:       List[str] = field(default_factory=list)   # 2–3 trade-off bullets
+    strategic_note:  str = ""     # one-sentence framing
+
+
+@dataclass
 class UpgradePathway:
     """
     Full consultant-grade upgrade pathway recommendation.
@@ -224,6 +239,9 @@ class UpgradePathway:
     # stabilisation_cts:     constraints that must be managed but do not alone achieve compliance
     compliance_primary_ct:  str = ""       # e.g. CT_NITRIFICATION
     stabilisation_cts:      List[str] = field(default_factory=list)  # e.g. [CT_HYDRAULIC]
+    footprint_constraint: str = "abundant"  # abundant / constrained / severely_constrained
+    footprint_bfgf_boost: int = 0            # boost to apply to BF/GF score
+    greenfield_pathways: List["GreenfieldConceptPath"] = field(default_factory=list)
 
 
 # ── Step 1: Classify constraints from WaterPoint failure modes ─────────────────
@@ -1681,6 +1699,154 @@ def build_upgrade_pathway(
         # On a new plant, sizing for peak flow is a design choice, not a failure
         _state_label = 'Design load — size for compliance in design phase'
 
+    # ── Footprint constraint + dual greenfield pathway generation ──────────────
+    _fp = ctx.get("footprint_constraint", "abundant") or "abundant"
+    _gf = bool(ctx.get("greenfield", False))
+    _gf_concept_paths: List[GreenfieldConceptPath] = []
+
+    # BF: footprint pressure escalates BF/GF score (via guardrail note; BF/GF layer reads ctx)
+    _fp_bfgf_boost = 0
+    if not _gf and _fp in ("constrained", "severely_constrained"):
+        _fp_bfgf_boost = 2 if _fp == "constrained" else 4
+        if _fp == "severely_constrained":
+            guardrail_notes.append(
+                "Site footprint materially limits conventional expansion and strengthens "
+                "the case for compact intensification or replacement."
+            )
+
+    # GF: build dual concept pathways
+    if _gf:
+        _tn_tgt_fp   = float(ctx.get("tn_target_mg_l") or 10.)
+        _tp_tgt_fp   = float(ctx.get("tp_target_mg_l") or 1.)
+        _temp_fp     = float(ctx.get("temp_celsius") or 20.)
+        _efcodn_fp   = float(ctx.get("cod_tn_ratio") or 10.) * 0.6
+        _nh4nl_fp    = bool(ctx.get("nh4_near_limit", False))
+        _cold_fp     = _temp_fp <= 12.
+        _c_lim_fp    = _efcodn_fp < 5.
+        _tight_fp    = _tn_tgt_fp <= 5. or _tp_tgt_fp <= 0.5
+        _ultra_fp    = _tn_tgt_fp <= 3. or _tp_tgt_fp <= 0.1
+
+        # ── Conventional path ────────────────────────────────────────────────
+        _conv_stack = ["Conventional BNR", "Pre-anoxic + aerobic zones",
+                       "Secondary clarifiers (design-sized)"]
+        if _tight_fp:
+            _conv_stack.append("Tertiary filtration")
+        if _ultra_fp:
+            _conv_stack.append("Denitrification Filter (if required by compliance)")
+        if _tp_tgt_fp <= 0.5:
+            _conv_stack.append("Chemical phosphorus removal")
+
+        # Conventional credibility: feasible unless ultra-tight + cold + carbon-limited
+        _conv_credible = not (_ultra_fp and _cold_fp and _c_lim_fp)
+        _conv_reason   = ""
+        if not _conv_credible:
+            _conv_reason = (
+                "TN ≤3 mg/L at 95th percentile with cold temperature and carbon limitation "
+                "cannot be reliably achieved by conventional BNR sizing alone. "
+                "Tertiary denitrification and external carbon are required regardless of footprint."
+            )
+
+        # Conventional base confidence: physical compliance proxy
+        if _ultra_fp and (_cold_fp or _c_lim_fp):   _conv_base = 15
+        elif _ultra_fp:                               _conv_base = 30
+        elif _tight_fp and _cold_fp:                 _conv_base = 45
+        elif _tight_fp:                              _conv_base = 60
+        else:                                        _conv_base = 75
+
+        # Footprint adjustment
+        if _fp == "abundant":      _conv_base = min(100, _conv_base + 5)
+        elif _fp == "severely_constrained": _conv_base = max(0, _conv_base - 10)
+        _conv_base = max(0, min(100, _conv_base))
+
+        def _band(s):
+            if s >= 80: return "High"
+            if s >= 60: return "Moderate"
+            if s >= 40: return "Low"
+            return "Very Low"
+
+        _conv_tradeoffs = [
+            "Higher footprint — requires adequate site area for conventional sizing",
+            "Lower operational complexity — familiar operating model, lower specialist dependency",
+            "Greater passive resilience through larger hydraulic and biological volumes",
+        ]
+        _conv_strategic = (
+            "Preferred where land is available and utility capability favours simplicity and resilience."
+            if _fp == "abundant" else
+            "Viable but land-intensive; confirm site envelope can accommodate full conventional sizing."
+        )
+
+        _gf_concept_paths.append(GreenfieldConceptPath(
+            label             = "Conventional",
+            stack             = _conv_stack,
+            confidence        = _conv_base,
+            confidence_label  = _band(_conv_base),
+            footprint         = "High",
+            complexity        = "Low",
+            credible          = _conv_credible,
+            non_credible_reason = _conv_reason,
+            tradeoffs         = _conv_tradeoffs,
+            strategic_note    = _conv_strategic,
+        ))
+
+        # ── Intensified path ─────────────────────────────────────────────────
+        _int_stack = ["MABR (aeration intensification)"]
+        if _tight_fp or _ultra_fp:
+            _int_stack.append("Bardenpho process optimisation")
+        if _ultra_fp and not _c_lim_fp:
+            _int_stack.append("Denitrification Filter (TN closure)")
+        elif _ultra_fp and _c_lim_fp:
+            _int_stack.append("PdNA (carbon-free nitrogen removal — if nitrification stable)")
+        if _tp_tgt_fp <= 0.5:
+            _int_stack.append("Tertiary phosphorus removal")
+
+        # Intensified credibility
+        _int_credible = True
+        _int_reason   = ""
+        if _ultra_fp and _cold_fp and _c_lim_fp and _nh4nl_fp:
+            _int_credible = False
+            _int_reason   = (
+                "At ≤12°C with severe carbon limitation and unstable nitrification, "
+                "even intensified pathways cannot reliably achieve TN ≤3 mg/L without confirmed "
+                "external carbon supply and nitrification stabilisation."
+            )
+
+        # Intensified base confidence: same physical proxy as conventional, adjusted for compactness
+        if _ultra_fp and (_cold_fp or _c_lim_fp):   _int_base = 20
+        elif _ultra_fp:                               _int_base = 40
+        elif _tight_fp and _cold_fp:                 _int_base = 50
+        elif _tight_fp:                              _int_base = 65
+        else:                                        _int_base = 70
+
+        # Footprint bonus
+        if _fp == "constrained":          _int_base = min(100, _int_base + 5)
+        elif _fp == "severely_constrained": _int_base = min(100, _int_base + 10)
+        if not _int_credible:             _int_base = min(_int_base, 20)
+        _int_base = max(0, min(100, _int_base))
+
+        _int_tradeoffs = [
+            "Lower footprint — compact process reduces civil area and cost where land is scarce",
+            "Higher specialist dependency — requires experienced operators and supply chain",
+            "Tighter process control — less hydraulic buffering; more sensitive to upsets",
+        ]
+        _int_strategic = (
+            "Most credible where land is scarce, operator capability is strong, or compliance target is extreme."
+            if _fp in ("constrained", "severely_constrained") else
+            "Consider when technical performance demands compactness or superior nitrogen removal efficiency."
+        )
+
+        _gf_concept_paths.append(GreenfieldConceptPath(
+            label             = "Intensified",
+            stack             = _int_stack,
+            confidence        = _int_base,
+            confidence_label  = _band(_int_base),
+            footprint         = "Low" if _fp == "severely_constrained" else "Moderate",
+            complexity        = "High",
+            credible          = _int_credible,
+            non_credible_reason = _int_reason,
+            tradeoffs         = _int_tradeoffs,
+            strategic_note    = _int_strategic,
+        ))
+
     return UpgradePathway(
         system_state         = _state_label,
         system_state_type    = "Hydraulic / operating stress",
@@ -1700,4 +1866,7 @@ def build_upgrade_pathway(
         guardrail_notes      = guardrail_notes,
         compliance_primary_ct= comp_primary_ct,
         stabilisation_cts    = stab_cts,
+        footprint_constraint = ctx.get("footprint_constraint", "abundant") or "abundant",
+        footprint_bfgf_boost = _fp_bfgf_boost,
+        greenfield_pathways  = _gf_concept_paths,
     )
