@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z63", "7 Apr 2026", [
+        "New module: apps/wastewater_app/brownfield_asset_capture.py",
+        "BrownfieldAssetResult dataclass: status (COMPLETE/PARTIAL/INSUFFICIENT), ctx (plant_context), data_confidence (0-100), errors, warnings, missing_critical, missing_secondary, assumptions, guidance",
+        "Part 1: Full schema validation for all 9 input sections (plant_overview, process_configuration, biological_reactors, aeration_system, clarifiers, hydraulics, sludge_system, footprint, pain_points)",
+        "Part 2: Three-tier completeness check — INSUFFICIENT blocks execution; PARTIAL continues with warnings; COMPLETE = full analysis",
+        "Part 3: Four consistency rules — flow ordering, temperature range, blower count, SVI sanity (warning only)",
+        "Part 4: Auto-derived flags — storm_flag (fr≥3), aeration_constraint (util≥90%), clarifier_constraint (SVI≥140), sludge_constraint (overloaded)",
+        "Part 5: Data confidence score 0-100 with -10 per missing secondary, -5 per warning, -15 per estimated/default value",
+        "Parts 6-7: Fallback behaviour and user guidance strings per missing field",
+        "Part 8: ctx dict with 35+ keys bridging to build_upgrade_pathway and compliance_layer",
+        "format_asset_report() helper for plain-text summary output",
+        "32/32 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z62", "7 Apr 2026", [
         "Principal Engineer Polish — six presentation and causality refinements",
         "Part 1: TKN removal impossibility driver protected and forced into top 3 when TKN≥60 or removal≥90%; coexists with sludge driver",
