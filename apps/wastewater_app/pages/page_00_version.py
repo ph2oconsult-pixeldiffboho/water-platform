@@ -19,6 +19,19 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z43", "6 Apr 2026", [
+        "Percentile Compliance Logic Layer Production V1 — apps/wastewater_app/compliance_layer.py",
+        "Risk-based reliability framework for concept/pre-FEED stage — NOT a dynamic process simulator",
+        "Three outcome classes only: Achievable / Conditional / Not yet credible — no precise percentile effluent values generated",
+        "Four parameters assessed: NH4, TN, TP, TSS — each with Median and 95th percentile outcomes",
+        "Target basis configurable: Median / 95th percentile / 99th percentile per parameter via context dict",
+        "Decision variables explicitly identified per parameter: carbon fractionation, dewatering capacity, regulatory target basis, winter stability",
+        "Eight reliability drivers: peak flow ratio, temperature, carbon availability, aeration headroom, solids separation, chemical dosing, operator complexity, hydraulic attenuation",
+        "Brownfield/compliance interaction note: if 95th percentile not credible on brownfield pathway, states this explicitly as a driver toward replacement",
+        "Confidence levels (High/Medium/Low) reflect data maturity — unresolved decision variables always reduce confidence",
+        "Disclaimer attached to all outputs — explicitly states this is not a statistical or process model",
+        "Validation: has_dnf=True+carbon_limited=CONDITIONAL; has_dnf=False+tn<=3=NOT_YET_CREDIBLE; TP dewatering DV identified; 282/282 tests",
+    ]),
     ("v24Z42", "6 Apr 2026", [
         "BNR Strategy & Future-Proofing Layer Production V1 — apps/wastewater_app/bnr_strategy_layer.py",
         "Section 1: BNR configuration matrix — MLE / A2O / 4-stage Bardenpho / 5-stage Bardenpho+DNF mapped to TN and TP targets with design parameters",

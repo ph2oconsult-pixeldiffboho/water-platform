@@ -761,6 +761,35 @@ def build_credible_output(
     # ── Step 5: Ranking clarification (always added) ──────────────────────────
     # (constant string, no computation needed)
 
+    # ── Step 5b: Constraint priority override note ────────────────────────────
+    # Surface the compliance-primary vs stabilisation framing when active
+    if pathway.compliance_primary_ct and pathway.stabilisation_cts:
+        from apps.wastewater_app.stack_generator import (
+            _CT_LABELS_V1, CT_NITRIFICATION, CT_HYDRAULIC, CT_WET_WEATHER)
+        cp_label   = _CT_LABELS_V1.get(pathway.compliance_primary_ct,
+                                        pathway.compliance_primary_ct)
+        stab_labels= [_CT_LABELS_V1.get(ct, ct) for ct in pathway.stabilisation_cts]
+        # Find which stage is compliance-primary and which are stabilisation
+        cp_stages  = [s.tech_display.split("(")[0].strip() for s in pathway.stages
+                      if pathway.compliance_primary_ct in s.addresses]
+        stab_stages= [s.tech_display.split("(")[0].strip() for s in pathway.stages
+                      if any(ct in s.addresses for ct in pathway.stabilisation_cts)]
+        cp_str  = f" ({', '.join(cp_stages)})" if cp_stages else ""
+        stab_str= f" ({', '.join(stab_stages)})" if stab_stages else ""
+        all_notes.append(CredibilityNote(
+            category = "Constraint Priority",
+            severity = "Info",
+            message  = (
+                f"Constraint priority override active. "
+                f"Compliance-primary constraint: {cp_label}{cp_str} — "
+                f"resolving this is necessary to achieve effluent licence compliance. "
+                f"System stabilisation layer: {', '.join(stab_labels)}{stab_str} — "
+                f"protects process integrity but does not alone achieve compliance. "
+                f"The upgrade sequence addresses stabilisation first, then the compliance-primary constraint."
+            ),
+            applied=True,
+        ))
+
     # ── Step 6: Structured residual risks ─────────────────────────────────────
     residual_risks = _build_residual_risks(pathway, feasibility, flow_ratio)
 

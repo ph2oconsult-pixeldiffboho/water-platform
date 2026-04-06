@@ -216,6 +216,12 @@ class UpgradePathway:
     multi_constraint:   bool = False
     guardrail_notes:    List[str] = field(default_factory=list)  # engineering rules applied
 
+    # Constraint priority override
+    # compliance_primary_ct: the constraint that determines licence compliance
+    # stabilisation_cts:     constraints that must be managed but do not alone achieve compliance
+    compliance_primary_ct:  str = ""       # e.g. CT_NITRIFICATION
+    stabilisation_cts:      List[str] = field(default_factory=list)  # e.g. [CT_HYDRAULIC]
+
 
 # ── Step 1: Classify constraints from WaterPoint failure modes ─────────────────
 
@@ -933,18 +939,127 @@ def _build_pathway_alternatives(
 
 # ── Narrative generators ───────────────────────────────────────────────────────
 
-def _pathway_narrative(constraints: List[Constraint], stages: List[PathwayStage]) -> str:
+def _compliance_primary_constraint(
+    constraints: List[Constraint],
+    stages: List[PathwayStage],
+    plant_context: Dict,
+) -> tuple:
+    """
+    Identify which constraint is compliance-limiting vs which is stabilisation-only.
+
+    Returns
+    -------
+    (compliance_primary_ct, stabilisation_cts)
+        compliance_primary_ct : str   — constraint type that determines licence compliance
+        stabilisation_cts     : list  — constraint types that are risk-mitigation only
+
+    Engineering logic
+    -----------------
+    A constraint is compliance-primary if resolving it is necessary AND sufficient
+    to achieve the licence target for the parameter it governs.
+
+    A constraint is stabilisation-only if:
+    - Resolving it alone does NOT achieve compliance (other constraints remain)
+    - OR it is a risk-management measure protecting process stability rather than
+      directly determining effluent quality (e.g. hydraulic protection)
+
+    Key rule: when hydraulic and biological constraints coexist,
+    the biological constraint is compliance-primary because:
+    - CoMag alone does not fix NH4, TN, or TP
+    - MABR alone does fix NH4 (the compliance parameter)
+    - Hydraulic stabilisation is a prerequisite for MABR, but it is
+      not itself the source of the compliance gap
+
+    Exception: if the ONLY compliance failure is solids carryover during
+    peak flows (TSS), then hydraulic is the compliance-primary constraint.
+    """
+    ct_set   = {c.constraint_type for c in constraints}
+    tech_set = {s.technology for s in stages}
+
+    has_hydraulic    = CT_HYDRAULIC in ct_set or CT_WET_WEATHER in ct_set
+    has_nitrification= CT_NITRIFICATION in ct_set
+    has_tn           = CT_TN_POLISH in ct_set
+    has_tp           = CT_TP_POLISH in ct_set
+    has_settling     = CT_SETTLING in ct_set
+    has_biological   = CT_BIOLOGICAL in ct_set
+
+    # Biological compliance constraints — these determine effluent quality directly
+    biological_cts = [ct for ct in [CT_NITRIFICATION, CT_TN_POLISH,
+                                     CT_TP_POLISH, CT_BIOLOGICAL]
+                      if ct in ct_set]
+
+    # If biological constraints exist, they are compliance-primary
+    # Hydraulic is stabilisation (protects the process, does not fix effluent quality)
+    if biological_cts and has_hydraulic:
+        compliance_primary = biological_cts[0]   # highest-priority biological ct
+        stabilisation      = [ct for ct in ct_set
+                              if ct in (CT_HYDRAULIC, CT_WET_WEATHER)]
+        return compliance_primary, stabilisation
+
+    # If settling + biological coexist, settling is stabilisation, biological is primary
+    if biological_cts and has_settling:
+        compliance_primary = biological_cts[0]
+        stabilisation      = [CT_SETTLING] if CT_SETTLING in ct_set else []
+        return compliance_primary, stabilisation
+
+    # Pure hydraulic (no biological compliance gap) — hydraulic IS compliance-primary
+    # (only if the compliance failure is TSS/solids carryover during peak flows)
+    if has_hydraulic and not biological_cts:
+        return CT_HYDRAULIC, []
+
+    # Pure settling — settling is compliance-primary
+    if has_settling and not biological_cts:
+        return CT_SETTLING, []
+
+    # Default: the first (highest-priority) constraint is compliance-primary
+    if constraints:
+        return constraints[0].constraint_type, []
+    return CT_UNKNOWN, []
+
+
+def _pathway_narrative(
+    constraints: List[Constraint],
+    stages: List[PathwayStage],
+    compliance_primary_ct: str = "",
+    stabilisation_cts: List[str] = None,
+) -> str:
     if not stages:
         return "Insufficient constraint data to generate upgrade pathway."
-    lines = [
-        "This upgrade pathway is sequenced to address the highest-priority constraint first, "
-        "with each stage unlocking the next. "
-    ]
-    for s in stages:
+    stabilisation_cts = stabilisation_cts or []
+    ct_label_map = _CT_LABELS_V1
+    cp_label = ct_label_map.get(compliance_primary_ct, "")
+
+    # Identify which stages are stabilisation vs compliance-primary
+    stab_tech_set = set()
+    if stabilisation_cts:
+        for st in stages:
+            if any(addr in stabilisation_cts for addr in st.addresses):
+                stab_tech_set.add(st.technology)
+
+    if compliance_primary_ct and stabilisation_cts and stab_tech_set:
+        lines = [
+            f"This upgrade pathway applies a constraint priority override. "
+            f"The compliance-primary constraint is {cp_label}: resolving this is necessary "
+            f"to achieve effluent licence compliance. "
+            f"Stabilisation infrastructure is deployed first to protect process integrity "
+            f"during the biological upgrade, but it is not the primary engineering response. "
+        ]
+    else:
+        lines = [
+            "This upgrade pathway is sequenced to address the highest-priority constraint first, "
+            "with each stage unlocking the next. "
+        ]
+
+    for st in stages:
+        role = ""
+        if stabilisation_cts and any(addr in stabilisation_cts for addr in st.addresses):
+            role = " [System Stabilisation]"
+        elif compliance_primary_ct and compliance_primary_ct in st.addresses:
+            role = " [Primary Constraint Resolution]"
         lines.append(
-            f"Stage {s.stage_number} ({s.tech_display.split('(')[0].strip()}) "
-            f"addresses {', '.join(c.replace('_limitation','').replace('_',' ') for c in s.addresses)} "
-            f"via {s.mechanism_label.lower()}."
+            f"Stage {st.stage_number} ({st.tech_display.split('(')[0].strip()}){role} "
+            f"addresses {', '.join(c.replace('_limitation','').replace('_',' ') for c in st.addresses)} "
+            f"via {st.mechanism_label.lower()}."
         )
     lines.append(
         "Technologies are selected to avoid functional overlap, "
@@ -954,20 +1069,43 @@ def _pathway_narrative(constraints: List[Constraint], stages: List[PathwayStage]
     return " ".join(lines)
 
 
-def _constraint_summary(constraints: List[Constraint], wp_state: str, proximity: float) -> str:
+def _constraint_summary(
+    constraints: List[Constraint],
+    wp_state: str,
+    proximity: float,
+    compliance_primary_ct: str = "",
+    stabilisation_cts: List[str] = None,
+) -> str:
     if not constraints:
         return f"System is {wp_state} at {proximity:.0f}% proximity with no dominant constraint identified."
+    stabilisation_cts = stabilisation_cts or []
     primary = constraints[0]
     secondaries = constraints[1:]
-    parts = [
-        f"The plant is {wp_state} at {proximity:.0f}% proximity. "
-        f"The dominant constraint is {primary.label} [{primary.severity}], "
-        f"originating from: {', '.join(primary.source_modes[:3])}."
-    ]
-    if secondaries:
-        parts.append(
-            f"Secondary constraints: {', '.join(c.label for c in secondaries[:3])}."
-        )
+
+    # If a constraint priority override is active, surface it explicitly
+    if compliance_primary_ct and stabilisation_cts:
+        ct_label_map = _CT_LABELS_V1
+        cp_label  = ct_label_map.get(compliance_primary_ct, compliance_primary_ct)
+        stab_labels = [ct_label_map.get(ct, ct) for ct in stabilisation_cts]
+        parts = [
+            f"The plant is {wp_state} at {proximity:.0f}% proximity. "
+            f"Constraint priority analysis: the compliance-limiting constraint is "
+            f"{cp_label} — resolving this is necessary to achieve effluent licence compliance. "
+            f"The following constraints require system stabilisation but do not alone determine "
+            f"compliance: {', '.join(stab_labels)}. "
+            f"The upgrade sequence addresses stabilisation first (to protect process integrity) "
+            f"before the compliance-primary constraint."
+        ]
+    else:
+        parts = [
+            f"The plant is {wp_state} at {proximity:.0f}% proximity. "
+            f"The dominant constraint is {primary.label} [{primary.severity}], "
+            f"originating from: {', '.join(primary.source_modes[:3])}."
+        ]
+        if secondaries:
+            parts.append(
+                f"Secondary constraints: {', '.join(c.label for c in secondaries[:3])}."
+            )
     return " ".join(parts)
 
 
@@ -1161,8 +1299,13 @@ def build_upgrade_pathway(
 
     # ── Step 6-7: Build alternatives and narrative ─────────────────────────────
     alternatives  = _build_pathway_alternatives(constraints, stages, ctx)
-    narrative     = _pathway_narrative(constraints, stages)
-    con_summary   = _constraint_summary(constraints, s.state, s.proximity_percent)
+
+    # ── Constraint priority override ────────────────────────────────────────
+    comp_primary_ct, stab_cts = _compliance_primary_constraint(constraints, stages, ctx)
+
+    narrative     = _pathway_narrative(constraints, stages, comp_primary_ct, stab_cts)
+    con_summary   = _constraint_summary(constraints, s.state, s.proximity_percent,
+                                        comp_primary_ct, stab_cts)
     residuals     = _residual_risks(constraints, stages, ctx)
     conf          = _confidence(fm, ctx)
 
@@ -1186,4 +1329,6 @@ def build_upgrade_pathway(
         confidence           = conf,
         multi_constraint     = len(constraints) >= 2,
         guardrail_notes      = guardrail_notes,
+        compliance_primary_ct= comp_primary_ct,
+        stabilisation_cts    = stab_cts,
     )
