@@ -1340,7 +1340,29 @@ def build_compliance_report(
     if _op_flag:
         _p(10, "Operator capability may not support process complexity")
 
-    # 9. Sludge / high load — informational only, no score penalty
+    # 8c. PdNA selected under low-carbon greenfield conditions
+    _pdna_in_stack = any(
+        s.technology == "PdNA (Partial Denitrification-Anammox)"
+        for s in pathway.stages
+    )
+    _pdna_gf_lc = (
+        _pdna_in_stack
+        and bool(ctx.get("greenfield", False))
+        and (_cod_in <= 200. or bool(ctx.get("carbon_limited_tn", False)))
+    )
+    if _pdna_gf_lc:
+        _p(0, "Low carbon availability favours shortcut nitrogen removal over conventional denitrification")
+        # Ensure this driver is visible (0 pts — forces inclusion without affecting score)
+
+    # 9. Sludge / high load — add driver when production is high
+    _SLUDGE_DRIVER = "High solids production increases sludge handling, dewatering, and disposal requirements"
+    _sludge_trigger = (
+        _cod_in >= 500.
+        or _tkn_in >= 60.
+        or bool(_fix3_note)
+    )
+    if _sludge_trigger:
+        _p(5, _SLUDGE_DRIVER)   # low pts so it doesn’t displace causal penalties
 
     # 10. Stack compliance gap
     if _gap:
@@ -1426,6 +1448,7 @@ def build_compliance_report(
         "Insufficient biologically available carbon for denitrification",
         "Selected process cannot meet target without upgrade",
         "Nitrification not reliable at peak conditions",
+        "High solids production increases sludge handling, dewatering, and disposal requirements",
     }
 
     def _force_driver(candidate: str, ranked: list) -> list:
@@ -1468,6 +1491,29 @@ def build_compliance_report(
             _top_drivers.append(_d)
     _top_drivers = _top_drivers[:3]
 
+    # Part 1: ensure sludge driver visible in top 3 when triggered
+    if _sludge_trigger and _SLUDGE_DRIVER not in _top_drivers:
+        # Replace lowest-ranked non-causal driver to make room
+        for _si in range(len(_top_drivers) - 1, -1, -1):
+            if _top_drivers[_si] not in _PROTECTED:
+                _top_drivers[_si] = _SLUDGE_DRIVER
+                break
+        else:
+            if len(_top_drivers) < 3:
+                _top_drivers.append(_SLUDGE_DRIVER)
+
+    # Part 3: ensure PdNA low-carbon driver visible when applicable
+    _PDNA_DRIVER = "Low carbon availability favours shortcut nitrogen removal over conventional denitrification"
+    if _pdna_gf_lc and _PDNA_DRIVER not in _top_drivers:
+        if len(_top_drivers) < 3:
+            _top_drivers.append(_PDNA_DRIVER)
+        else:
+            # Replace lowest non-protected, non-sludge driver
+            for _pi in range(len(_top_drivers) - 1, -1, -1):
+                if _top_drivers[_pi] not in _PROTECTED and _top_drivers[_pi] != _SLUDGE_DRIVER:
+                    _top_drivers[_pi] = _PDNA_DRIVER
+                    break
+
     _delivery = _build_delivery_considerations(
         pathway, ctx, _op_flag, _score)
 
@@ -1503,6 +1549,15 @@ def build_compliance_report(
             )
     else:
         _diagnosis = ""
+
+    # Part 2: Greenfield low-confidence diagnosis override
+    _gf_diag = bool(ctx.get("greenfield", False))
+    if _gf_diag and _score < 20 and _diag_cause:
+        _diagnosis = (
+            "Current concept is not viable under the defined configuration and "
+            "requires redesign to meet the required standard. "
+            "Primary constraint: " + _diag_cause.lower() + "."
+        )
 
     _esc_in_notes = any("Escalation Mode" in n for n in pathway.guardrail_notes)
     if _gap or _esc_in_notes:

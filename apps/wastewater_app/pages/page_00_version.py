@@ -19,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z61", "7 Apr 2026", [
+        "Three final refinements: sludge visibility, GF low-confidence framing, PdNA selection nuance",
+        "Part 1: Sludge driver injected into top 3 when COD≥500 or TKN≥60 or sludge_flag=True; label: 'High solids production increases sludge handling, dewatering, and disposal requirements'",
+        "Part 2: GF low-confidence (score<20) diagnosis uses 'requires redesign' not 'cannot meet target'; BF unaffected",
+        "Part 3: PdNA selected in GF scenarios when COD≤200 + TN≤3 even with nh4_near_limit=True; MABR satisfies biofilm requirement; DNF replaced by PdNA as carbon-free closure; PdNA low-carbon driver added to panel",
+        "Non-regressions: CoMag ordering, escalation CoMag guard, footprint logic, Stable BNR all unchanged",
+        "16/16 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z60", "7 Apr 2026", [
         "Presentation Integrity Layer — four final audit fixes",
         "Part 1: Diagnosis language — Conditional outcomes use 'carries performance risk' not 'cannot meet'; Not credible outcomes retain 'cannot meet under current constraints'",

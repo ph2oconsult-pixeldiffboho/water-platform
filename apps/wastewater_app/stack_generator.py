@@ -796,11 +796,26 @@ def _build_pathway_stages(
     _pdna_nh4_ok   = not bool(plant_context.get("nh4_near_limit", False))
     _pdna_not_sbr  = not bool(plant_context.get("is_sbr", False))
     _pdna_not_dnf  = TI_DENFILTER not in used and TI_PDNA not in used
+
+    # Part 3: GF low-COD override — bypass nh4_near_limit when greenfield + COD≤200 + TN≤3
+    # In greenfield design, nitrification capacity is engineered; nh4_near_limit is not inherited
+    _pdna_gf        = bool(plant_context.get("greenfield", False))
+    _pdna_cod_raw   = float(plant_context.get("cod_mg_l") or 999.)
+    _pdna_gf_lowcod = (
+        _pdna_gf
+        and _pdna_cod_raw <= 200.
+        and _pdna_tn_tgt <= 3.
+    )
+    # Override nh4_near_limit suppression on GF low-COD scenarios
+    _pdna_nh4_ok_eff  = True if _pdna_gf_lowcod else _pdna_nh4_ok
+    # MABR in GF stack always satisfies biofilm requirement for Anammox support
+    _pdna_biofilm_eff = _pdna_biofilm or _pdna_gf_lowcod
+
     _pdna_conditions = (
         _pdna_tn_tgt <= 5.0
         and _pdna_carbon_lim
-        and _pdna_biofilm
-        and _pdna_nh4_ok
+        and _pdna_biofilm_eff
+        and _pdna_nh4_ok_eff
         and _pdna_not_sbr
         and _pdna_not_dnf
     )
@@ -814,7 +829,7 @@ def _build_pathway_stages(
             "COD:NO\u2083 target: 2.4\u20133.0 gCOD/gNO\u2083-N for partial denitrification. "
             "Operating temperature must be above 10\u00b0C for Anammox activity. "
             "NO\u2082 operating window: 0.5\u20135 mg/L (above 5 mg/L risks FNA inhibition). "
-            "Must not be commissioned before nitrification is stable (NH\u2084 < 1 mg/L).",
+            "Must not be commissioned before nitrification is stable (NH\u2084 < 1 mg/L). In greenfield design, nitrification is engineered for stable partial nitritation; low-carbon influent (COD \u2264200\u202fmg/L) makes PdNA preferred over methanol-dosed denitrification.",
             [CT_TN_POLISH, CT_BIOLOGICAL],
             prereq="Biomass retention technology (IFAS/MBBR/MABR) commissioned and stable. "
                    "NH\u2084 stably controlled. COD:NO\u2083 dosing system in place.",
