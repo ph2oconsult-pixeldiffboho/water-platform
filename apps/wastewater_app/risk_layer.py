@@ -41,7 +41,7 @@ from apps.wastewater_app.stack_generator import (
     TI_INDENSE, TI_MIGINDENSE, TI_MEMDENSE,
     TI_HYBAS, TI_IFAS, TI_MBBR, TI_MABR,
     TI_BARDENPHO, TI_RECYCLE_OPT, TI_ZONE_RECONF,
-    TI_DENFILTER, TI_TERT_P,
+    TI_DENFILTER, TI_TERT_P, TI_PDNA,
 )
 from apps.wastewater_app.feasibility_layer import FeasibilityReport, StageFeasibility
 
@@ -623,6 +623,83 @@ def _profile_dnf(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategor
     )
 
 
+
+def _profile_pdna(sf, ctx: dict):
+    """Risk profile for PdNA (Partial Denitrification-Anammox)."""
+    cold  = bool(ctx.get("cold_temperature", False)) or (
+        ctx.get("temp_celsius") is not None and float(ctx.get("temp_celsius", 20.)) <= 12.)
+    remote = ctx.get("location_type", "metro") == "remote"
+
+    temp_note = (
+        "At \u226412\u00b0C, Anammox kinetics fall to 40\u201350% of 30\u00b0C rates. "
+        "NO\u2082 will accumulate above the Anammox operating window, triggering free "
+        "nitrous acid inhibition. Recovery from temperature-driven inhibition takes "
+        "2\u20133 weeks and requires reducing carbon dose, not increasing it."
+        if cold else
+        "Anammox kinetics are adequate at current operating temperature. "
+        "Monitor seasonal temperature to anticipate winter performance reduction."
+    )
+    supplier_note = (
+        "Remote location compounds PdNA commercial risk. Anammox seeding, biofilm "
+        "carrier supply, and specialist commissioning support are all subject to "
+        "extended lead times at remote sites. Contingency planning is essential."
+        if remote else
+        "Metropolitan or regional location provides adequate access to Anammox seeding "
+        "suppliers and specialist commissioning support."
+    )
+
+    return (
+        "Medium-High overall risk. PdNA delivers superior efficiency where conditions "
+        "are right, but carries the highest operational complexity of any technology "
+        "in the nitrogen removal class. Risks are manageable with correct system design "
+        "and sustained operator discipline — but the failure modes require counter-intuitive "
+        "responses that must be embedded in the O&M framework from commissioning.",
+        [
+            RiskCategory("Technical", RL_HIGH,
+                "Anammox operates in a narrow NO\u2082 window (0.5\u20135 mg/L). "
+                "Below 0.5 mg/L, Anammox is substrate-starved. Above 5 mg/L, free nitrous "
+                "acid inhibits Anammox and a self-reinforcing accumulation spiral begins. "
+                "COD:NO\u2083 dosing ratio must be controlled to 2.4\u20133.0 gCOD/gNO\u2083-N "
+                "continuously. " + temp_note,
+                "Deploy real-time online NO\u2082 analyser (not estimated from NH\u2084 and NO\u2083). "
+                "Implement feed-forward COD:NO\u2083 dosing control with NO\u2082 feedback. "
+                "Calibrate sensors against grab samples weekly during commissioning. "
+                "Define NO\u2082 alarm thresholds at 4 mg/L (warning) and 5 mg/L (emergency "
+                "carbon reduction)."),
+            RiskCategory("Operational", RL_HIGH,
+                "PdNA recovery from stress events requires the operator to reduce carbon "
+                "dose in response to rising TN \u2014 the opposite of conventional "
+                "denitrification instinct. NOB intrusion is continuous and requires "
+                "sustained low-DO suppression as an ongoing operational discipline. "
+                "Anammox washout recovery takes 3\u20136 months if IFAS/MBBR/MABR "
+                "protection fails.",
+                "Deliver PdNA-specific operator training covering: NO\u2082 window management, "
+                "counter-intuitive carbon dose reduction during TN exceedances, NOB "
+                "suppression via intermittent aeration and low-DO management, and "
+                "hydraulic surge response protocols. Training must be refreshed annually "
+                "\u2014 not delivered once at commissioning."),
+            RiskCategory("Commercial", RL_HIGH if remote else RL_MEDIUM,
+                "Anammox seeding is sourced from established full-scale plants or specialist "
+                "suppliers \u2014 not a commodity supply. Biofilm carrier media (IFAS/MBBR) "
+                "requires specialist procurement. " + supplier_note,
+                "Pre-qualify Anammox seed supplier before commissioning. Confirm seeding "
+                "volume requirements (typically 10\u201320% reactor volume). Establish "
+                "OEM support contract for biofilm carrier system. Maintain 30-day on-site "
+                "carbon chemical (methanol or acetate) reserve."),
+            RiskCategory("Financial", RL_MEDIUM,
+                "CAPEX is higher than conventional denitrification due to IFAS/MBBR/MABR "
+                "requirement and precision dosing infrastructure. OPEX is materially lower "
+                "than DNF \u2014 50\u201360% aeration saving and up to 80% carbon saving "
+                "vs conventional nitrification-denitrification. Whole-of-life cost advantage "
+                "increases with plant size and carbon price.",
+                "Conduct TOTEX comparison: PdNA vs Bardenpho + DNF at 10, 20, and 30 year "
+                "horizon. PdNA TOTEX advantage grows over time. Carbon price sensitivity "
+                "analysis should reflect both methanol (dosing) and electricity (aeration) "
+                "components."),
+        ]
+    )
+
+
 def _profile_tert_p(sf: StageFeasibility, ctx: Dict) -> Tuple[str, List[RiskCategory]]:
     return (
         "Low-Medium overall risk. Chemical tertiary phosphorus removal is a "
@@ -741,6 +818,7 @@ _PROFILE_MAP = {
     TI_RECYCLE_OPT: _profile_recycle_opt,
     TI_ZONE_RECONF: _profile_recycle_opt,   # similar low-risk profile
     TI_DENFILTER:   _profile_dnf,
+    TI_PDNA:        _profile_pdna,
     TI_TERT_P:      _profile_tert_p,
     TI_EQ_BASIN:    _profile_eq_basin,
     TI_STORM_STORE: _profile_eq_basin,

@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z45", "7 Apr 2026", [
+        "PdNA (Partial Denitrification-Anammox) added as selectable technology across all four platform layers",
+        "stack_generator.py: TI_PDNA constant + trigger logic — fires when carbon-limited + biofilm retention available + TN≤5 + NH4 stable + not SBR",
+        "stack_generator.py: PdNA evaluated before DNF; mutual exclusion guard (TI_PDNA not in used added to DNF trigger)",
+        "feasibility_layer.py: TI_PDNA _TechProfile — supply High, complexity High, chemical_dep Medium; 6 notes, 5 risks; location adjustment included",
+        "risk_layer.py: _profile_pdna — 4 categories (Technical/Operational/Commercial/Financial), High/High/Medium-High/Medium; temperature and location-sensitive; added to _PROFILE_MAP",
+        "tech_positioning.py: TechPosition for PdNA — Advanced Nitrogen Removal category, 5 best_used_when, 5 not_appropriate_when, 5 strengths, 5 limitations, key engineering truth",
+        "Validation: 17/17 engineering-correct checks; PdNA triggers correctly for low-COD + biofilm + strict TN; suppressed for SBR/no-biofilm/high-COD/unstable-NH4; 282/282 tests",
+    ]),
     ("v24Z44", "7 Apr 2026", [
         "Shortcut Nitrogen Pathway Selector — page_13_nitrogen_selector.py",
         "6-tab feature module: Overview, Comparison, Decision Guide, Key Risks, Scale Challenges, Recommendation",

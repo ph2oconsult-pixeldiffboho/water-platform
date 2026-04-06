@@ -59,6 +59,7 @@ MECH_TERT_P     = "tertiary_phosphorus_removal"
 MECH_AER_INT    = "aeration_intensification"
 
 TI_DENFILTER    = "Denitrification Filter"
+TI_PDNA         = "PdNA (Partial Denitrification-Anammox)"
 TI_TERT_P       = "Tertiary P removal"
 TI_MABR         = "MABR (OxyFAS retrofit)"
 
@@ -108,7 +109,7 @@ _CAPEX = {
     TI_MEMDENSE: "Low", TI_HYBAS: "Medium", TI_IFAS: "Low",
     TI_MBBR: "Medium", TI_MABR: "Medium", TI_BARDENPHO: "Low",
     TI_RECYCLE_OPT: "Low", TI_ZONE_RECONF: "Low",
-    TI_DENFILTER: "High", TI_TERT_P: "Medium",
+    TI_DENFILTER: "High", TI_PDNA: "High", TI_TERT_P: "Medium",
 }
 _COMPLEXITY = {
     TI_COMAG: "Medium", TI_BIOMAG: "High", TI_EQ_BASIN: "Medium",
@@ -116,7 +117,7 @@ _COMPLEXITY = {
     TI_MEMDENSE: "Low", TI_HYBAS: "Medium", TI_IFAS: "Low",
     TI_MBBR: "Medium", TI_MABR: "Medium", TI_BARDENPHO: "Low",
     TI_RECYCLE_OPT: "Low", TI_ZONE_RECONF: "Medium",
-    TI_DENFILTER: "High", TI_TERT_P: "Medium",
+    TI_DENFILTER: "High", TI_PDNA: "High", TI_TERT_P: "Medium",
 }
 _TECH_DISPLAY = {
     TI_COMAG:      "CoMag® (high-rate magnetic ballasted clarification)",
@@ -134,6 +135,7 @@ _TECH_DISPLAY = {
     TI_RECYCLE_OPT:"Recycle ratio optimisation",
     TI_ZONE_RECONF:"Zone reconfiguration / EBPR optimisation",
     TI_DENFILTER:  "Denitrification filter (methanol-dosed tertiary denitrification)",
+    TI_PDNA:       "PdNA — Partial Denitrification-Anammox (IFAS/MBBR/MABR retained)",
     TI_TERT_P:     "Tertiary phosphorus removal (chemical dosing + filtration)",
 }
 
@@ -693,6 +695,59 @@ def _build_pathway_stages(
     #   (d) Nitrification is not actively broken (CT_NITRIFICATION absent or resolved by biofilm)
     #   (e) DNF not already emitted
     # This prevents DNF appearing before Level 1 and prevents it appearing when NH4 is unstable.
+
+    # ── PdNA: Partial Denitrification-Anammox ─────────────────────────────────
+    # Trigger conditions:
+    #   (a) TN target <= 5.0 mg/L  (strict TN compliance)
+    #   (b) Carbon-limited (cod_tn_ratio < 5 or carbon_limited_tn flag)
+    #   (c) Biomass retention available (IFAS, MBBR, or MABR in stack or context)
+    #   (d) NH4 not near limit (nitrification must be stable)
+    #   (e) Not already emitting DNF (PdNA and DNF are mutually exclusive pathways)
+    #   (f) Not SBR (SBR batch cycle is incompatible with mainstream PdNA)
+    _pdna_tn_tgt    = plant_context.get("tn_target_mg_l", 10.) or 10.
+    _pdna_carbon_lim = (
+        bool(plant_context.get("carbon_limited_tn", False)) or
+        (plant_context.get("cod_tn_ratio") is not None and
+         float(plant_context.get("cod_tn_ratio", 10.)) < 5.)
+    )
+    _pdna_biofilm = (
+        bool(plant_context.get("has_ifas", False)) or
+        bool(plant_context.get("has_mabr", False)) or
+        any(s.technology in (TI_IFAS, TI_HYBAS, TI_MBBR, TI_MABR) for s in stages)
+    )
+    _pdna_nh4_ok   = not bool(plant_context.get("nh4_near_limit", False))
+    _pdna_not_sbr  = not bool(plant_context.get("is_sbr", False))
+    _pdna_not_dnf  = TI_DENFILTER not in used and TI_PDNA not in used
+    _pdna_conditions = (
+        _pdna_tn_tgt <= 5.0
+        and _pdna_carbon_lim
+        and _pdna_biofilm
+        and _pdna_nh4_ok
+        and _pdna_not_sbr
+        and _pdna_not_dnf
+    )
+    if _pdna_conditions:
+        emit(TI_PDNA, MECH_TERT_DN,
+            "PdNA uses controlled partial denitrification to produce NO\u2082 as a "
+            "substrate for Anammox, which then removes NH\u2084 and NO\u2082 together "
+            "without requiring full carbon dosing for denitrification. Aeration savings of "
+            "50\u201360% and carbon savings of up to 80% vs conventional denitrification.",
+            "Requires biomass retention (IFAS, MBBR, or MABR) for Anammox protection. "
+            "COD:NO\u2083 target: 2.4\u20133.0 gCOD/gNO\u2083-N for partial denitrification. "
+            "Operating temperature must be above 10\u00b0C for Anammox activity. "
+            "NO\u2082 operating window: 0.5\u20135 mg/L (above 5 mg/L risks FNA inhibition). "
+            "Must not be commissioned before nitrification is stable (NH\u2084 < 1 mg/L).",
+            [CT_TN_POLISH, CT_BIOLOGICAL],
+            prereq="Biomass retention technology (IFAS/MBBR/MABR) commissioned and stable. "
+                   "NH\u2084 stably controlled. COD:NO\u2083 dosing system in place.",
+            bio_level=4,
+            bio_rationale=(
+                "PdNA is an advanced Level 4 nitrogen removal pathway. It delivers higher "
+                "efficiency than conventional DNF where carbon is limiting, but requires "
+                "Anammox biomass retention and precise stoichiometric dosing control. "
+                "Biomass protection via fixed-film retention is non-negotiable."
+            ))
+
     _tn_tgt    = plant_context.get("tn_target_mg_l", 10.) or 10.
     _nh4_stable= not bool(plant_context.get("nh4_near_limit", False))
     _l1_in     = any(s.technology in (TI_RECYCLE_OPT, TI_BARDENPHO) for s in stages)
@@ -705,6 +760,7 @@ def _build_pathway_stages(
         and _l1_in
         and not _nit_unresolved
         and TI_DENFILTER not in used
+        and TI_PDNA not in used
     )
     if _dnf_conditions:
         emit(TI_DENFILTER, MECH_TERT_DN,
@@ -725,6 +781,7 @@ def _build_pathway_stages(
                 "biological optimisation alone, NH₄ is stable, and Level 1 is already in the "
                 "stack. DO not commission before upstream nitrification is confirmed stable."
             ))
+
 
     # ── Stage 5: TP polishing ──────────────────────────────────────────────────
     if CT_TP_POLISH in ct_set:

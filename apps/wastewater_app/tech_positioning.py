@@ -688,6 +688,56 @@ def get_full_matrix() -> List[TechPosition]:
             complexity="Low",
             supply_dependency="None",
         ),
+    TechPosition(
+        code                = "pdna",
+        name                = "PdNA (Partial Denitrification-Anammox)",
+        category            = "Advanced Nitrogen Removal",
+        primary_role        = (
+            "Stoichiometric nitrogen removal that couples controlled partial denitrification "
+            "(NO₃ → NO₂) with Anammox co-removal of NH₄ and NO₂ to N₂ gas. "
+            "Delivers 50–60% aeration saving and up to 80% carbon saving vs conventional "
+            "nitrification-denitrification."
+        ),
+        best_used_when      = [
+            "Influent COD:N is low (< 5:1) and external carbon cost at conventional scale is prohibitive.",
+            "Strict TN target (≤5 mg/L) is required and biological polishing alone is insufficient.",
+            "Biomass retention (IFAS, MBBR, or MABR) is in the stack or can be installed.",
+            "Long-term TOTEX reduction is a priority and specialist process control is available.",
+            "Operating temperature is consistently above 12°C.",
+        ],
+        not_appropriate_when = [
+            "Biomass retention (IFAS/MBBR/MABR) cannot be installed — Anammox cannot be sustained "
+            "in suspended growth at mainstream scale.",
+            "Operating temperature is persistently below 12°C — Anammox kinetics fall sharply.",
+            "Operator team cannot sustain specialist process control discipline.",
+            "TN target is >8 mg/L — conventional denitrification is more cost-effective.",
+            "SBR configuration — batch cycle is incompatible with mainstream PdNA.",
+        ],
+        strengths           = [
+            "50–60% aeration energy saving vs conventional nitrification-denitrification.",
+            "Up to 80% carbon saving — structural advantage where carbon is limiting.",
+            "Lower sludge production than conventional denitrification.",
+            "More robust than Nitrite Shunt in cold, low-carbon mainstream conditions.",
+        ],
+        limitations         = [
+            "Narrow NO₂ operating window (0.5–5 mg/L) — above 5 mg/L, FNA inhibits Anammox.",
+            "Anammox washout recovery takes 3–6 months — IFAS/MBBR/MABR is not optional.",
+            "NOB intrusion from influent requires continuous suppression discipline.",
+            "Temperature-sensitive: performance degrades significantly below 12°C.",
+            "Recovery from stress events requires reducing carbon dose — counterintuitive "
+            "for operators trained on conventional denitrification.",
+        ],
+        key_engineering_truth = (
+            "PdNA is not inherently more reliable than upgraded MLE for TN ≤5 mg/L — "
+            "it is more efficient. Reliability depends on control system quality and operator "
+            "discipline in a way that is structurally more demanding than conventional "
+            "denitrification. Get the control system right before the biology."
+        ),
+        typical_stack_position = "Stage 2–3 (after hydraulic stabilisation and nitrification)",
+        capex_class         = "Medium-High",
+        complexity          = "High",
+        supply_dependency   = "High",
+    ),
     ]
 
 

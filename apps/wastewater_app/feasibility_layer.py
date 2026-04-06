@@ -45,7 +45,7 @@ from apps.wastewater_app.stack_generator import (
     TI_INDENSE, TI_MIGINDENSE, TI_MEMDENSE,
     TI_HYBAS, TI_IFAS, TI_MBBR, TI_MABR,
     TI_BARDENPHO, TI_RECYCLE_OPT, TI_ZONE_RECONF,
-    TI_DENFILTER, TI_TERT_P,
+    TI_DENFILTER, TI_TERT_P, TI_PDNA,
 )
 
 # ── Feasibility score constants ────────────────────────────────────────────────
@@ -517,6 +517,39 @@ _PROFILES: Dict[str, _TechProfile] = {
         ],
     ),
 
+    TI_PDNA: _TechProfile(
+        supply_risk_base="High",
+        opex_impact="High",
+        complexity="High",
+        chemical_dep="Medium",   # partial carbon dosing (much less than DNF)
+        specialist=True,
+        energy_class="Low",      # 50-60% aeration saving vs conventional
+        sludge_impact="Low",     # reduced sludge vs conventional denitrification
+        base_feasibility="Medium",
+        notes=[
+            "Requires Anammox biomass retention (IFAS, MBBR, or MABR) — "
+            "Anammox cannot be sustained in suspended growth at mainstream scale.",
+            "Anammox washout recovery takes 3\u20136 months — biomass protection "
+            "is a hard design constraint, not an advisory measure.",
+            "COD:NO\u2083 dosing ratio must be controlled to 2.4\u20133.0 gCOD/gNO\u2083-N. "
+            "Overdosing drives full denitrification and bypasses Anammox completely.",
+            "NO\u2082 operating window: 0.5\u20135 mg/L. Above 5 mg/L, free nitrous acid "
+            "inhibits Anammox. Below 0.5 mg/L, Anammox is substrate-starved.",
+            "Operating temperature must remain above 10\u00b0C for Anammox activity. "
+            "Performance degrades significantly below 12\u00b0C.",
+            "NOB intrusion from influent is the dominant long-term operational threat. "
+            "Continuous low-DO suppression is required for the plant\'s operational life.",
+        ],
+        risks=[
+            "Anammox washout during hydraulic surge events without IFAS/MBBR/MABR protection.",
+            "Carbon overdosing drives full denitrification and bypasses Anammox.",
+            "NOB colonisation of biofilm carriers competes for NO\u2082 substrate.",
+            "Temperature drop below 12\u00b0C causes stoichiometric mismatch and NO\u2082 accumulation.",
+            "Counterintuitive recovery: rising TN requires reducing carbon dose, "
+            "not increasing it — specialist operator knowledge mandatory.",
+        ],
+    ),
+
     TI_TERT_P: _TechProfile(
         supply_risk_base="Low",
         opex_impact="Medium",
@@ -543,7 +576,7 @@ _PROFILES: Dict[str, _TechProfile] = {
 
 def _adjust_supply_risk(base: str, tech: str, location: str, size_mld: float) -> str:
     """Adjust supply risk based on location and plant size."""
-    specialist_techs = {TI_COMAG, TI_BIOMAG, TI_MABR, TI_MIGINDENSE, TI_MEMDENSE,
+    specialist_techs = {TI_COMAG, TI_BIOMAG, TI_MABR, TI_MIGINDENSE, TI_MEMDENSE, TI_PDNA,
                         TI_HYBAS, TI_IFAS, TI_MBBR, TI_DENFILTER}
     order = {FS_LOW: 0, FS_MEDIUM: 1, FS_HIGH: 2}
     risk  = order.get(base, 1)
@@ -552,7 +585,7 @@ def _adjust_supply_risk(base: str, tech: str, location: str, size_mld: float) ->
         risk = min(2, risk + 2)     # remote + specialist = always High
     elif location == LOC_REMOTE:
         risk = min(2, risk + 1)
-    elif location == LOC_REGIONAL and tech in {TI_COMAG, TI_BIOMAG, TI_MABR, TI_DENFILTER}:
+    elif location == LOC_REGIONAL and tech in {TI_COMAG, TI_BIOMAG, TI_MABR, TI_DENFILTER, TI_PDNA}:
         risk = min(2, risk + 1)
 
     if size_mld < 5.0 and tech in {TI_COMAG, TI_BIOMAG}:
