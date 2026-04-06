@@ -19,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z50", "7 Apr 2026", [
+        "Confidence score audit fixes — three mandatory changes from audit cycle",
+        "Fix 1 (Critical): NH₄ P95 penalty differentiated — Conditional=−10, Not credible=−20; NH₄ P95=Not credible can no longer produce High confidence label",
+        "Fix 2 (High): Temperature penalty restructured to three tiers — ≤15°C=−5, ≤12°C=additional −5, ≤10°C=additional −5; removes cliff at 12°C and correctly penalises 13–16°C risk zone",
+        "Fix 3 (Medium): Sludge flag removed from confidence score calculation; retained as informational field only; eliminates COD ranking inversion (COD=600 was scoring lower than COD=400)",
+        "Validation: COD monotonicity passes (higher COD ≥ lower COD score), NH₄ Not credible prevents High label, temperature decreases progressively 20°C→16°C→12°C→10°C",
+        "17/17 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z49", "7 Apr 2026", [
         "Confidence Score Layer added to ComplianceReport",
         "Score 0-100: starts at 100, penalties applied for high TKN removal, carbon limitation, low temperature, hydraulic stress, compliance status, NH4 limitation, process complexity, operator capability, sludge load, stack gap",

@@ -1170,11 +1170,17 @@ def build_compliance_report(
             _score  -= 10
             _drivers.append("Severe carbon deficit (effective COD:TN < 3)")
 
-    # 3. Low temperature
+    # 3. Low temperature (three-tier: 15°C / 12°C / 10°C)
     _temp = float(ctx.get("temp_celsius") or ctx.get("temperature_celsius") or 20.)
+    if _temp <= 15.:
+        _score  -= 5
+        _drivers.append("Reduced temperature (≤15°C)")
     if _temp <= 12.:
-        _score  -= 10
-        _drivers.append("Low operating temperature (≤12°C)")
+        _score  -= 5
+        _drivers.append("Low temperature (≤12°C — process risk zone)")
+    if _temp <= 10.:
+        _score  -= 5
+        _drivers.append("Very low temperature (≤10°C — Anammox critically impaired)")
 
     # 4. Hydraulic stress
     _fr = _flow_ratio(ctx)
@@ -1200,11 +1206,15 @@ def build_compliance_report(
         _score  -= 10
         _drivers.append("TN P95 compliance conditional")
 
-    # 6. NH4 limitation
+    # 6. NH4 limitation (differentiated: Conditional=-10, Not credible=-20)
     _nh4_final_p = next((p for p in params if p.parameter == "NH₄"), None)
-    if _nh4_final_p and _nh4_final_p.p95_outcome != ACHIEVABLE:
-        _score  -= 10
-        _drivers.append("Nitrification reliability at P95")
+    if _nh4_final_p:
+        if _nh4_final_p.p95_outcome == NOT_YET_CREDIBLE:
+            _score  -= 20
+            _drivers.append("Nitrification P95 not credible — cannot demonstrate NH₄ reliability")
+        elif _nh4_final_p.p95_outcome == CONDITIONAL:
+            _score  -= 10
+            _drivers.append("Nitrification reliability at P95 conditional")
 
     # 7. Process complexity
     _tech_set = {s.technology for s in pathway.stages}
@@ -1223,10 +1233,8 @@ def build_compliance_report(
         _drivers.append("Operator capability risk ({})".format(
             ctx.get("location_type", "regional")))
 
-    # 9. Sludge / high load
-    if _fix3_note:
-        _score  -= 5
-        _drivers.append("High sludge production")
+    # 9. Sludge / high load — informational only, no score penalty
+    # (Removed from score: high COD must not score lower than low COD for same TN target)
 
     # 10. Stack compliance gap
     if _gap:
