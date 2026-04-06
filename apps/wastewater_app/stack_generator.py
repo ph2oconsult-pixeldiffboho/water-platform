@@ -1887,6 +1887,57 @@ def build_upgrade_pathway(
             strategic_note    = _int_strategic,
         ))
 
+    # Part 4: GF abundant — align primary stack with concept path comparison
+    if _gf and len(_gf_concept_paths) == 2:
+        _gc_conv = next((g for g in _gf_concept_paths if g.label == "Conventional"), None)
+        _gc_int  = next((g for g in _gf_concept_paths if g.label == "Intensified"),  None)
+        if (_gc_conv and _gc_int
+                and _fp == "abundant"
+                and _gc_conv.confidence >= _gc_int.confidence
+                and _gc_conv.credible):
+            # Replace MABR-led primary stack with conventional BNR representation
+            _conv_primary: List[PathwayStage] = []
+            _conv_num = [1]
+
+            def _emit_conv(tech, mech, purpose, basis, addresses):
+                _conv_primary.append(_make_stage(
+                    _conv_num[0], tech, mech, purpose, basis, addresses))
+                _conv_num[0] += 1
+
+            _emit_conv(TI_BARDENPHO, MECH_TERT_DN,
+                "Conventional BNR process with pre-anoxic and aerobic zones "
+                "sized for design flows and compliance targets. "
+                "Higher volume provides hydraulic and biological buffering.",
+                "Standard activated sludge BNR: pre-anoxic zone for denitrification "
+                "followed by aerobic nitrification zone. SRT and HRT sized to target. "
+                "Clarifier area sized to design peak flow at standard SOR.",
+                [CT_NITRIFICATION, CT_BIOLOGICAL])
+            _emit_conv(TI_RECYCLE_OPT, MECH_HYD_EXP,
+                "Secondary clarification and solids return sized for conventional design flows.",
+                "Gravity secondary clarifiers designed to peak flow SOR. "
+                "Return activated sludge (RAS) to maintain MLSS. "
+                "No ballasted or membrane-assisted separation required.",
+                [CT_SETTLING])
+            # Add tertiary P if required
+            _tp_tgt_conv = float(ctx.get("tp_target_mg_l") or 1.)
+            if _tp_tgt_conv <= 0.5:
+                _emit_conv(TI_TERT_P, MECH_TERT_P,
+                    "Tertiary phosphorus removal by chemical dosing or filtration.",
+                    "Chemical or membrane polishing to meet TP target.",
+                    [CT_TP_POLISH])
+            elif _tp_tgt_conv <= 1.0:
+                _emit_conv(TI_TERT_P, MECH_TERT_P,
+                    "Chemical phosphorus removal (iron or alum dosing) to meet TP target.",
+                    "Simultaneous precipitation in aeration zone or post-secondary dosing.",
+                    [CT_TP_POLISH])
+            if len(_conv_primary) > 0:
+                stages = _conv_primary
+                guardrail_notes.append(
+                    "Abundant land availability supports conventional BNR design. "
+                    "Primary stack aligned with conventional pathway comparison score. "
+                    "Conventional design offers greater hydraulic and biological buffering."
+                )
+
     return UpgradePathway(
         system_state         = _state_label,
         system_state_type    = "Hydraulic / operating stress",

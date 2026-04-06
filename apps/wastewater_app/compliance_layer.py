@@ -1071,7 +1071,37 @@ def _build_delivery_considerations(
     # Cap at 4 content points before appending the mandatory closing statement
     points = points[:4]
 
-    # 7. Strategic trade-off — always last
+    # 7. Carbon verification — mandatory when carbon-sensitive pathways are in play
+    _tn_tgt_dc  = float(ctx.get("tn_target_mg_l") or 10.)
+    _cod_dc     = float(ctx.get("cod_mg_l") or 999.)
+    _c_lim_dc   = bool(ctx.get("carbon_limited_tn", False))
+    _codn_dc    = float(ctx.get("cod_tn_ratio") or 99.)
+    _pdna_in_dc = any(s.technology == "PdNA (Partial Denitrification-Anammox)"
+                      for s in pathway.stages)
+    _dnf_in_dc  = any(s.technology == "Denitrification Filter"
+                      for s in pathway.stages)
+    _carbon_check_needed = (
+        _cod_dc <= 200.
+        or _codn_dc < 5.
+        or _tn_tgt_dc <= 3.
+        or _pdna_in_dc
+        or _c_lim_dc
+    )
+    if _carbon_check_needed:
+        if _pdna_in_dc or (_dnf_in_dc and _c_lim_dc):
+            points.append(
+                "Accurate characterisation of influent carbon is a critical prerequisite "
+                "for selecting the optimal nitrogen removal pathway and managing "
+                "long-term operating requirements. This must be completed before "
+                "technology selection is confirmed."
+            )
+        else:
+            points.append(
+                "Verification of biodegradable carbon availability is required "
+                "to confirm the nitrogen removal strategy and operating assumptions."
+            )
+
+    # 8. Strategic trade-off — always last
     points.append(
         "This configuration represents a trade-off between process efficiency "
         "and operational simplicity. Selection should align with utility "
@@ -1449,6 +1479,7 @@ def build_compliance_report(
         "Selected process cannot meet target without upgrade",
         "Nitrification not reliable at peak conditions",
         "High solids production increases sludge handling, dewatering, and disposal requirements",
+        "High nitrogen removal requirement (>90%) exceeds typical biological limits",
     }
 
     def _force_driver(candidate: str, ranked: list) -> list:
@@ -1491,7 +1522,21 @@ def build_compliance_report(
             _top_drivers.append(_d)
     _top_drivers = _top_drivers[:3]
 
-    # Part 1: ensure sludge driver visible in top 3 when triggered
+    # Part 1 (new): ensure TKN removal impossibility driver visible in top 3
+    _TKN_DRIVER = "High nitrogen removal requirement (>90%) exceeds typical biological limits"
+    _req_rem_pct = ((_tkn_in - tn_tgt) / _tkn_in) if _tkn_in > 0 else 0.
+    _tkn_impossible = (_tkn_in >= 60. or _req_rem_pct >= 0.90)
+    if _tkn_impossible and _TKN_DRIVER not in _top_drivers:
+        # Must appear: replace lowest non-protected, non-sludge slot
+        for _ti in range(len(_top_drivers) - 1, -1, -1):
+            if _top_drivers[_ti] not in _PROTECTED:
+                _top_drivers[_ti] = _TKN_DRIVER
+                break
+        else:
+            if len(_top_drivers) < 3:
+                _top_drivers.append(_TKN_DRIVER)
+
+    # Part 1 (existing): ensure sludge driver visible in top 3 when triggered
     if _sludge_trigger and _SLUDGE_DRIVER not in _top_drivers:
         # Replace lowest-ranked non-causal driver to make room
         for _si in range(len(_top_drivers) - 1, -1, -1):
@@ -1528,6 +1573,21 @@ def build_compliance_report(
     }]
     _diag_cause = (_root_causes_4[0] if _root_causes_4
                    else _top_drivers[0] if _top_drivers else "")
+
+    # Part 3: clarifier/SVI limitation overrides biology as primary diagnosis cause
+    _cl_limited = (
+        bool(ctx.get("clarifier_overloaded", False))
+        or (ctx.get("svi_ml_g") or 0.) >= 140.
+    )
+    _CLARIFIER_CAUSE = "clarifier settling and hydraulic limitation"
+    _NITRIF_CAUSES = {
+        "Nitrification performance uncertain at peak conditions",
+        "Nitrification not reliable at peak conditions",
+        "Performance risk under peak conditions",
+        "Target achievable under average conditions only",
+    }
+    if _cl_limited and _diag_cause in _NITRIF_CAUSES:
+        _diag_cause = _CLARIFIER_CAUSE
     # Part 1: distinguish 'not credible' failure from 'conditional' risk
     _tn_med_nc_diag = (_tn_fp.median_outcome == NOT_YET_CREDIBLE)
     _tn_p95_nc_diag = (_tn_fp.p95_outcome   == NOT_YET_CREDIBLE)
@@ -1549,6 +1609,15 @@ def build_compliance_report(
             )
     else:
         _diagnosis = ""
+
+    # Part 2: Dual-cause diagnosis — append operational constraint when coexisting
+    if _sludge_trigger and (_tn_med_nc_diag or _tn_p95_nc_diag) and _diagnosis:
+        _op_constraint = (
+            "High solids production will significantly impact sludge "
+            "handling, dewatering, and disposal capacity."
+        )
+        if _op_constraint not in _diagnosis:
+            _diagnosis = _diagnosis + " Additionally, " + _op_constraint
 
     # Part 2: Greenfield low-confidence diagnosis override
     _gf_diag = bool(ctx.get("greenfield", False))

@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z62", "7 Apr 2026", [
+        "Principal Engineer Polish — six presentation and causality refinements",
+        "Part 1: TKN removal impossibility driver protected and forced into top 3 when TKN≥60 or removal≥90%; coexists with sludge driver",
+        "Part 2: Dual-cause diagnosis — when sludge+compliance failure coexist, operational constraint appended as separate sentence",
+        "Part 3: Clarifier root-cause correction — SVI≥140 or clarifier_overloaded forces 'clarifier settling and hydraulic limitation' as diagnosis cause (not nitrification uncertainty)",
+        "Part 4: GF abundant primary stack correction — when conv_score≥int_score on abundant land, primary stack replaced with conventional BNR (Bardenpho+clarifiers+TertP); constrained/intensified unchanged",
+        "Part 5: Carbon verification note — mandatory prerequisite statement in delivery considerations when COD≤200, COD:TN<5, TN≤3, PdNA selected, or carbon-limited; strengthened for PdNA/DNF scenarios",
+        "20/20 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z61", "7 Apr 2026", [
         "Three final refinements: sludge visibility, GF low-confidence framing, PdNA selection nuance",
         "Part 1: Sludge driver injected into top 3 when COD≥500 or TKN≥60 or sludge_flag=True; label: 'High solids production increases sludge handling, dewatering, and disposal requirements'",
