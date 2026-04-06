@@ -19,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z60", "7 Apr 2026", [
+        "Presentation Integrity Layer — four final audit fixes",
+        "Part 1: Diagnosis language — Conditional outcomes use 'carries performance risk' not 'cannot meet'; Not credible outcomes retain 'cannot meet under current constraints'",
+        "Part 2: Hybrid stack ordering — CoMag precedes inDENSE when peak_flow_ratio≥3 or storm flags; inDENSE leads only for steady-state-only scenarios",
+        "Part 3: Escalation CoMag guard — CoMag suppressed at <3× peak without storm flags; suppression guardrail note added; CT_HYDRAULIC alone insufficient to trigger CoMag",
+        "Part 4: Operator context in GF pathways — remote context: Conv+5/Int-5; metro context: Conv unchanged/Int+5; strategic notes updated to reference operator capability",
+        "18/18 validation checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z59", "7 Apr 2026", [
         "Board-readiness upgrade: causal drivers, diagnosis/closure statements, escalation note",
         "Part 1: Updated driver label 'Elevated nitrogen load' → 'High nitrogen load requires elevated removal efficiency' (spec-aligned causal language)",

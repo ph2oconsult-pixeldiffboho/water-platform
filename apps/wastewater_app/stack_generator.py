@@ -508,7 +508,15 @@ def _build_pathway_stages(
         _both          = (_cl_overloaded or _svi_high) and _peak_driven
 
         if _both:
-            # Rule 4: hybrid — steady-state SVI/SOR problem AND peak storm risk
+            # Rule 4: hybrid — CoMag first (acute storm safety), then inDENSE (sustained settling)
+            emit(TI_COMAG, MECH_BALLASTED,
+                "CoMag provides peak storm protection as Stage 1 priority. "
+                "InDENSE follows to address the steady-state settling deficit once storm "
+                "protection is established.",
+                "CoMag treats flows of 3–5× DWA without new secondary tanks. "
+                "Commissioned first; inDENSE improves baseline settling in parallel once "
+                "storm capacity is confirmed. Together they address both constraint types.",
+                [CT_HYDRAULIC, CT_WET_WEATHER])
             emit(TI_INDENSE, MECH_BIOMASS_SEL,
                 "inDENSE improves sludge settleability and increases clarifier throughput "
                 "under steady-state conditions, but does not provide instantaneous "
@@ -516,15 +524,8 @@ def _build_pathway_stages(
                 "inDENSE selectively wastes light and filamentous biomass via hydrocyclone, "
                 "densifying the retained sludge and recovering SOR headroom. "
                 "Effective where SVI > 120 mL/g or clarifier SOR is persistently exceeded "
-                "under average flow. Addresses baseline settling deficit; "
-                "CoMag addresses peak storm events.",
+                "under average flow. Commissioned after CoMag establishes storm protection.",
                 [CT_HYDRAULIC, CT_SETTLING])
-            emit(TI_COMAG, MECH_BALLASTED,
-                "CoMag provides peak storm protection where inDENSE addresses the "
-                "steady-state settling deficit. Together they cover both constraint types.",
-                "InDENSE improves baseline settling; CoMag provides peak storm protection. "
-                "CoMag treats flows of 3–5× DWA. Ballast is recovered and recycled.",
-                [CT_HYDRAULIC, CT_WET_WEATHER])
 
         elif _steady_state:
             # Rule 2: steady-state clarifier limitation, no dominant storm risk
@@ -1557,9 +1558,10 @@ def build_upgrade_pathway(
         _esc_notes: list = []
         _esc_nh4_nl = bool(ctx.get("nh4_near_limit", False))
         _esc_fr     = float(ctx.get("flow_ratio", 1.) or 1.)
-        _esc_hyd    = (CT_HYDRAULIC in {c.constraint_type for c in constraints}
-                       or CT_WET_WEATHER in {c.constraint_type for c in constraints}
-                       or _esc_fr >= 3.)
+        # Part 3: CoMag escalation guard — requires genuine storm risk
+        _esc_storm  = (bool(ctx.get("overflow_risk", False))
+                       or bool(ctx.get("wet_weather_peak", False)))
+        _esc_hyd    = (_esc_storm or _esc_fr >= 3.)  # CT_HYDRAULIC alone insufficient
 
         # 1. DNF closure for TN ≤3 mg/L
         if (_esc_tn_tgt <= 3.0
@@ -1643,6 +1645,13 @@ def build_upgrade_pathway(
                 "Hydraulic and solids capacity to be addressed through design sizing. "
                 "Tertiary clarification technologies should only be considered if "
                 "required after sizing."
+            )
+        elif not _esc_hyd and not _esc_gf and CT_HYDRAULIC in {c.constraint_type for c in constraints}:
+            # Hydraulic constraint present but peak ratio < 3 and no storm flag —
+            # CoMag suppressed; conventional management is appropriate
+            _esc_notes.append(
+                "Hydraulic capacity can be managed through conventional design "
+                "without ballasted clarification at this peak flow ratio."
             )
 
         # 3. Escalation header note — always emitted when escalation fires
@@ -1754,8 +1763,14 @@ def build_upgrade_pathway(
         else:                                        _conv_base = 75
 
         # Footprint adjustment
-        if _fp == "abundant":      _conv_base = min(100, _conv_base + 5)
+        if _fp == "abundant":           _conv_base = min(100, _conv_base + 5)
         elif _fp == "severely_constrained": _conv_base = max(0, _conv_base - 10)
+
+        # Part 4: Operator context — conventional benefits from lower-capability contexts
+        _loc = ctx.get("location_type", "metro") or "metro"
+        _op_remote = _loc in ("remote", "regional")
+        if _op_remote:
+            _conv_base = min(100, _conv_base + 5)  # simpler operation — more credible remotely
         _conv_base = max(0, min(100, _conv_base))
 
         def _band(s):
@@ -1770,9 +1785,11 @@ def build_upgrade_pathway(
             "Greater passive resilience through larger hydraulic and biological volumes",
         ]
         _conv_strategic = (
-            "Preferred where land is available and utility capability favours simplicity and resilience."
-            if _fp == "abundant" else
-            "Viable but land-intensive; confirm site envelope can accommodate full conventional sizing."
+            "Preferred for remote or lower-capability utilities — more compatible with available operator expertise."
+            if _op_remote else
+            ("Preferred where land is available and utility capability favours simplicity and resilience."
+             if _fp == "abundant" else
+             "Viable but land-intensive; confirm site envelope can accommodate full conventional sizing.")
         )
 
         _gf_concept_paths.append(GreenfieldConceptPath(
@@ -1818,9 +1835,15 @@ def build_upgrade_pathway(
         else:                                        _int_base = 70
 
         # Footprint bonus
-        if _fp == "constrained":          _int_base = min(100, _int_base + 5)
-        elif _fp == "severely_constrained": _int_base = min(100, _int_base + 10)
-        if not _int_credible:             _int_base = min(_int_base, 20)
+        if _fp == "constrained":            _int_base = min(100, _int_base + 5)
+        elif _fp == "severely_constrained":  _int_base = min(100, _int_base + 10)
+
+        # Part 4: Operator context — intensified requires capable operators
+        if _op_remote:
+            _int_base = max(0, _int_base - 5)  # specialist O&M harder in remote context
+        else:
+            _int_base = min(100, _int_base + 5)  # metro / strong capability supports intensified
+        if not _int_credible: _int_base = min(_int_base, 20)
         _int_base = max(0, min(100, _int_base))
 
         _int_tradeoffs = [
@@ -1829,9 +1852,11 @@ def build_upgrade_pathway(
             "Tighter process control — less hydraulic buffering; more sensitive to upsets",
         ]
         _int_strategic = (
-            "Most credible where land is scarce, operator capability is strong, or compliance target is extreme."
-            if _fp in ("constrained", "severely_constrained") else
-            "Consider when technical performance demands compactness or superior nitrogen removal efficiency."
+            "Requires specialist operational expertise; most credible where operator capability is strong."
+            if _op_remote else
+            ("Most credible where land is scarce and operator capability is strong."
+             if _fp in ("constrained", "severely_constrained") else
+             "Viable where technical performance demands compactness and specialist expertise is available.")
         )
 
         _gf_concept_paths.append(GreenfieldConceptPath(

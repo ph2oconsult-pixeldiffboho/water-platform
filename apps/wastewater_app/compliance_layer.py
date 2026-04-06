@@ -1482,13 +1482,27 @@ def build_compliance_report(
     }]
     _diag_cause = (_root_causes_4[0] if _root_causes_4
                    else _top_drivers[0] if _top_drivers else "")
-    _diagnosis = (
-        "Current configuration cannot meet the target due to: "
-        + _diag_cause.lower()
-        + (". Compliance is not credible at 95th percentile."
-           if _tn_fp.p95_outcome == NOT_YET_CREDIBLE else
-           ". Compliance is conditional.")
-    ) if _diag_cause else ""
+    # Part 1: distinguish 'not credible' failure from 'conditional' risk
+    _tn_med_nc_diag = (_tn_fp.median_outcome == NOT_YET_CREDIBLE)
+    _tn_p95_nc_diag = (_tn_fp.p95_outcome   == NOT_YET_CREDIBLE)
+    if _diag_cause:
+        if _tn_med_nc_diag or _tn_p95_nc_diag:
+            _diagnosis = (
+                "Current configuration cannot meet the target under current constraints due to: "
+                + _diag_cause.lower()
+                + (". Compliance is not credible at 95th percentile."
+                   if _tn_p95_nc_diag else
+                   ". Compliance is not credible under average conditions.")
+            )
+        else:
+            # TN is Achievable or Conditional — performance risk, not outright failure
+            _diagnosis = (
+                "Current configuration can meet the target under average conditions "
+                "but carries performance risk under peak or stressed conditions due to: "
+                + _diag_cause.lower() + "."
+            )
+    else:
+        _diagnosis = ""
 
     _esc_in_notes = any("Escalation Mode" in n for n in pathway.guardrail_notes)
     if _gap or _esc_in_notes:
