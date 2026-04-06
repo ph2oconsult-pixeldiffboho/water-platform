@@ -47,7 +47,7 @@ from apps.wastewater_app.stack_generator import (
     UpgradePathway,
     CT_HYDRAULIC, CT_SETTLING, CT_NITRIFICATION,
     CT_TN_POLISH, CT_TP_POLISH, CT_BIOLOGICAL, CT_WET_WEATHER,
-    TI_COMAG, TI_BIOMAG, TI_MABR, TI_IFAS, TI_HYBAS,
+    TI_COMAG, TI_BIOMAG, TI_MABR, TI_IFAS, TI_HYBAS, TI_PDNA,
     TI_BARDENPHO, TI_RECYCLE_OPT, TI_DENFILTER, TI_TERT_P, TI_EQ_BASIN,
 )
 from apps.wastewater_app.feasibility_layer import FeasibilityReport
@@ -142,6 +142,10 @@ class ComplianceReport:
     no_precise_percentile_values:   bool   # always True — confirms the rule
     decision_variables_identified:  bool
     brownfield_interaction_stated:  bool
+    stack_compliance_gap:     bool = False
+    stack_consistency_note:   str  = ""
+    operator_capability_flag: bool = False
+    operator_capability_note: str  = ""
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -856,6 +860,69 @@ def _overall_confidence(params: List[ParameterCompliance], ctx: Dict) -> str:
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
+
+def _assess_tn_pdna(pathway, ctx, tn_target, target_basis):
+    """Fix 2: PdNA-specific TN compliance — NO2 window, NOB, Anammox retention."""
+    cold        = _cold(ctx)
+    fr          = _flow_ratio(ctx)
+    has_biofilm = _has_tech(pathway, TI_MABR, TI_IFAS, TI_HYBAS)
+    high_hyd    = fr >= 3.0
+    weak_ctrl   = not bool(ctx.get("has_no2_analyser", False))
+    nob_high    = cold or high_hyd or weak_ctrl
+
+    if not has_biofilm:
+        med, p95 = NOT_YET_CREDIBLE, NOT_YET_CREDIBLE
+        mc  = ["Anammox retention (IFAS/MBBR/MABR) absent. PdNA cannot be sustained in suspended growth."]
+        mu  = "Certain Anammox washout without fixed-film retention."
+        pc  = ["Biomass retention is a hard design prerequisite."]
+        pu  = "Anammox washout from hydraulic events."
+    elif cold and tn_target <= 3.:
+        med = CONDITIONAL
+        mc  = ["NO\u2082 window (0.5\u20135 mg/L) must be maintained continuously.",
+               "At \u226412\u00b0C Anammox kinetics fall 40\u201350% \u2014 NO\u2082 "
+               "accumulates as partial denitrification continues near-normally.",
+               "Rising TN requires REDUCING carbon dose \u2014 operator training mandatory."]
+        mu  = "Cold-temperature NO\u2082 accumulation and FNA inhibition spiral."
+        p95 = CONDITIONAL
+        pc  = ["NOB intrusion risk elevated under cold/high hydraulic stress.",
+               "NO\u2082 online analyser with alarm at 4 mg/L mandatory for P95 reliability."]
+        pu  = "NOB colonisation of biofilm carriers under combined temperature and hydraulic stress."
+    else:
+        med = CONDITIONAL
+        mc  = ["COD:NO\u2083 controlled to 2.4\u20133.0 gCOD/gNO\u2083-N.",
+               "Real-time NO\u2082 monitoring active.",
+               "NOB suppression via low DO maintained as ongoing discipline."]
+        mu  = "NO\u2082 window stability \u2014 narrow margin between starvation and FNA inhibition."
+        if nob_high or weak_ctrl:
+            p95, pc = CONDITIONAL, ["NOB intrusion or control system limitation.",
+                                     "Real-time NO\u2082 and NH\u2084 monitoring required."]
+            pu  = "NOB intrusion or weak dosing control."
+        else:
+            p95, pc = ACHIEVABLE, ["Anammox retention confirmed.", "NO\u2082 monitoring active.",
+                                    "NOB suppression maintained."]
+            pu  = "Seasonal temperature variation."
+
+    dvs = []
+    if not bool(ctx.get("has_no2_analyser", False)):
+        dvs.append("NO\u2082 online analyser \u2014 mandatory for PdNA stoichiometric control.")
+    if cold:
+        dvs.append("Winter protocol: carbon dose REDUCTION when TN rises \u2014 must be in O&M plan.")
+
+    return ParameterCompliance(
+        parameter="TN", target_mg_l=tn_target, target_basis=target_basis,
+        median_outcome=med, median_conditions=mc, median_uncertainty=mu,
+        p95_outcome=p95, p95_conditions=pc, p95_uncertainty=pu,
+        confidence=_confidence(
+            low_count=(1 if not has_biofilm else 0),
+            med_count=(1 if nob_high else 0) + (1 if weak_ctrl else 0)),
+        decision_variables=dvs,
+        design_implication=(
+            f"TN \u2264{tn_target} mg/L via PdNA: compliance depends on NO\u2082 window "
+            "control, NOB suppression, and Anammox retention \u2014 not carbon availability."
+        ),
+    )
+
+
 def build_compliance_report(
     pathway: UpgradePathway,
     feasibility: FeasibilityReport,
@@ -900,10 +967,18 @@ def build_compliance_report(
         BASIS_P95 if tp_tgt <= 0.5 else BASIS_MEDIAN)
     tss_basis = _target_basis_from_ctx(ctx, "tss") or BASIS_P95
 
+    # Fix 2: PdNA TN routing
+    _pdna_stack = _has_tech(pathway, TI_PDNA)
+    _tn_p = (
+        _assess_tn_pdna(pathway, ctx, tn_tgt, tn_basis)
+        if _pdna_stack else
+        _assess_tn(pathway, ctx, tn_tgt, tn_basis)
+    )
+
     # Build parameter assessments
     params = [
         _assess_nh4(pathway, ctx, nh4_tgt, nh4_basis),
-        _assess_tn (pathway, ctx, tn_tgt,  tn_basis),
+        _tn_p,
         _assess_tp (pathway, ctx, tp_tgt,  tp_basis),
     ]
     if include_tss:
@@ -913,13 +988,47 @@ def build_compliance_report(
     brownfield_note    = _build_brownfield_note(params, ctx)
     overall_confidence = _overall_confidence(params, ctx)
 
+    # Fix 1: stack↔compliance consistency
+    _tn_param  = next(p for p in params if p.parameter == "TN")
+    _gap = (
+        tn_tgt <= 3.0
+        and tn_basis in (BASIS_P95, BASIS_P99)
+        and _tn_param.p95_outcome == NOT_YET_CREDIBLE
+    )
+    _gap_note = (
+        "The recommended stack cannot credibly meet TN ≤{:.0f} mg/L at {} basis "
+        "without advanced nitrogen removal (DNF or PdNA). Add either to close this gap."
+        .format(tn_tgt, tn_basis) if _gap else ""
+    )
+
+    # Fix 4: operator capability vs stack complexity
+    _remote = ctx.get("location_type", "metro") in ("remote", "regional")
+    _spec   = {"CoMag", "BioMag", "MABR (OxyFAS retrofit)",
+               "PdNA (Partial Denitrification-Anammox)", "Denitrification Filter",
+               "IFAS", "MBBR", "Hybas (IFAS)",
+               "MOB (miGRATE + inDENSE)", "inDENSE"}
+    _match  = sorted({s.technology for s in pathway.stages} & _spec)
+    _op_flag = _remote and bool(_match)
+    _op_note = (
+        "Operational capability risk: {} specialist process{} ({}) require{} sustained "
+        "control discipline at a {} location. Confirm operator capability before committing."
+        .format(len(_match), "es" if len(_match)>1 else "", ", ".join(_match),
+                "" if len(_match)>1 else "s",
+                ctx.get("location_type", "regional"))
+        if _op_flag else ""
+    )
+
     return ComplianceReport(
         parameters             = params,
         drivers                = drivers,
         brownfield_note        = brownfield_note,
         overall_confidence     = overall_confidence,
         disclaimer             = DISCLAIMER,
-        no_precise_percentile_values  = True,   # always True by design
+        no_precise_percentile_values  = True,
         decision_variables_identified = any(len(p.decision_variables) > 0 for p in params),
         brownfield_interaction_stated = True,
+        stack_compliance_gap          = _gap,
+        stack_consistency_note        = _gap_note,
+        operator_capability_flag      = _op_flag,
+        operator_capability_note      = _op_note,
     )

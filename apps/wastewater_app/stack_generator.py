@@ -1259,7 +1259,11 @@ def build_upgrade_pathway(
     -------
     UpgradePathway
     """
-    ctx = plant_context or {}
+    ctx = dict(plant_context or {})
+    # Fix 5: greenfield mode — read from context (callers inject via plant_context)
+    # Also accept greenfield_mode key as an alias
+    if ctx.get('greenfield_mode') and not ctx.get('greenfield'):
+        ctx['greenfield'] = True
 
     s  = wp_result.system_stress
     fm = wp_result.failure_modes
@@ -1361,6 +1365,18 @@ def build_upgrade_pathway(
     comp_primary_ct, stab_cts = _compliance_primary_constraint(constraints, stages, ctx)
 
     narrative     = _pathway_narrative(constraints, stages, comp_primary_ct, stab_cts)
+    # Fix 5: surface greenfield mode in pathway narrative and guardrail notes
+    _gf_active = bool(ctx.get('greenfield', False))
+    if _gf_active:
+        narrative = (
+            '[Greenfield design mode] Optimal process configuration for target compliance. '
+            'Brownfield-first logic is disabled — constraint hierarchy reflects new plant design. '
+            + narrative
+        )
+        guardrail_notes = [
+            'Greenfield mode active: existing asset constraints do not apply. '
+            'Technology selection is optimised for the compliance target, not existing infrastructure.'
+        ] + guardrail_notes
     con_summary   = _constraint_summary(constraints, s.state, s.proximity_percent,
                                         comp_primary_ct, stab_cts)
     residuals     = _residual_risks(constraints, stages, ctx)

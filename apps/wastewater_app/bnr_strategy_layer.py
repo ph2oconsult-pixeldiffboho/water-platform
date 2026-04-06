@@ -32,7 +32,7 @@ from apps.wastewater_app.stack_generator import (
     UpgradePathway,
     CT_HYDRAULIC, CT_SETTLING, CT_NITRIFICATION,
     CT_TN_POLISH, CT_TP_POLISH, CT_BIOLOGICAL, CT_WET_WEATHER,
-    TI_COMAG, TI_BIOMAG, TI_MABR, TI_IFAS, TI_HYBAS, TI_MBBR,
+    TI_COMAG, TI_BIOMAG, TI_MABR, TI_IFAS, TI_HYBAS, TI_MBBR, TI_PDNA,
     TI_BARDENPHO, TI_RECYCLE_OPT, TI_DENFILTER, TI_TERT_P,
     TI_INDENSE, TI_MIGINDENSE, TI_EQ_BASIN,
 )
@@ -44,6 +44,7 @@ BNR_MLE       = "MLE (Modified Ludzack-Ettinger)"
 BNR_A2O       = "3-stage A2O (Anaerobic-Anoxic-Oxic)"
 BNR_BARDENPHO = "4-stage Bardenpho"
 BNR_BARDENPHO_PLUS = "5-stage Bardenpho + tertiary denitrification"
+BNR_PDNA         = "PdNA-compatible configuration (Partial Denitrification-Anammox)"
 
 
 # ── Dataclasses ────────────────────────────────────────────────────────────────
@@ -206,6 +207,34 @@ def _build_configuration_matrix() -> List[BNRConfiguration]:
             ),
         ),
         BNRConfiguration(
+            configuration   = BNR_PDNA,
+            tn_target_mg_l  = 3.,
+            tp_target_mg_l  = 0.5,
+            key_process_elements=[
+                "Controlled partial denitrification (NO\u2083 \u2192 NO\u2082) via "
+                "COD:NO\u2083 dosing at 2.4\u20133.0 gCOD/gNO\u2083-N.",
+                "Anammox co-removal of NH\u2084 and NO\u2082 to N\u2082 gas in a single step.",
+                "Biomass retention via IFAS, MBBR, or MABR \u2014 non-negotiable prerequisite.",
+                "NO\u2082 operating window maintained at 0.5\u20135 mg/L continuously.",
+            ],
+            design_parameters=[
+                "COD:NO\u2083 ratio: 2.4\u20133.0 gCOD/gNO\u2083-N (partial denitrification).",
+                "NO\u2082 alarm threshold: 4 mg/L (warning), 5 mg/L (emergency carbon reduction).",
+                "DO in MABR/IFAS zone: \u22640.3 mg/L bulk liquid.",
+                "Temperature: must remain above 10\u00b0C; performance degrades below 12\u00b0C.",
+                "MANDATORY: NH\u2084 < 1 mg/L stable before PdNA commissioning.",
+            ],
+            tertiary_required = False,
+            dnf_required      = False,
+            rationale=(
+                "PdNA delivers TN \u22643 mg/L at 50\u201360% aeration saving and up to 80% "
+                "carbon saving vs conventional denitrification. It is the preferred configuration "
+                "where influent COD:N < 5:1 makes conventional denitrification carbon-intensive. "
+                "Compliance depends on NO\u2082 window control and NOB suppression \u2014 "
+                "not carbon availability. Anammox retention via fixed film is non-negotiable."
+            ),
+        ),
+        BNRConfiguration(
             configuration   = BNR_BARDENPHO_PLUS,
             tn_target_mg_l  = 3.,
             tp_target_mg_l  = 0.1,
@@ -246,6 +275,12 @@ def _select_configuration(
                    ctx.get("tn_out_upgraded_mg_l") or 10.)
     tp_tgt = float(ctx.get("tp_target_mg_l") or 1.)
     tech_set = {s.technology for s in pathway.stages}
+
+    # Fix 3: if PdNA is in the stack, override standard BNR framing
+    if TI_PDNA in tech_set:
+        pdna_cfg = next((c for c in matrix if c.configuration == BNR_PDNA), None)
+        if pdna_cfg:
+            return pdna_cfg
 
     # Use actual stack as primary signal, targets as tiebreaker
     has_dnf   = TI_DENFILTER in tech_set

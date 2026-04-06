@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[4]   # repo root
 # Add a new entry here with every bundle that changes user-visible behaviour.
 # Format: (version_tag, date, [changes])
 CHANGELOG: list[tuple[str, str, list[str]]] = [
+    ("v24Z46", "7 Apr 2026", [
+        "Five red team fixes applied across compliance_layer, bnr_strategy_layer, stack_generator, waterpoint_adapter",
+        "Fix 1 (Critical): Stack↔compliance consistency — stack_compliance_gap + stack_consistency_note fields added to ComplianceReport; fires when TN≤3 mg/L at P95 basis and TN P95 = Not yet credible; note explicitly states DNF or PdNA required",
+        "Fix 2 (High): PdNA-specific compliance engine — _assess_tn_pdna() added; routes TN assessment through NO₂ window, NOB intrusion, Anammox retention, and control system logic when PdNA is in stack; carbon availability not referenced",
+        "Fix 3 (High): BNR strategy PdNA integration — BNR_PDNA configuration added to matrix with PdNA design parameters; _select_configuration() overrides A2O/Bardenpho framing when PdNA in stack",
+        "Fix 4 (Medium): Operator capability flag — operator_capability_flag + operator_capability_note added to ComplianceReport; fires when remote/regional + specialist stack (CoMag, MABR, PdNA, DNF, IFAS, MBBR, MOB, inDENSE)",
+        "Fix 5 (Medium): Greenfield mode — greenfield_mode field in WaterPointInput; greenfield=True in plant_context disables brownfield-first logic, injects greenfield note into pathway_narrative and guardrail_notes",
+        "Validation: 14/14 fix checks pass; 282/282 benchmark tests pass",
+    ]),
     ("v24Z45", "7 Apr 2026", [
         "PdNA (Partial Denitrification-Anammox) added as selectable technology across all four platform layers",
         "stack_generator.py: TI_PDNA constant + trigger logic — fires when carbon-limited + biofilm retention available + TN≤5 + NH4 stable + not SBR",

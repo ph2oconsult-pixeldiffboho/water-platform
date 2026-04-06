@@ -140,6 +140,7 @@ class WaterPointInput:
     nereda_has_sidestream_buffer:  bool           = False
     # V2: brownfield conversion
     nereda_mode:              Optional[str]   = None   # "greenfield" | "brownfield"
+    greenfield_mode:          bool            = False  # Fix 5: greenfield design mode
     nereda_existing_volume_m3: Optional[float]= None   # existing tank volume
     nereda_existing_process:  Optional[str]   = None   # "MLE"|"MBBR"|"CAS"|"SBR"
     # V2: cycle constraints
