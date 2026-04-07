@@ -442,6 +442,18 @@ def _render_synthesis_layers(result, scenario, project) -> None:
     # ── E9. ADAPTIVE PATHWAYS ─────────────────────────────────────────────
     _render_adaptive_pathways(pathway, ctx)
 
+    # -- E10. AFFORDABILITY AND RISK COMPARISON -----------------------
+    try:
+        from apps.wastewater_app.compliance_layer    import build_compliance_report
+        from apps.wastewater_app.affordability_layer import build_affordability_comparison
+        _co_aff = build_compliance_report(pathway, feas, ctx)
+        _aff    = build_affordability_comparison(pathway, _co_aff, ctx)
+        _render_affordability(pathway, _co_aff, _aff, ctx)
+    except Exception as _e10_err:
+        with st.expander('Affordability & Risk Comparison -- error', expanded=False):
+            st.warning(f'Affordability layer could not load: {_e10_err}')
+
+
 
 def _render_refinement_section(pathway, ctx: dict) -> None:
     """
@@ -936,3 +948,107 @@ def _build_context(scenario, project) -> dict | None:
         }
     except Exception:
         return None
+
+
+def _render_affordability(pathway, co, aff, ctx: dict) -> None:
+    """
+    E10: Affordability and Risk Comparison (v24Z73).
+    Pre-CAPEX decision layer -- comparative, qualitative only.
+    """
+    import streamlit as st
+
+    # Only render if active (>=2 options) or if user wants single-option framing
+    if not aff.options:
+        return
+
+    is_active = aff.is_active
+
+    title = ("Affordability & Risk Comparison -- " + str(len(aff.options)) + " options"
+             if is_active else
+             "Affordability & Risk Framing")
+
+    with st.expander("💰 " + title, expanded=is_active):
+
+        # Mandatory decision framing statement (Part 7)
+        st.info("**Decision framing:** " + aff.decision_framing)
+
+        # Critical insight -- shared constraint (Part 9)
+        if aff.critical_insight:
+            st.error("**Critical constraint (applies to ALL options):** " + aff.critical_insight)
+
+        # Preferred path (Part 10)
+        if aff.preferred_path:
+            st.success("**Preferred pathway:** " + aff.preferred_path)
+
+        if is_active:
+            # Comparison table (Part 6)
+            st.markdown("---")
+            st.markdown("**Option comparison**")
+            opt_labels = [o.label for o in aff.options]
+
+            # Header
+            n_opts = len(opt_labels)
+            col_widths = [1.5] + [2.0] * n_opts
+            header_cols = st.columns(col_widths)
+            header_cols[0].markdown("**Dimension**")
+            for i, lbl in enumerate(opt_labels):
+                header_cols[i + 1].markdown(f"**{lbl}**")
+
+            # Band colour helper
+            _band_icon = {
+                "Low": "🟢", "Moderate": "🟢", "Medium": "🟡",
+                "Medium-High": "🟠", "Medium--High": "🟠", "High": "🔴",
+                "Very High": "🔴", "Sensitive": "🔴",
+            }
+            def _icon(val):
+                # strip leading emoji if present
+                clean = val.split(" -- ")[0].strip()
+                return _band_icon.get(clean, "")
+
+            for row in aff.comparison_table:
+                row_cols = st.columns(col_widths)
+                row_cols[0].caption(row["dimension"])
+                for i, lbl in enumerate(opt_labels):
+                    val = row.get(lbl, "--")
+                    row_cols[i + 1].caption(_icon(val) + " " + val)
+
+            st.markdown("---")
+
+        # Per-option detail cards
+        st.markdown("**Option detail**")
+        for opt in aff.options:
+            with st.container():
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("CAPEX", opt.capex_band)
+                c2.metric("OPEX",  opt.opex_band)
+                c3.metric("Complexity", opt.complexity)
+                c4.metric("Reliability", opt.reliability)
+
+                col_l, col_r = st.columns(2)
+                with col_l:
+                    st.caption("**Strategic strengths**")
+                    for s in opt.strategic_strengths[:4]:
+                        st.markdown(f"+ {s}")
+                with col_r:
+                    st.caption("**Strategic weaknesses**")
+                    for w in opt.strategic_weaknesses[:4]:
+                        st.markdown(f"- {w}")
+
+                st.caption(
+                    f"**Primary risk:** {opt.primary_risk_type}  |  "
+                    f"**Delivery risk:** {opt.delivery_risk}  |  "
+                    f"**Flexibility:** {opt.flexibility}"
+                )
+                st.caption(f"**Failure mode:** {opt.failure_mode}")
+                if opt.carbon_closure_required:
+                    st.caption(
+                        f"**Carbon closure required:** Yes -- {opt.carbon_closure_tech or 'DNF or PdNA'}"
+                    )
+                st.markdown("---")
+
+        # Board summary bullets (Part 8)
+        if aff.board_bullets:
+            st.markdown("**Board-level summary**")
+            for b in aff.board_bullets:
+                st.markdown(f"- {b}")
+
