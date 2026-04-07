@@ -57,6 +57,10 @@ ACHIEVABLE        = "Achievable"
 CONDITIONAL       = "Conditional"
 NOT_YET_CREDIBLE  = "Not yet credible"
 
+# v24Z71.1 Part 6: board-facing display labels (internal constants unchanged)
+DISPLAY_CONDITIONAL  = "At risk under peak or winter conditions"
+DISPLAY_NOT_CREDIBLE = "Not achievable under current conditions"
+
 # ── Target basis constants ─────────────────────────────────────────────────────
 BASIS_MEDIAN = "Median"
 BASIS_P95    = "95th percentile"
@@ -1304,18 +1308,31 @@ def _build_board_summary(
     closure_statement: str,
     carbon_limited: bool,
     eff_codn: float,
+    proximity_pct: float = 0.,
 ) -> str:
     """
-    Part 7: Five-line board summary.
+    v24Z71.1: Seven-line board summary with shock anchor.
 
+    Line 0 — Shock anchor (if Failure Risk or proximity ≥300%)
     Line 1 — System state
     Line 2 — Primary compliance risk (Tier 1)
-    Line 3 — Required closure (if any)
+    Line 3 — Required closure (if any) + carbon prerequisite
     Line 4 — Key system constraint
     Line 5 — Investment implication
+    Line 6 — Operator transition statement
     """
     t1 = tiers["t1"]
     t2 = tiers["t2"]
+
+    # Part 2: Shock anchor — prepended when Failure Risk or proximity ≥300%
+    _is_failure = ("Failure Risk" in state or proximity_pct >= 300.)
+    if _is_failure and proximity_pct > 0.:
+        l0 = (f"System operating at approximately {proximity_pct:.0f}% of design capacity "
+              "under peak conditions — business-as-usual is not viable.")
+    elif _is_failure:
+        l0 = "System is operating beyond safe design capacity — business-as-usual is not viable."
+    else:
+        l0 = ""
 
     # Line 1
     l1 = f"System is in {state} condition."
@@ -1350,7 +1367,7 @@ def _build_board_summary(
     else:
         l4 = "No acute system constraints identified under current scenario."
 
-    # Line 5
+    # Line 5 — Investment implication
     if gap:
         l5 = ("Investment is required in staged intensification and tertiary closure "
               "technologies to achieve compliance.")
@@ -1361,7 +1378,19 @@ def _build_board_summary(
         l5 = ("Current configuration is adequate; minor investment may be required "
               "to maintain performance under growth or licence tightening.")
 
-    return " ".join([l1, l2, l3, l4, l5])
+    # Part 3 — Carbon prerequisite sentence (appended to L3 when carbon-limited)
+    if carbon_limited or (eff_codn > 0. and eff_codn < 4.5):
+        l3 = l3.rstrip(".") + ". Final nitrogen pathway selection is contingent "\
+             "on confirmed biodegradable carbon availability."
+
+    # Part 4 — Operator transition statement (always appended when gap or intensification)
+    l6 = ("Proposed pathway requires transition from conventional activated sludge operation "
+          "to higher-complexity, specialist-operated treatment systems with increased "
+          "instrumentation and control requirements.") if (gap or t2) else ""
+
+    # Assemble: shock anchor first if triggered, then narrative lines
+    parts = ([l0] if l0 else []) + [l1, l2, l3, l4, l5] + ([l6] if l6 else [])
+    return " ".join(parts)
 
 
 def build_compliance_report(
@@ -1781,42 +1810,45 @@ def build_compliance_report(
             _top_drivers.append(_d)
     _top_drivers = _top_drivers[:3]
 
-    # Part 1 (new): ensure TKN removal impossibility driver visible in top 3
-    _TKN_DRIVER = "High nitrogen removal requirement (>90%) exceeds typical biological limits"
-    _req_rem_pct = ((_tkn_in - tn_tgt) / _tkn_in) if _tkn_in > 0 else 0.
+    # v24Z71.1 Part 1 — Tier-ordered driver list
+    # Tier 1 (compliance-critical) always precedes Tier 2 (system) and Tier 3 (operational)
+    _TKN_DRIVER   = "High nitrogen removal requirement (>90%) exceeds typical biological limits"
+    _CARBON_DRIVER= "Insufficient biodegradable carbon for biological denitrification"
+    _PDNA_DRIVER  = "Low carbon availability favours shortcut nitrogen removal over conventional denitrification"
+    _req_rem_pct  = ((_tkn_in - tn_tgt) / _tkn_in) if _tkn_in > 0 else 0.
     _tkn_impossible = (_tkn_in >= 60. or _req_rem_pct >= 0.90)
-    if _tkn_impossible and _TKN_DRIVER not in _top_drivers:
-        # Must appear: replace lowest non-protected, non-sludge slot
-        for _ti in range(len(_top_drivers) - 1, -1, -1):
-            if _top_drivers[_ti] not in _PROTECTED:
-                _top_drivers[_ti] = _TKN_DRIVER
-                break
-        else:
-            if len(_top_drivers) < 3:
-                _top_drivers.append(_TKN_DRIVER)
 
-    # Part 1 (existing): ensure sludge driver visible in top 3 when triggered
-    if _sludge_trigger and _SLUDGE_DRIVER not in _top_drivers:
-        # Replace lowest-ranked non-causal driver to make room
-        for _si in range(len(_top_drivers) - 1, -1, -1):
-            if _top_drivers[_si] not in _PROTECTED:
-                _top_drivers[_si] = _SLUDGE_DRIVER
-                break
-        else:
-            if len(_top_drivers) < 3:
-                _top_drivers.append(_SLUDGE_DRIVER)
+    # Build candidate sets by tier
+    _tier1_candidates: list = []
+    if _tkn_impossible:
+        _tier1_candidates.append(_TKN_DRIVER)
+    if _eff_codn > 0. and _eff_codn < 4.5:
+        _tier1_candidates.append(_CARBON_DRIVER)
+    if _temp <= 15.:
+        _tier1_candidates.append(
+            f"Winter nitrification risk at {_temp:.0f}°C — temperature-limited kinetics"
+            if 12. < _temp <= 15. else
+            f"Biological reaction rate limitation (temperature-limited kinetics at {_temp:.0f}°C)"
+        )
 
-    # Part 3: ensure PdNA low-carbon driver visible when applicable
-    _PDNA_DRIVER = "Low carbon availability favours shortcut nitrogen removal over conventional denitrification"
-    if _pdna_gf_lc and _PDNA_DRIVER not in _top_drivers:
-        if len(_top_drivers) < 3:
-            _top_drivers.append(_PDNA_DRIVER)
-        else:
-            # Replace lowest non-protected, non-sludge driver
-            for _pi in range(len(_top_drivers) - 1, -1, -1):
-                if _top_drivers[_pi] not in _PROTECTED and _top_drivers[_pi] != _SLUDGE_DRIVER:
-                    _top_drivers[_pi] = _PDNA_DRIVER
-                    break
+    # Collect non-tier1 from existing _top_drivers
+    _non_tier1 = [d for d in _top_drivers
+                  if d not in _tier1_candidates and d != _SLUDGE_DRIVER
+                  and d not in _tier1_candidates]
+
+    # Sludge always last when triggered
+    _sludge_entries = [_SLUDGE_DRIVER] if _sludge_trigger else []
+
+    # PdNA low-carbon note (after carbon tier1 entries)
+    if _pdna_gf_lc and _PDNA_DRIVER not in _tier1_candidates:
+        _tier1_candidates.append(_PDNA_DRIVER)
+
+    # Merge: Tier1 first, then system constraints, then sludge — cap at 3
+    _top_drivers = (_tier1_candidates + _non_tier1 + _sludge_entries)[:3]
+
+    # Ensure at least one entry if penalty list is non-empty and _top_drivers is empty
+    if not _top_drivers and _ranked:
+        _top_drivers = [_ranked[0]]
 
     _delivery = _build_delivery_considerations(
         pathway, ctx, _op_flag, _score)
@@ -1917,10 +1949,37 @@ def build_compliance_report(
         closure_statement = _closure,
         carbon_limited = _carbon_lim,
         eff_codn       = _eff_codn if _eff_codn < 999. else 0.,
+        proximity_pct  = float(pathway.proximity_pct or 0.),
     )
 
+    # v24Z71.1 Part 6: translate internal labels to board-facing display strings
+    # Internal constants (NOT_YET_CREDIBLE, CONDITIONAL) are untouched by this step.
+    def _display_outcome(s: str) -> str:
+        if s == NOT_YET_CREDIBLE: return DISPLAY_NOT_CREDIBLE
+        if s == CONDITIONAL:      return DISPLAY_CONDITIONAL
+        return s
+
+    from dataclasses import replace as _dcreplace
+    _params_display = [
+        _dcreplace(p,
+            median_outcome=_display_outcome(p.median_outcome),
+            p95_outcome=_display_outcome(p.p95_outcome),
+        ) for p in params
+    ]
+
+    # v24Z71.1 Part 3: carbon prerequisite as Critical delivery note
+    _delivery_out = list(_delivery or [])
+    if _carbon_lim or (_eff_codn > 0. and _eff_codn < 4.5):
+        _carbon_prereq = (
+            "Critical prerequisite — affects capital decision: confirm biodegradable COD "
+            "availability through influent carbon fractionation prior to final nitrogen "
+            "pathway selection (DNF vs PdNA)."
+        )
+        if _carbon_prereq not in _delivery_out:
+            _delivery_out.insert(0, _carbon_prereq)
+
     return ComplianceReport(
-        parameters             = params,
+        parameters             = _params_display,
         drivers                = drivers,
         brownfield_note        = brownfield_note,
         overall_confidence     = overall_confidence,
@@ -1937,7 +1996,7 @@ def build_compliance_report(
         confidence_score              = _score,
         confidence_label              = _c_label,
         confidence_drivers            = _top_drivers,
-        delivery_considerations       = _delivery,
+        delivery_considerations       = _delivery_out,
         diagnosis_statement           = _diagnosis,
         closure_statement             = _closure,
         board_summary                 = _board_summary,
