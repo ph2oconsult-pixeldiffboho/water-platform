@@ -112,6 +112,11 @@ def ingest_brownfield_asset(raw: dict) -> BrownfieldAssetResult:
     aer  = raw.get("aeration_system") or {}
     clar = raw.get("clarifiers") or {}
     hyd  = raw.get("hydraulics") or {}
+    # SF-03: existing hydraulic relief type
+    _ehr = (raw.get("existing_hydraulic_relief") or
+            hyd.get("existing_hydraulic_relief") or "None")
+    if _ehr not in ("CAS", "CoMag", "None"):
+        _ehr = "None"
     sludge = raw.get("sludge_system") or {}
     fp   = raw.get("footprint") or {}
     pain = raw.get("pain_points") or []
@@ -335,6 +340,8 @@ def ingest_brownfield_asset(raw: dict) -> BrownfieldAssetResult:
         # Clarifier / settling
         "clarifier_overloaded":  cl_overloaded,
         "svi_ml_g":              svi or 0.,
+        # SF-03: existing hydraulic relief
+        "existing_hydraulic_relief": _ehr,
         "svi_design":            svi_design or svi or 0.,
         "svi_p95":               svi_p95 or 0.,
         "svi_range_known":       svi_range_known,

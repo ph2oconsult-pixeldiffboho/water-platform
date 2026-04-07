@@ -122,6 +122,10 @@ def build_adaptive_pathways(
     thp        = bool(ctx.get("thp_present",      False))
     thp_nh4_inc= float(ctx.get("thp_nh4_inc_pct",  0.) or 0.)
     ss_treat   = bool(ctx.get("ss_treatment_present", False))
+    # SF-03: existing hydraulic relief
+    ehr        = ctx.get("existing_hydraulic_relief", "None") or "None"
+    # SF-04: THP high-severity flag (defined here so it is in scope for both GF and BF branches)
+    _thp_high  = thp and thp_nh4_inc >= 50. and tn_tgt <= 5.
     cold       = bool(ctx.get("cold_temperature", False))
     aer_con    = bool(ctx.get("aeration_constrained", False))
     cl_over    = bool(ctx.get("clarifier_overloaded", False))
@@ -323,6 +327,11 @@ def build_adaptive_pathways(
         s1_stack   = list(stack_labels[:2]) if stack_labels else ["Process optimisation"]
         s1_stack   = s1_stack or ["Process optimisation"]
         s1_purpose = "Relieve the primary constraint and stabilise current performance."
+        # SF-03: CoMag label depends on existing hydraulic relief
+        _comag_label = (
+            "CoMag (enhanced hydraulic capacity beyond existing CAS)"
+            if ehr == "CAS" else "CoMag (peak flow ballasted clarification)"
+        )
         if aer_con:
             s1_stack.insert(0, "MABR (aeration intensification)")
             s1_solves  = ("Aeration headroom restored. Nitrification reliability "
@@ -337,16 +346,24 @@ def build_adaptive_pathways(
         else:
             s1_solves  = ("Primary constraint relieved. Process stability improved "
                           "within existing asset envelope.")
+        # SF-04: promote sidestream PN/A to Stage 1 when THP ≥50% and TN≤5
+        if _thp_high:
+            s1_stack.append("Sidestream PN/A evaluation (Stage 1 priority — THP NH₄ surge ≥50%)")
+            s1_solves = s1_solves + (
+                " Sidestream PN/A must be evaluated at Stage 1: THP-driven NH₄ "
+                "increase of ≥50% is a compliance event under TN ≤ 5 mg/L."
+            )
         s1_trigger = ("Triggered when: current performance is within 85% of licence limit, "
                       "seasonal compliance risk is identified, or hydraulic headroom is exhausted.")
 
         # Stage 2: secondary intensification or hydraulic relief
         s2_stack = []
         if storm or fr >= 2.5:
-            s2_stack.append("CoMag (peak flow ballasted clarification)")
+            s2_stack.append(_comag_label)
         if tn_tgt <= 5. and not gap:
             s2_stack.append("Denitrification Filter or PdNA")
-        if ss_material or thp:
+        # SF-04: sidestream PN/A already in Stage 1 if THP ≥50%; add at Stage 2 otherwise
+        if (ss_material or thp) and not _thp_high:
             s2_stack.append("Sidestream ammonia treatment (PN/A — evaluate feasibility)")
         if not s2_stack:
             s2_stack = ["Secondary clarifier upgrade or addition",
@@ -417,24 +434,36 @@ def build_adaptive_pathways(
             before = "Stage 2 — before committing to MABR, PdNA, or specialist technology selection",
         ))
 
-    if tn_tgt <= 5. and gap:
+    # SF-03: CAS vs CoMag transition decision point
+    if ehr == "CAS" and (storm or fr >= 2.5):
         decision_points.append(DecisionPoint(
-            issue  = "confirm future licence trajectory with the regulator",
-            before = "Stage 2 or 3 — to determine whether TN ≤ 5 or TN ≤ 3 is the design target",
+            issue  = "evaluate upgrade of existing CAS system vs transition to CoMag ballasted clarification",
+            before = "Stage 1 — before committing to hydraulic relief capital expenditure",
         ))
-
-    # Sidestream / THP decision points
+    # SF-04 + original: Sidestream / THP decision points
     if ss_material or thp:
         decision_points.append(DecisionPoint(
             issue  = "confirm sidestream TKN load and THP ammonia surge through return liquor monitoring",
             before = "Stage 1 — before finalising nitrification capacity sizing",
         ))
-        if not ss_treat and tn_tgt <= 5.:
+        if _thp_high and not ss_treat:
+            decision_points.append(DecisionPoint(
+                issue  = "sidestream ammonia treatment must be evaluated prior to mainstream upgrade "
+                         "(THP NH₄ surge ≥50% is a compliance event under TN ≤ 5 mg/L)",
+                before = "Stage 1 — before committing to mainstream nitrification capital",
+            ))
+        elif not ss_treat and tn_tgt <= 5.:
             decision_points.append(DecisionPoint(
                 issue  = "evaluate sidestream ammonia treatment (PN/A or equivalent) "
                          "to reduce mainstream nitrogen load",
                 before = "Stage 2 or Stage 3 — where TN compliance is tight",
             ))
+    # Licence trajectory DP (moved after sidestream to preserve slot priority)
+    if tn_tgt <= 5. and gap:
+        decision_points.append(DecisionPoint(
+            issue  = "confirm future licence trajectory with the regulator",
+            before = "Stage 2 or 3 — to determine whether TN ≤ 5 or TN ≤ 3 is the design target",
+        ))
     # Carbon characterisation decision point
     if carbon_lim and not any("carbon" in dp.issue.lower() for dp in decision_points):
         decision_points.append(DecisionPoint(
@@ -450,7 +479,7 @@ def build_adaptive_pathways(
         ))
 
     # Cap at 4
-    decision_points = decision_points[:4]
+    decision_points = decision_points[:6]
 
     # ─────────────────────────────────────────────────────────────────────────
     # Part 7: Monitoring Priorities
@@ -472,6 +501,11 @@ def build_adaptive_pathways(
             f"Return liquor ammonia — daily during dewatering; currently {ss_nh4_pct:.0f}% of "
             f"mainstream TKN load{_thp_note}; alert if load exceeds 15%"
         )
+        if _thp_high:
+            monitoring.append(
+                f"THP-driven NH₄ load during dewatering cycle — log peak NH₄ mass per event; "
+                f"THP NH₄ increase of {thp_nh4_inc:.0f}% requires dedicated sidestream monitoring"
+            )
     else:
         monitoring.append(
             "Return liquor ammonia — daily during dewatering; alert if sidestream TKN load "

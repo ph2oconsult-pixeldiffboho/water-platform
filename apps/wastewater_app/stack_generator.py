@@ -1568,6 +1568,71 @@ def build_upgrade_pathway(
     )
     _esc_strict = (_esc_tn_tgt <= 3.0 or _esc_tp_tgt <= 0.1 or _esc_carbon_dnf)
     _esc_cs     = int(ctx.get("confidence_score", 100))   # injected by caller if available
+
+    # SF-02: pre-escalation carbon closure injection
+    # Compute effective COD:TN independently — eff_codn_val may not be set yet on Pass 1.
+    # Use: eff_codn_val if available, else derive from cod_mg_l / tn_in_mg_l, else cod_tn_ratio.
+    _pre_cod   = float(ctx.get("cod_mg_l") or 0.)
+    _pre_tkn   = float(ctx.get("tn_in_mg_l") or 0.)
+    _pre_codn  = (
+        float(ctx.get("eff_codn_val") or 0.)
+        or (_pre_cod * 0.6 / _pre_tkn if _pre_tkn > 0 else 0.)
+        or _esc_codn
+    )
+    _pre_guardrail_notes: list = []  # collected before pathway is constructed
+    _pre_esc_carbon = (
+        _pre_codn > 0. and _pre_codn < 4.5
+        and _esc_tn_tgt <= 5.
+        and bool(ctx.get("carbon_limited_tn", False))
+    )
+    if _pre_esc_carbon:
+        _pre_esc_tech = {st.technology for st in stages}
+        _pre_pdna_ok = (
+            bool(ctx.get("has_ifas") or ctx.get("has_mabr")
+                 or any(st.technology == TI_MABR for st in stages))
+            and not bool(ctx.get("nh4_near_limit", False))
+        )
+        if TI_PDNA not in _pre_esc_tech and TI_DENFILTER not in _pre_esc_tech:
+            _pre_closure_tech  = TI_PDNA if _pre_pdna_ok else TI_DENFILTER
+            _pre_closure_stage = max(
+                (st.stage_number for st in stages), default=0) + 1
+            _pre_tert_idx = next(
+                (i for i, st in enumerate(stages) if st.technology == TI_TERT_P), None)
+            _pre_insert = _pre_tert_idx if _pre_tert_idx is not None else len(stages)
+            _pre_stage = PathwayStage(
+                stage_number        = _pre_closure_stage,
+                technology          = _pre_closure_tech,
+                tech_display        = _TECH_DISPLAY.get(_pre_closure_tech, _pre_closure_tech),
+                mechanism           = MECH_TERT_DN,
+                mechanism_label     = _MECH_LABELS_V1.get(MECH_TERT_DN, MECH_TERT_DN),
+                purpose             = (
+                    "Tertiary nitrogen closure required: biodegradable carbon is "
+                    "insufficient for biological denitrification alone at this "
+                    "target. Effective COD:TN ratio is below the 4.5 closure "
+                    "threshold."
+                ),
+                engineering_basis   = (
+                    "Effective COD:TN < 4.5. Biological denitrification unreliable "
+                    "at P95 under this carbon ratio. Tertiary closure stage required "
+                    "to achieve TN ≤ 5 mg/L compliance."
+                ),
+                addresses           = [CT_TN_POLISH],
+                prerequisite        = (
+                    "Carbon fractionation required to confirm DNF vs PdNA selection."
+                ),
+            )
+            stages.insert(_pre_insert, _pre_stage)
+            # Store notes for later — pathway is not yet constructed
+            _pre_guardrail_notes.append(
+                "SF-02: pre-escalation carbon closure — eff COD:TN < 4.5 at TN ≤ 5 mg/L"
+            )
+            # Re-number stages
+            for _pi, _ps in enumerate(stages, 1):
+                object.__setattr__(_ps, "stage_number", _pi)
+            _pre_guardrail_notes.append(
+                f"Carbon closure ({_pre_closure_tech}) added to primary pathway: "
+                f"eff COD:TN = {_pre_codn:.2f} < 4.5 at TN ≤ 5 mg/L."
+            )
     _esc_low_cs = _esc_cs < 20
 
     # Only escalate when gap is confirmed AND target is stringent AND (low score or extreme state)
@@ -1712,10 +1777,12 @@ def build_upgrade_pathway(
             'Brownfield-first logic is disabled — constraint hierarchy reflects new plant design. '
             + narrative
         )
-        guardrail_notes = [
+        guardrail_notes = (
+        [
             'Greenfield mode active: existing asset constraints do not apply. '
             'Technology selection is optimised for the compliance target, not existing infrastructure.'
-        ] + guardrail_notes
+        ] if ctx.get('greenfield') else []
+    ) + guardrail_notes + _pre_guardrail_notes
     con_summary   = _constraint_summary(constraints, s.state, s.proximity_percent,
                                         comp_primary_ct, stab_cts)
     residuals     = _residual_risks(constraints, stages, ctx)

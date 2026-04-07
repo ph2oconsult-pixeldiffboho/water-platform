@@ -1566,13 +1566,20 @@ def build_compliance_report(
 
     # ── Diagnosis and closure statements (Part 4) ─────────────────────────────
     _tn_fp = _tn_final_p
-    _root_causes_4 = [d for d in _top_drivers if d not in {
+    # SF-01: compliance-cause priority gate
+    # _SLUDGE_DRIVER and generic gap labels must never lead diagnosis.
+    # When a compliance failure exists, _diag_cause must come from a
+    # mechanistic constraint (carbon, TKN, clarifier) not an operational load.
+    _DIAG_EXCLUDED = {
         "Target not achievable under average conditions",
         "Target not achievable under peak conditions",
         "Selected process cannot meet target without upgrade",
         "Target achievable under average conditions only",
         "Performance risk under peak conditions",
-    }]
+        # SF-01: operational drivers must not lead compliance diagnosis
+        _SLUDGE_DRIVER,
+    }
+    _root_causes_4 = [d for d in _top_drivers if d not in _DIAG_EXCLUDED]
     _diag_cause = (_root_causes_4[0] if _root_causes_4
                    else _top_drivers[0] if _top_drivers else "")
 
@@ -1595,6 +1602,22 @@ def build_compliance_report(
     _any_nitrif_driver = any(d in _NITRIF_CAUSES for d in _top_drivers)
     if _cl_limited and (_diag_cause in _NITRIF_CAUSES or _any_nitrif_driver):
         _diag_cause = _CLARIFIER_CAUSE
+    # SF-01: compliance priority gate — override with mechanistic cause
+    # when TKN impossibility or carbon limit exists and diag_cause is sludge/generic
+    _compliance_gate = (
+        _tkn_impossible
+        or _tkn_in >= 50.
+        or bool(ctx.get("carbon_limited_tn", False))
+        or (_tn_fp.p95_outcome == NOT_YET_CREDIBLE)
+    )
+    if _compliance_gate and _diag_cause in (_DIAG_EXCLUDED | {_SLUDGE_DRIVER}):
+        # Force compliance cause — prefer TKN impossibility, then carbon, then clarifier
+        if _TKN_DRIVER in _top_drivers:
+            _diag_cause = _TKN_DRIVER
+        elif any("carbon" in d.lower() for d in _top_drivers):
+            _diag_cause = next(d for d in _top_drivers if "carbon" in d.lower())
+        elif _cl_limited:
+            _diag_cause = _CLARIFIER_CAUSE
     # Part 1: distinguish 'not credible' failure from 'conditional' risk
     _tn_med_nc_diag = (_tn_fp.median_outcome == NOT_YET_CREDIBLE)
     _tn_p95_nc_diag = (_tn_fp.p95_outcome   == NOT_YET_CREDIBLE)
