@@ -517,8 +517,18 @@ def build_adaptive_pathways(
             f"SVI distribution — track P95 SVI trend; current design case "
             f"{svi_p95:.0f} mL/g; re-assess inDENSE relevance if P95 exceeds 180 mL/g"
         )
-    if cold or float(ctx.get("temp_celsius", 18.) or 18.) <= 16.:
-        monitoring.append("Process temperature — log daily minimum; alert at 12°C for nitrification risk")
+    _temp_ap = float(ctx.get("temp_celsius", 18.) or 18.)
+    if cold or _temp_ap <= 12.:
+        monitoring.append(
+            "Process temperature — log daily minimum; alert at 12°C for nitrification risk"
+        )
+    elif _temp_ap <= 15.:
+        # SF-05: transitional zone — specific monitoring required
+        monitoring.append(
+            f"Winter nitrification performance — process temperature currently {_temp_ap:.0f}°C; "
+            "monitor effluent NH₄ daily Oct–Sep; alert if NH₄ trend rises under seasonal "
+            "cooling (transitional temperature zone 12–15°C)"
+        )
     monitoring.append("Effluent TN and NH₄ — weekly composites at minimum; "
                       "increase to daily during winter or post-storm")
     if cl_over or svi >= 100.:
@@ -554,8 +564,11 @@ def build_adaptive_pathways(
     pfas_flag   = bool(ctx.get("pfas_flag",         False))
     micro_flag  = bool(ctx.get("microplastics_flag",False))
     ec_flag     = bool(ctx.get("emerging_contaminants_flag", False))
-    growth_rate = float(ctx.get("growth_rate_percent",   0.) or 0.)
-    horizon_yr  = float(ctx.get("planning_horizon_years", 20.) or 20.)
+    growth_rate    = float(ctx.get("growth_rate_percent",   0.) or 0.)
+    horizon_yr     = float(ctx.get("planning_horizon_years", 20.) or 20.)
+    # SF-06: separate PWWF infrastructure-driven growth (optional)
+    pwwf_design    = float(ctx.get("pwwf_design_mld",       0.) or 0.)
+    adwf_current   = float(ctx.get("plant_size_mld",        0.) or 0.)
     disposal_c  = ctx.get("biosolids_disposal_constraint", "none") or "none"
     sludge_c    = disposal_c in ("cost", "capacity") or bool(ctx.get("high_load", False))
 
@@ -746,6 +759,42 @@ def build_adaptive_pathways(
                 f"ADWF trend — annual flow reconciliation against {growth_rate:.1f}%/yr growth projection"
             )
 
+    # 3a-ext: PWWF infrastructure-driven growth (separate from ADWF population growth)
+    # SF-06: PWWF growth is catchment/interceptor-driven, not proportional to ADWF
+    if pwwf_design > 0. and adwf_current > 0.:
+        _pwwf_current = float(ctx.get("flow_ratio", 1.) or 1.) * adwf_current
+        _pwwf_ratio   = pwwf_design / _pwwf_current if _pwwf_current > 0. else 1.
+        if _pwwf_ratio >= 1.25:  # PWWF grows by >=25%
+            regulatory_drivers.append(RegulatoryDriver(
+                name           = f"PWWF infrastructure growth ({pwwf_design:.0f} MLD design)",
+                classification = "system",
+                implication    = (
+                    f"Design peak wet weather flow ({pwwf_design:.0f} MLD) exceeds current "
+                    f"PWWF ({_pwwf_current:.0f} MLD) by {_pwwf_ratio:.1f}×. "
+                    "This is infrastructure-driven (catchment interceptor expansion), not "
+                    "proportional to ADWF population growth. Hydraulic relief capacity "
+                    "(CoMag, CAS) must be sized for the design PWWF independently of "
+                    "biological process sizing."
+                ),
+                priority = 5,
+            ))
+            tipping_points.append(TippingPoint(
+                name    = "PWWF infrastructure capacity tipping point",
+                trigger = (
+                    f"When peak wet weather flow reaches {pwwf_design:.0f} MLD (design PWWF) "
+                    f"as interceptor catchments connect"
+                ),
+                consequence = (
+                    "Hydraulic relief infrastructure (CoMag or equivalent) must be sized "
+                    "for the full design PWWF, not interpolated from current ADWF growth. "
+                    "Biological capacity sizing remains ADWF-driven."
+                ),
+            ))
+            monitoring.append(
+                f"PWWF event frequency and peak magnitude — "
+                f"track against {pwwf_design:.0f} MLD design PWWF as interceptors connect"
+            )
+
     # 3b. Biosolids disposal constraint
     if sludge_c:
         regulatory_drivers.append(RegulatoryDriver(
@@ -774,7 +823,7 @@ def build_adaptive_pathways(
     regulatory_drivers.sort(key=lambda d: d.priority)
 
     # ── Re-cap lists after trigger engine additions ───────────────────────────
-    tipping_points  = tipping_points[:7]   # extended cap for richer scenarios
+    tipping_points  = tipping_points[:8]   # extended cap for richer scenarios
     future_stages   = future_stages[:5]    # allow up to 5 with PFAS/EC stages
     decision_points = decision_points[:5]
     monitoring      = monitoring[:8]

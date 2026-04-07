@@ -172,6 +172,16 @@ def _cold(ctx: Dict) -> bool:
              float(ctx.get("temp_celsius", 20.)) <= 12.))
 
 
+def _temp_risk(ctx: Dict) -> str:
+    """Temperature risk level: 'severe' (<=12), 'moderate' (12-15), 'none' (>15)."""
+    t = float(ctx.get("temp_celsius") or ctx.get("temperature_celsius") or 20.)
+    if bool(ctx.get("cold_temperature", False)) or t <= 12.:
+        return "severe"
+    if t <= 15.:
+        return "moderate"
+    return "none"
+
+
 def _aer_constrained(ctx: Dict) -> bool:
     return bool(ctx.get("aeration_constrained", False))
 
@@ -1158,11 +1168,17 @@ def _classify_drivers(
             f"(effective COD:TN {eff_codn:.2f} < 4.5 closure threshold)"
         )
 
-    # Tier 1: temperature-limited kinetics (≤15°C)
-    if cold or temp_c <= 15.:
+    # Tier 1: temperature-limited kinetics
+    # Severe (≤12°C) always Tier 1; Moderate (12–15°C) Tier 1 when temp_c<=15
+    if cold or temp_c <= 12.:
         t1.append(
             f"biological reaction rate limitation (temperature-limited kinetics "
-            f"at {temp_c:.0f}°C)"
+            f"at {temp_c:.0f}°C — severe constraint)"
+        )
+    elif temp_c <= 15.:
+        t1.append(
+            f"winter nitrification risk (transitional temperature zone "
+            f"{temp_c:.0f}°C — moderate kinetic constraint)"
         )
 
     # Tier 1: nitrification / denitrification not credible
@@ -1558,6 +1574,7 @@ def build_compliance_report(
             _p(15, "Insufficient biologically available carbon for denitrification")
 
     # 3. Low temperature (three-tier: ≤15°C / ≤12°C / ≤10°C)
+    # SF-05: 12–15°C transitional zone adds extra penalty when TN ≤ 5
     _temp = float(ctx.get("temp_celsius") or ctx.get("temperature_celsius") or 20.)
     if _temp <= 10.:
         _p(5, "Moderate temperature constraint (≤15°C)")
@@ -1568,6 +1585,10 @@ def build_compliance_report(
         _p(5, "Low temperature limits biological reaction rates")
     elif _temp <= 15.:
         _p(5, "Moderate temperature constraint (≤15°C)")
+        # SF-05: transitional zone risk at tight TN targets
+        if tn_tgt <= 5.:
+            _p(5, "Winter nitrification risk in transitional temperature zone (12–15°C) "
+               "under tight TN target")
 
     # 4. Hydraulic stress
     _fr = _flow_ratio(ctx)
