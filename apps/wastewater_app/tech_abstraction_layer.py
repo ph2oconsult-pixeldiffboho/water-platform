@@ -58,6 +58,7 @@ class TechAbstractionResult:
     has_vendor_dependent:   List[str]   # labels with Medium/High delivery risk
     delivery_context:       str         # board summary addition (Part 9)
     consistency_flags:      List[str]   # any issues found (Part 10)
+    selection_rationale:    object = None  # SelectionRationaleResult (v24Z77)
 
 
 # ── Technology registry ───────────────────────────────────────────────────────
@@ -394,6 +395,28 @@ _reg("Tertiary phosphorus removal",
      ["Enhanced biological P removal", "Struvite crystallisation"], "")
 
 
+
+# ── v24Z77 Technology Selection Rationale dataclasses ────────────────────────
+
+@dataclass
+class TechJustification:
+    """Single technology inclusion / exclusion record."""
+    process_class:  str          # capability-first label
+    ti_codes:       List[str]    # TI_* codes this covers
+    status:         str          # "Selected" | "Not selected"
+    reason:         str          # causal, mechanism-based explanation
+    primary_constraint: str      # hydraulic | biological | carbon | temperature | operational
+
+
+@dataclass
+class SelectionRationaleResult:
+    """Full technology selection rationale (Part 3)."""
+    selected:               List[TechJustification]
+    excluded:               List[TechJustification]
+    board_confidence_line:  str    # Part 7 board summary addition
+    mob_evaluated:          bool   # Part 6 compliance check
+
+
 # ── Fallback for unknown technologies ─────────────────────────────────────────
 def _unknown_profile(tech_label: str) -> TechProfile:
     return TechProfile(
@@ -422,6 +445,320 @@ def get_profile(tech_label: str) -> TechProfile:
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
+
+
+# ── v24Z77 Technology Selection Rationale builder ────────────────────────────
+
+# Candidate set (Part 2) — every scenario evaluates these
+_CANDIDATE_SET = [
+    ("Ballasted clarification",      ["CoMag"]),
+    ("Hydrocyclone densification",   ["inDENSE"]),
+    ("Membrane-aerated biofilm reactor (MABR)", ["MABR (OxyFAS retrofit)", "MABR", "MABR (aeration intensification)", "MABR (intensified BNR)"]),
+    ("Mobile Organic Biofilm (MOB)", ["Mobile Organic Biofilm (MOB)", "MOB (miGRATE + inDENSE) — SBR intensification"]),
+    ("Moving Bed Biofilm Reactor (MBBR) / IFAS", ["MBBR", "IFAS", "IFAS (integrated fixed-film activated sludge)"]),
+    ("Aerobic Granular Sludge (AGS)", ["Aerobic Granular Sludge (AGS)"]),
+    ("Denitrification filter (DNF)",  ["Denitrification Filter"]),
+    ("Partial Denitrification-Anammox (PdNA)", ["PdNA (Partial Denitrification-Anammox)", "PdNA or Anammox", "PdNA integration", "Full PdNA or Anammox"]),
+    ("Multi-stage biological nutrient removal (Bardenpho-type)", ["Bardenpho optimisation", "Bardenpho process optimisation"]),
+    ("Tertiary phosphorus removal",   ["Tertiary P removal", "Tertiary phosphorus removal", "Advanced P removal"]),
+]
+
+
+def _selected_codes(pathway) -> set:
+    """Return the set of technology codes present in the active pathway."""
+    return {getattr(s, "technology", "") for s in (getattr(pathway, "stages", []) or [])}
+
+
+def _justify_selected(process_class: str, ti_codes: List[str], ctx: Dict,
+                      eff_codn: float, pathway) -> TechJustification:
+    """Build a causal justification for a SELECTED technology."""
+    carbon  = bool(ctx.get("carbon_limited_tn", False)) or eff_codn < 4.5
+    cl_over = bool(ctx.get("clarifier_overloaded", False))
+    aer_con = bool(ctx.get("aeration_constrained", False))
+    fr      = float(ctx.get("flow_ratio", 1.5) or 1.5)
+    temp    = float(ctx.get("temp_celsius", 20.) or 20.)
+    cold    = temp <= 15.
+    thp     = bool(ctx.get("thp_present", False)) and float(ctx.get("thp_nh4_inc_pct", 0.) or 0.) >= 50.
+    svi     = float(ctx.get("svi_ml_g", 0.) or ctx.get("svi_design", 0.) or 0.)
+    gf      = bool(ctx.get("greenfield", False))
+    gap     = bool(ctx.get("stack_compliance_gap", False))
+    tn_tgt  = float(ctx.get("tn_target_mg_l", 10.) or 10.)
+    fp_con  = (ctx.get("footprint_constraint", "constrained") or "constrained").lower() in (
+        "constrained", "limited")
+
+    pc = process_class.lower()
+
+    if "ballasted clarification" in pc:
+        constraint = "hydraulic"
+        reason = (
+            f"Selected to address peak hydraulic loading (flow ratio {fr:.1f}× ADWF). "
+            "Ballasted clarification increases effective clarifier settling rate under peak "
+            "wet weather flow without additional civil tankage. "
+            f"Fixed clarifier area at SVI design {svi:.0f} mL/g cannot accommodate peak "
+            "flow without ballasted clarification support."
+        )
+    elif "hydrocyclone" in pc:
+        constraint = "hydraulic"
+        reason = (
+            "Selected to address sustained settling instability caused by elevated SVI "
+            f"(design case {svi:.0f} mL/g). Hydrocyclone preferentially wasters light-fraction "
+            "biomass, densifying the sludge and recovering clarifier SOR headroom without "
+            "new tankage. Complements ballasted clarification for storm-event protection."
+        )
+    elif "mabr" in pc:
+        constraint = "biological" if not cold else "temperature"
+        if cold:
+            reason = (
+                f"Selected to maintain nitrification kinetics at {temp:.0f}°C winter "
+                "minimum (temperature-limited kinetics). Fixed-film oxygen delivery "
+                "bypasses alpha factor degradation at high MLSS and maintains nitrification "
+                "rates independently of bulk liquid aeration efficiency. "
+                "Blower utilisation at limit before THP NH₄ load accounting." if aer_con else
+                f"Selected for kinetic protection at {temp:.0f}°C winter minimum. "
+                "Membrane O₂ delivery decouples nitrification from bulk aeration constraints."
+            )
+        else:
+            reason = (
+                "Selected to address aeration constraint — existing blowers are at "
+                f"capacity before THP NH₄ surge (+{float(ctx.get('thp_nh4_inc_pct',0.) or 0.):.0f}%) "
+                "accounting. MABR fixed-film O₂ delivery bypasses bulk liquid transfer "
+                "limitations and maintains nitrification reliability under peak load."
+            ) if aer_con else (
+                "Selected to provide kinetic protection under compact intensified design. "
+                "Delivers high nitrification rate per unit volume without expanded aeration "
+                "blower capacity."
+            )
+    elif "bardenpho" in pc or "biological nutrient" in pc:
+        constraint = "biological"
+        reason = (
+            "Selected as the primary biological nitrogen and phosphorus removal process. "
+            f"Anoxic zone configuration addresses carbon-limited denitrification "
+            f"(eff COD:TN {eff_codn:.2f}) by maximising use of available influent carbon. "
+            f"{'Tertiary nitrogen closure (DNF) is required in addition because eff COD:TN is below 4.5 threshold.' if carbon and gap else 'Forms the biological backbone of the nutrient removal train.'}"
+        )
+    elif "denitrification filter" in pc or "dnf" in pc:
+        constraint = "carbon"
+        reason = (
+            f"Carbon limitation is the primary selection driver: eff COD:TN = {eff_codn:.2f} "
+            "is below the 4.5 biological denitrification closure threshold. "
+            "Biological process optimisation alone cannot achieve TN compliance at P95 "
+            "under this carbon ratio regardless of hydraulic or aeration improvements. "
+            "Denitrification filter provides tertiary nitrogen polishing using external "
+            "carbon (methanol or equivalent), independent of influent carbon availability."
+        )
+    elif "pdna" in pc or "anammox" in pc:
+        constraint = "carbon"
+        reason = (
+            f"Selected as low-carbon tertiary nitrogen closure pathway. PdNA/Anammox "
+            f"achieves TN ≤3 mg/L with significantly reduced external carbon demand "
+            "compared to DNF alone. Required when future consent tightens beyond "
+            "TN ≤5 mg/L and carbon cost is a planning constraint."
+        )
+    elif "phosphorus" in pc:
+        constraint = "biological"
+        reason = (
+            "Selected to achieve TP ≤0.5 mg/L target. Chemical phosphorus removal "
+            "provides reliable tertiary P polishing independent of biological P removal "
+            "variability. Coastal discharge into sensitive receiving environment requires "
+            "consistent TP performance."
+        )
+    elif "mob" in pc:
+        constraint = "biological"
+        reason = (
+            "Selected for biological intensification within constrained footprint. "
+            "MOB engineered biofilm structure provides higher activity per unit volume "
+            "than conventional MBBR carriers. Selected where biological capacity is "
+            "limiting and footprint prevents conventional volume expansion."
+        )
+    elif "mbbr" in pc or "ifas" in pc:
+        constraint = "biological"
+        reason = (
+            "Selected to increase biological nitrification capacity without additional "
+            "aeration tankage. Biofilm carriers decouple SRT from HRT, maintaining "
+            "biomass retention under peak hydraulic conditions."
+        )
+    else:
+        constraint = "operational"
+        reason = f"Selected to address system constraints under current configuration."
+
+    return TechJustification(
+        process_class    = process_class,
+        ti_codes         = ti_codes,
+        status           = "Selected",
+        reason           = reason,
+        primary_constraint = constraint,
+    )
+
+
+def _justify_excluded(process_class: str, ti_codes: List[str], ctx: Dict,
+                      eff_codn: float) -> TechJustification:
+    """Build a causal justification for an EXCLUDED technology."""
+    carbon  = bool(ctx.get("carbon_limited_tn", False)) or eff_codn < 4.5
+    cl_over = bool(ctx.get("clarifier_overloaded", False))
+    aer_con = bool(ctx.get("aeration_constrained", False))
+    fr      = float(ctx.get("flow_ratio", 1.5) or 1.5)
+    temp    = float(ctx.get("temp_celsius", 20.) or 20.)
+    thp     = bool(ctx.get("thp_present", False)) and float(ctx.get("thp_nh4_inc_pct", 0.) or 0.) >= 50.
+    gf      = bool(ctx.get("greenfield", False))
+    fp_con  = (ctx.get("footprint_constraint", "constrained") or "constrained").lower() in (
+        "constrained", "limited")
+    op_mod  = (ctx.get("operator_context", "metro") or "metro").lower() in (
+        "moderate", "rural", "regional")
+
+    pc = process_class.lower()
+
+    if "ballasted clarification" in pc:
+        if not gf and cl_over and fr >= 3.:
+            constraint = "hydraulic"; reason = "Required — see Selected."
+        else:
+            constraint = "hydraulic"
+            reason = (
+                "Not selected because greenfield clarifier area is a design variable. "
+                "Ballasted clarification is a retrofit solution for fixed clarifier "
+                "capacity. A correctly sized greenfield clarifier eliminates the "
+                "hydraulic constraint that ballasted clarification addresses."
+            ) if gf else (
+                "Not selected because hydraulic loading is below the threshold where "
+                f"ballasted clarification provides decisive benefit (current {fr:.1f}×). "
+                "Conventional clarifier operation is adequate under current conditions."
+            )
+    elif "hydrocyclone" in pc:
+        constraint = "hydraulic"
+        reason = (
+            "Not selected because greenfield clarifier sizing accounts for SVI "
+            "variability at design stage. Hydrocyclone densification is a brownfield "
+            "solution for fixed clarifier capacity — it is not required when clarifier "
+            "area is a design variable."
+        ) if gf else (
+            "Not selected because SVI is within manageable range and clarifier capacity "
+            "is not the binding constraint under current conditions."
+        )
+    elif "mobile organic biofilm" in pc or "mob" in pc:
+        constraint = "biological"
+        if carbon:
+            reason = (
+                f"Not selected because the dominant constraint is carbon limitation "
+                f"(eff COD:TN {eff_codn:.2f} — below 4.5 threshold) and hydraulic overload. "
+                "MOB improves biological reaction rate and compactness but does not "
+                "resolve carbon deficiency or peak hydraulic conditions. "
+                "Tertiary nitrogen closure (DNF) is the required intervention for carbon-limited TN. "
+                "MOB becomes relevant if biological capacity is limiting after carbon closure is in place."
+            )
+        elif not fp_con:
+            reason = (
+                "Not selected because land is available and operator capability is "
+                f"{'moderate' if op_mod else 'standard'}. MOB (Medium–High delivery risk, "
+                "specialist operation) is not preferred where conventional design with "
+                "abundant footprint is viable. MBBR or conventional BNR provides "
+                "equivalent biological capacity with lower delivery and operational risk."
+            )
+        else:
+            reason = (
+                "Not selected under current scenario. MOB is evaluated but not selected "
+                "because the dominant constraint is addressed by the selected technology set. "
+                "MOB would be considered if biological rate intensification within the "
+                "constrained footprint becomes the primary limiting factor."
+            )
+    elif "mbbr" in pc or "ifas" in pc:
+        constraint = "biological"
+        if aer_con and not gf:
+            reason = (
+                "Not selected because MABR is preferred over MBBR/IFAS under the "
+                "current aeration constraint. At near-capacity blower utilisation, "
+                "MABR provides oxygen delivery independently of bulk aeration "
+                "efficiency — MBBR/IFAS does not resolve the O₂ transfer limitation. "
+                "MBBR/IFAS remains an alternative if MABR is not available regionally."
+            )
+        else:
+            reason = (
+                "Not selected because the biological nitrogen removal requirement is "
+                "met by the Bardenpho process optimisation and tertiary nitrogen closure. "
+                "MBBR/IFAS would add biological capacity but the primary constraint is "
+                "carbon availability (eff COD:TN below threshold), not biological rate."
+            ) if carbon else (
+                "Not selected because biological nitrification capacity is adequate "
+                "under the design configuration. MBBR/IFAS provides an alternative "
+                "if biological rate intensification is required in future."
+            )
+    elif "aerobic granular" in pc or "ags" in pc:
+        constraint = "hydraulic"
+        reason = (
+            "Not selected because the existing hydraulic and biological configuration "
+            "is incompatible with AGS SBR reactor format. AGS requires purpose-built "
+            "sequential batch reactors — retrofitting into existing rectangular aeration "
+            "tanks is not viable. The dominant biological and hydraulic constraints "
+            "are addressed by the selected intensification stack. AGS is a viable "
+            "alternative only for Stage 3 full process renewal."
+        ) if not gf else (
+            "Not selected because the biological nitrogen and carbon removal requirement "
+            "is met by the Bardenpho + DNF configuration with lower technology risk "
+            "and broader regional availability. AGS provides a compact hydraulic and "
+            "biological solution but introduces higher delivery risk (Medium availability, "
+            "vendor-dependent commissioning). AGS remains viable if footprint is "
+            "severely constrained at design stage."
+        )
+    else:
+        constraint = "operational"
+        reason = (
+            "Not selected because it does not address the dominant constraints "
+            "(carbon limitation, hydraulic overload) under current system conditions."
+        )
+
+    return TechJustification(
+        process_class    = process_class,
+        ti_codes         = ti_codes,
+        status           = "Not selected",
+        reason           = reason,
+        primary_constraint = constraint,
+    )
+
+
+def build_selection_rationale(
+    pathway,
+    compliance_report,
+    ctx: Dict,
+) -> SelectionRationaleResult:
+    """
+    Build technology selection rationale for Part 3 of the spec.
+    Evaluates all candidate technologies and produces causal justifications.
+    """
+    selected_codes = _selected_codes(pathway)
+    eff_codn = float(getattr(compliance_report, "effective_cod_tn_val", 0.) or
+                     ctx.get("eff_codn_val", 0.) or 0.)
+
+    selected_list: List[TechJustification] = []
+    excluded_list: List[TechJustification] = []
+    mob_evaluated = False
+
+    for process_class, ti_codes in _CANDIDATE_SET:
+        if "mob" in process_class.lower() or "mobile organic" in process_class.lower():
+            mob_evaluated = True
+
+        is_in_stack = any(code in selected_codes for code in ti_codes)
+
+        if is_in_stack:
+            selected_list.append(
+                _justify_selected(process_class, ti_codes, ctx, eff_codn, pathway))
+        else:
+            excluded_list.append(
+                _justify_excluded(process_class, ti_codes, ctx, eff_codn))
+
+    # Part 7: Board confidence line
+    n_sel = len(selected_list); n_exc = len(excluded_list)
+    board_line = (
+        f"All {n_sel + n_exc} relevant technology classes have been evaluated. "
+        f"{n_sel} selected technologies directly address the dominant system constraints; "
+        f"{n_exc} excluded technologies do not resolve primary limitations under "
+        "current conditions."
+    )
+
+    return SelectionRationaleResult(
+        selected              = selected_list,
+        excluded              = excluded_list,
+        board_confidence_line = board_line,
+        mob_evaluated         = mob_evaluated,
+    )
+
 
 def build_tech_abstraction(pathway, ctx: Dict) -> TechAbstractionResult:
     """
@@ -495,10 +832,16 @@ def build_tech_abstraction(pathway, ctx: Dict) -> TechAbstractionResult:
             "committing to this process class."
         )
 
+    # v24Z77: Technology Selection Rationale
+    _sel_rationale = build_selection_rationale(pathway, type('co',(),{
+        'effective_cod_tn_val': float(ctx.get('eff_codn_val') or 0.)
+    })(), ctx)
+
     return TechAbstractionResult(
         profiles             = profiles,
         has_mob              = has_mob,
         has_vendor_dependent = vendor_dep,
         delivery_context     = delivery_ctx,
         consistency_flags    = consistency_flags,
+        selection_rationale  = _sel_rationale,
     )

@@ -1212,6 +1212,41 @@ def _render_tech_abstraction(ta) -> None:
             for flag in ta.consistency_flags:
                 st.warning(f"⚠️ {flag}")
 
+        # v24Z77 Technology Selection Confidence line (Part 7)
+        sr = getattr(ta, 'selection_rationale', None)
+        if sr and getattr(sr, 'board_confidence_line', ''):
+            st.caption(sr.board_confidence_line)
+
+        st.markdown("---")
+
+        # v24Z77 Technology Selection Rationale (Part 3)
+        if sr:
+            with st.expander(
+                f"Technology selection rationale — "
+                f"{len(sr.selected)} selected, {len(sr.excluded)} excluded",
+                expanded=False,
+            ):
+                if sr.selected:
+                    st.markdown("**Selected technologies**")
+                    for j in sr.selected:
+                        st.markdown(f"**{j.process_class}**")
+                        st.caption(
+                            f"Status: ✅ Selected  |  Primary constraint: {j.primary_constraint}"
+                        )
+                        st.caption(j.reason)
+                        st.markdown("<hr style='margin:4px 0;border-color:#eee;'>",
+                                    unsafe_allow_html=True)
+                if sr.excluded:
+                    st.markdown("**Excluded technologies**")
+                    for j in sr.excluded:
+                        st.markdown(f"**{j.process_class}**")
+                        st.caption(
+                            f"Status: ❌ Not selected  |  Primary constraint: {j.primary_constraint}"
+                        )
+                        st.caption(j.reason)
+                        st.markdown("<hr style='margin:4px 0;border-color:#eee;'>",
+                                    unsafe_allow_html=True)
+
         st.markdown("---")
 
         # Per-technology profiles
