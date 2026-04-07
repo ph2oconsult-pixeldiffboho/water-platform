@@ -976,9 +976,34 @@ def _render_affordability(pathway, co, aff, ctx: dict) -> None:
         if aff.critical_insight:
             st.error("**Critical constraint (applies to ALL options):** " + aff.critical_insight)
 
-        # Preferred path (Part 10)
+        # -- Preferred option (Part 1: named, clear) --
+        if aff.preferred_option:
+            st.success("**Recommended pathway: " + aff.preferred_option + "**")
+
+        # -- Board decision statement (Part 7) --
+        if aff.board_decision:
+            st.info("**Board decision:** " + aff.board_decision)
+
+        # -- Performance leader vs recommended (Part 3) --
+        if aff.performance_leader and aff.preferred_option and \
+                aff.performance_leader != aff.preferred_option:
+            st.caption(
+                f"Performance leader: **{aff.performance_leader}** | "
+                f"Recommended option: **{aff.preferred_option}** "
+                "(see rationale below)"
+            )
+        elif aff.performance_leader:
+            st.caption(
+                f"Performance leader and recommended option: **{aff.performance_leader}**"
+            )
+
+        # -- Score interpretation (Part 2) --
+        if aff.score_interpretation:
+            st.caption("**Score interpretation:** " + aff.score_interpretation)
+
+        # Preferred path (legacy narrative)
         if aff.preferred_path:
-            st.success("**Preferred pathway:** " + aff.preferred_path)
+            st.caption(aff.preferred_path)
 
         if is_active:
             # Comparison table (Part 6)
@@ -1044,7 +1069,17 @@ def _render_affordability(pathway, co, aff, ctx: dict) -> None:
                     st.caption(
                         f"**Carbon closure required:** Yes -- {opt.carbon_closure_tech or 'DNF or PdNA'}"
                     )
+                # Risk positioning (Part 4)
+                if aff.risk_positioning and opt.label in aff.risk_positioning:
+                    st.caption("**Risk position:** " + aff.risk_positioning[opt.label])
                 st.markdown("---")
+
+        # Preferred rationale expander (Part 1)
+        if aff.preferred_rationale:
+            with st.expander("Why this option is recommended", expanded=False):
+                for line in aff.preferred_rationale.split('\n\n'):
+                    if line.strip():
+                        st.markdown(line.strip())
 
         # Board summary bullets (Part 8)
         if aff.board_bullets:

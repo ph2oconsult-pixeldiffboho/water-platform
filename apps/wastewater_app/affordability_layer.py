@@ -71,7 +71,14 @@ class AffordabilityComparison:
     preferred_path:         str                        # preferred path logic (Part 10)
     shared_carbon_closure:  bool                       # carbon closure required across all options
     shared_constraint_txt:  str                        # "eff COD:TN 4.22 — carbon-limited" etc.
-    is_active:              bool = True                # False when only one option exists
+    # v24Z74 Decision Clarity fields
+    preferred_option:     str  = ""   # name of the single recommended option
+    preferred_rationale:  str  = ""   # why preferred, why alternative not, flip triggers
+    performance_leader:   str  = ""   # option with highest score / lowest risk
+    score_interpretation: str  = ""   # band explanation + gap commentary
+    risk_positioning:     object = None  # Dict[label -> risk_position_statement]
+    board_decision:       str  = ""   # final single board decision sentence
+    is_active:            bool = True   # False when only one option exists
 
 
 # ── Classification helpers ─────────────────────────────────────────────────────
@@ -444,8 +451,23 @@ def build_affordability_comparison(
     preferred_label = _find_preferred(options, ctx)
     board_bullets   = _build_board_bullets(options, shared_carbon, eff_codn, preferred_label)
 
-    # ── Preferred path logic (Part 10) ────────────────────────────────────────
+    # -- Preferred path logic (Part 10) ---
     preferred_path  = _preferred_path_statement(options, ctx, gf_paths)
+
+    # -- v24Z74 Decision Clarity (Parts 1-8) ---
+    _preferred_opt  = next((o for o in options if o.label == preferred_label), None)
+    _alternatives   = [o for o in options if o.label != preferred_label]
+    _perf_leader    = _identify_performance_leader(options)
+    _pref_rationale = (
+        _build_preferred_rationale(_preferred_opt, _alternatives, ctx)
+        if _preferred_opt else ''
+    )
+    _score_interp   = _build_score_interpretation(options, preferred_label, _perf_leader)
+    _risk_pos       = _build_risk_positioning(options)
+    _board_decision = (
+        _build_board_decision(_preferred_opt, _alternatives, ctx, carbon_lim)
+        if _preferred_opt else ''
+    )
 
     return AffordabilityComparison(
         options               = options,
@@ -456,6 +478,12 @@ def build_affordability_comparison(
         preferred_path        = preferred_path,
         shared_carbon_closure = shared_carbon,
         shared_constraint_txt = shared_constraint_txt,
+        preferred_option      = preferred_label,
+        preferred_rationale   = _pref_rationale,
+        performance_leader    = _perf_leader,
+        score_interpretation  = _score_interp,
+        risk_positioning      = _risk_pos,
+        board_decision        = _board_decision,
         is_active             = is_active,
     )
 
@@ -472,6 +500,276 @@ def _find_preferred(options: List[AffordabilityOption], ctx: Dict) -> str:
             return o.label
     # Otherwise first option
     return options[0].label if options else ""
+
+
+
+# ── v24Z74 Decision Clarity builders ──────────────────────────────────────────
+
+def _identify_performance_leader(options: List[AffordabilityOption]) -> str:
+    """
+    Part 3: Return the label of the option with highest technical performance.
+    Greenfield conventional scores highest for reliability/resilience;
+    intensified scores highest for compactness/flexibility.
+    In absence of explicit scores we use: lowest complexity + highest reliability = best
+    operational performance; we favour reliability as the primary signal.
+    """
+    if not options: return ""
+    rel_order = {RELIABILITY_HIGH: 2, RELIABILITY_MEDIUM: 1, RELIABILITY_SENSITIVE: 0}
+    cx_order  = {COMPLEXITY_LOW: 2, COMPLEXITY_MEDIUM: 1, COMPLEXITY_HIGH: 0}
+    # Score = reliability (primary) + complexity (secondary tiebreak)
+    def _score(o):
+        return rel_order.get(o.reliability, 0) * 10 + cx_order.get(o.complexity, 0)
+    return max(options, key=_score).label
+
+
+def _build_preferred_rationale(
+    preferred: AffordabilityOption,
+    alternatives: List[AffordabilityOption],
+    ctx: Dict,
+) -> str:
+    """
+    Part 1: Structured preferred pathway explanation.
+    - Why preferred
+    - Why alternative not selected
+    - What would flip the decision
+    """
+    if not alternatives:
+        return (
+            f"Preferred pathway: {preferred.label}\n\n"
+            "Rationale: Single viable option. No comparison available under current conditions."
+        )
+
+    land   = (ctx.get("footprint_constraint", "constrained") or "constrained").lower()
+    op_cap = (ctx.get("operator_context", "metro") or "metro").lower()
+    abundant_land = land in ("abundant", "unconstrained", "available", "none")
+    moderate_ops  = op_cap in ("moderate", "rural", "regional")
+
+    ptype = preferred.option_type
+    alt   = alternatives[0]  # primary alternative
+
+    # ── Why preferred ────────────────────────────────────────────────────────
+    if ptype == "greenfield_conventional":
+        why_preferred = (
+            f"The {preferred.label} is preferred due to lower operational complexity "
+            f"({preferred.complexity} vs {alt.complexity}), higher system reliability "
+            f"({preferred.reliability} vs {alt.reliability}), and alignment with "
+            f"current operator capability. The capital cost difference is offset by "
+            f"reduced ongoing specialist dependency and greater tolerance for "
+            f"operational variability."
+        )
+        why_not_alt = (
+            f"The {alt.label} is not selected because the marginal performance gain "
+            f"does not justify the increased operational complexity under current "
+            f"conditions. Moderate operator capability and abundant land both favour "
+            f"the simpler, more forgiving conventional design."
+        )
+        flip_triggers = (
+            "This decision would reverse if: "
+            "(a) land becomes constrained or unavailable at this site, "
+            "(b) operator capability is formally upgraded through a dedicated "
+            "training and instrumentation programme, or "
+            "(c) consent tightens beyond TN ≤ 3 mg/L where the intensified "
+            "pathway has a structural performance advantage."
+        )
+    elif ptype == "greenfield_intensified":
+        why_preferred = (
+            f"The {preferred.label} is preferred due to footprint constraints "
+            f"or performance requirements that favour a compact, high-rate design. "
+            f"OPEX ({preferred.opex_band}) is higher than the conventional option "
+            f"but the site cannot accommodate the civil volume of conventional BNR."
+        )
+        why_not_alt = (
+            f"The {alt.label} is not selected because land availability "
+            f"or performance headroom requirements make the conventional design "
+            f"impractical or insufficient under current site conditions."
+        )
+        flip_triggers = (
+            "This decision would reverse if: "
+            "(a) additional land becomes available, enabling conventional civil sizing, "
+            "(b) operator capability is insufficient to manage specialist systems reliably, or "
+            "(c) cost constraints make the higher OPEX of the intensified option unacceptable."
+        )
+    elif ptype == "brownfield":
+        why_preferred = (
+            f"The {preferred.label} is the only viable option under brownfield constraints. "
+            f"Existing civil infrastructure cannot be replaced within the current programme. "
+            f"The intensification stack (CAPEX: {preferred.capex_band}, "
+            f"complexity: {preferred.complexity}) is required to achieve compliance "
+            f"within the fixed footprint."
+        )
+        why_not_alt = (
+            f"Greenfield options are not selected because the existing site, assets, and "
+            f"programme timeline do not permit a clean-sheet redesign under current conditions."
+        )
+        flip_triggers = (
+            "This decision would reverse if: "
+            "(a) a long-term site strategy decision is made to decommission the existing plant "
+            "and construct a new facility on a separate site, or "
+            "(b) growth exceeds in-situ intensification capacity and a new greenfield plant "
+            "is required to serve the expanded catchment."
+        )
+    else:
+        why_preferred = f"The {preferred.label} is the preferred option under current conditions."
+        why_not_alt   = f"Alternative options are secondary under current conditions."
+        flip_triggers = "Decision would change if site constraints or operator capability change."
+
+    return (
+        f"Preferred pathway: {preferred.label}\n\n"
+        f"Rationale: {why_preferred}\n\n"
+        f"Why the alternative is not selected: {why_not_alt}\n\n"
+        f"What would change this decision: {flip_triggers}"
+    )
+
+
+def _build_score_interpretation(
+    options: List[AffordabilityOption],
+    preferred_label: str,
+    performance_leader: str,
+) -> str:
+    """
+    Part 2: Interpret what the score difference actually means.
+    Uses qualitative complexity/reliability bands as proxy for score.
+    """
+    if len(options) < 2:
+        return ""
+
+    cx_order  = {COMPLEXITY_HIGH: 2, COMPLEXITY_MEDIUM: 1, COMPLEXITY_LOW: 0}
+    rel_order = {RELIABILITY_HIGH: 2, RELIABILITY_MEDIUM: 1, RELIABILITY_SENSITIVE: 0}
+
+    scores = {
+        o.label: rel_order.get(o.reliability, 0) * 10 + cx_order.get(o.complexity, 0)
+        for o in options
+    }
+    sorted_opts = sorted(options, key=lambda o: scores[o.label], reverse=True)
+    top   = sorted_opts[0]
+    bot   = sorted_opts[-1]
+    gap   = scores[top.label] - scores[bot.label]
+
+    # Band interpretation (Part 2)
+    # We map to qualitative bands based on option complexity/reliability profile
+    def _band(o):
+        r = rel_order.get(o.reliability, 0)
+        c = cx_order.get(o.complexity, 0)
+        if r == 2 and c <= 1: return "achievable with controlled risk"
+        if r >= 1 and c <= 2: return "achievable with managed complexity"
+        return "challenging — requires strong operational controls"
+
+    bands = {o.label: _band(o) for o in options}
+    unique_bands = set(bands.values())
+
+    if len(unique_bands) == 1:
+        band_stmt = (
+            f"All options fall within the '{next(iter(unique_bands))}' category. "
+            "Score differences reflect operational complexity and resilience margins, "
+            "not fundamental viability."
+        )
+    else:
+        band_stmt = "Options span different risk bands: " + "; ".join(
+            f"{o.label} ({bands[o.label]})" for o in sorted_opts
+        ) + "."
+
+    # Gap commentary
+    if gap == 0:
+        gap_stmt = "Performance scores are equivalent across options. Decision is driven entirely by non-performance factors (operator capability, land, risk tolerance)."
+    elif gap <= 1:
+        gap_stmt = (
+            f"The performance margin between {top.label} and {bot.label} is narrow. "
+            "This difference reflects operational resilience rather than compliance achievability. "
+            "Neither option has a decisive engineering advantage."
+        )
+    else:
+        gap_stmt = (
+            f"{top.label} shows a clear performance advantage over {bot.label} "
+            f"in reliability and operational simplicity. "
+        )
+        if performance_leader != preferred_label:
+            gap_stmt += (
+                f"However, the {preferred_label} is recommended because the performance "
+                f"advantage of {top.label} does not outweigh the decision factors "
+                f"(operator capability, land, operational risk) under current conditions."
+            )
+
+    return f"{band_stmt} {gap_stmt}"
+
+
+def _build_risk_positioning(options: List[AffordabilityOption]) -> dict:
+    """
+    Part 4: Per-option risk position statement.
+    """
+    positions = {}
+    for o in options:
+        if o.option_type == "greenfield_conventional":
+            positions[o.label] = (
+                f"Risk is primarily capital-based (overbuild risk: {o.capex_band} CAPEX "
+                f"with civil-heavy construction). Operational sensitivity is low ({o.reliability} "
+                f"reliability, {o.complexity} complexity). "
+                f"If volume is oversized, capital is sunk but operations remain stable."
+            )
+        elif o.option_type == "greenfield_intensified":
+            positions[o.label] = (
+                f"Risk is primarily operational, driven by control sensitivity and "
+                f"specialist system dependency ({o.complexity} complexity, {o.reliability} reliability). "
+                f"Capital is moderate ({o.capex_band} CAPEX) but OPEX is {o.opex_band}. "
+                f"If operator capability is insufficient, performance degrades without warning."
+            )
+        else:  # brownfield
+            positions[o.label] = (
+                f"Risk is primarily integration-based: retrofit complexity, commissioning "
+                f"sequencing, and supply chain dependency for specialist components. "
+                f"CAPEX is {o.capex_band} and OPEX is {o.opex_band}. "
+                f"Delivery risk is {o.delivery_risk} — errors in stage sequencing compound. "
+                f"Operational sensitivity is highest ({o.reliability} reliability, "
+                f"{o.complexity} complexity)."
+            )
+    return positions
+
+
+def _build_board_decision(
+    preferred: AffordabilityOption,
+    alternatives: List[AffordabilityOption],
+    ctx: Dict,
+    carbon_limited: bool,
+) -> str:
+    """
+    Part 7: Final single-sentence board decision statement.
+    """
+    if not preferred:
+        return ""
+    land   = (ctx.get("footprint_constraint", "constrained") or "constrained").lower()
+    op_cap = (ctx.get("operator_context", "metro") or "metro").lower()
+    abundant_land = land in ("abundant", "unconstrained", "available", "none")
+
+    primary_factor   = "operational resilience and simplicity"
+    secondary_factor = "marginal performance gain"
+
+    if preferred.option_type == "greenfield_conventional" and abundant_land:
+        primary_factor   = "operational resilience and alignment with current operator capability"
+        secondary_factor = "the marginal performance advantage of the intensified option"
+        contingent = "change in site footprint constraint, operator capability upgrade, or consent tightening beyond TN ≤ 3 mg/L"
+    elif preferred.option_type == "greenfield_intensified":
+        primary_factor   = "site footprint constraint and compact performance requirements"
+        secondary_factor = "the lower OPEX and simplicity of the conventional option"
+        contingent = "availability of additional land or reduction in performance requirements"
+    else:  # brownfield
+        primary_factor   = "existing asset retention and programme timeline"
+        secondary_factor = "greenfield replacement"
+        contingent = "a strategic decision to decommission the existing plant and construct a new facility"
+
+    alt_txt = (f"Alternative pathways ({', '.join(a.label for a in alternatives[:2])}) "
+               "remain contingent on ") if alternatives else "Alternative pathways contingent on "
+    alt_txt += contingent + "."
+
+    carbon_note = (
+        " Note: carbon fractionation is required before final nitrogen pathway selection "
+        "regardless of which option is chosen."
+    ) if carbon_limited else ""
+
+    return (
+        f"The recommended pathway is {preferred.label}. "
+        f"This decision prioritises {primary_factor} over {secondary_factor}. "
+        f"{alt_txt}"
+        f"{carbon_note}"
+    )
 
 
 def _preferred_path_statement(options: List[AffordabilityOption],
