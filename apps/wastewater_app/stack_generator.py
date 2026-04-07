@@ -666,22 +666,85 @@ def _build_pathway_stages(
         settling_present = any(s.technology in (TI_INDENSE, TI_BIOMAG, TI_COMAG, TI_MEMDENSE)
                                for s in stages)
         if aer_constrained:
-            # Level 3: Aeration is the binding constraint — MABR bypasses blower limitation
-            emit(TI_MABR, MECH_AER_INT,
-                "MABR (OxyFAS) delivers oxygen directly to the biofilm via gas-permeable "
-                "hollow-fibre membranes, providing nitrification capacity without blower expansion.",
-                "OxyFAS drops into existing AS tanks. Oxygen transfer efficiency up to 14 kgO₂/kWh "
-                "vs 1–2 kgO₂/kWh for conventional diffused aeration. "
-                "NHx resilience is maintained even when blower capacity is near maximum. "
-                "Calibrated to Kawana modelling: NHx <0.1 mg/L across all load scenarios.",
-                [CT_NITRIFICATION],
-                prereq="Stage 2 settling stabilisation complete" if settling_present else "",
-                bio_level=3,
-                bio_rationale=(
-                    "MABR is selected at Level 3 (aeration intensification) because the aeration "
-                    "system is near maximum capacity. IFAS or Hybas would not resolve the oxygen "
-                    "delivery limitation — blower headroom is the binding constraint, not SRT alone."
-                ))
+            # Level 3: Aeration is the binding constraint — MABR bypasses blower limitation.
+            # ── MABR "not preferred" guard (WaterPoint decision framework) ────────────────
+            # MABR is suppressed here and falls through to IFAS when any of the following
+            # whole-plant conditions apply. These reflect the WaterPoint decision rules:
+            #   Rule NP-1: No carbon strategy — MABR bolt-on without philosophy change
+            #              gives marginal whole-plant gain at real complexity cost.
+            #   Rule NP-2: Small or remote plant without instrumentation/controls capability —
+            #              dual-blower, condensate, exhaust-O2, and NH4 sensing dependency
+            #              is disproportionate to operating environment.
+            #   Rule NP-3: IFAS equivalent — aeration headroom confirmed ≥15% spare;
+            #              IFAS delivers equivalent nitrification intensification at lower
+            #              auxiliary system burden and broader operator skill base.
+            # When suppressed, IFAS is emitted instead (Level 2 downgrade).
+            # MABR is preserved as an alternative in _build_pathway_alternatives.
+            _location       = plant_context.get("location_type", "metro") or "metro"
+            _size_mld       = float(plant_context.get("plant_size_mld", 10.) or 10.)
+            _has_c_strategy = bool(plant_context.get("carbon_capture_upstream", False)
+                                   or plant_context.get("aaa_upstream", False)
+                                   or plant_context.get("enhanced_primary", False))
+            _instr_capable  = bool(plant_context.get("instrumentation_capable", True))
+            _aer_headroom   = float(plant_context.get("aeration_headroom_pct", 0.) or 0.)
+            # NP-1: no carbon strategy and not a carbon-first architecture
+            _np1 = (not _has_c_strategy
+                    and not bool(plant_context.get("greenfield", False)))
+            # NP-2: remote/small with limited instrumentation (default to capable if unknown)
+            _np2 = ((_location == "remote" or _size_mld < 5.0)
+                    and not _instr_capable)
+            # NP-3: IFAS equivalent — confirmed ≥15% blower spare
+            _np3 = (_aer_headroom >= 15.)
+            _mabr_not_preferred = _np1 or _np2 or _np3
+            _mabr_not_preferred_reason = (
+                "NP-1: No carbon-capture-first architecture identified — MABR auxiliary complexity "
+                "would not deliver whole-plant benefit without upstream carbon strategy." if _np1 else
+                "NP-2: Remote/small plant without confirmed instrumentation capability — "
+                "MABR blower/condensate/sensor dependency is disproportionate." if _np2 else
+                f"NP-3: Aeration headroom {_aer_headroom:.0f}% ≥ 15% — IFAS delivers equivalent "
+                "nitrification intensification at lower complexity."
+            )
+            if _mabr_not_preferred:
+                # Downgrade to Level 2: IFAS is the correct mechanism
+                emit(TI_IFAS, MECH_BIOFILM_RET,
+                    "IFAS carriers retain nitrifying biofilm in the existing aeration zone, "
+                    "decoupling nitrification SRT from the hydraulic SRT of the tank.",
+                    "No new tank volume required. Media retention screens installed at zone outlets. "
+                    "Effective nitrification SRT can exceed 15 days even at short hydraulic SRT. "
+                    "MLSS may decrease as biofilm carries more of the nitrification load. "
+                    f"MABR not selected: {_mabr_not_preferred_reason}",
+                    [CT_NITRIFICATION],
+                    prereq="Stage 2 settling stabilisation complete" if settling_present else "",
+                    bio_level=2,
+                    bio_rationale=(
+                        "IFAS selected at Level 2 (biomass retention) despite aeration constraint signal. "
+                        f"MABR whole-plant value test: not preferred. Reason: {_mabr_not_preferred_reason} "
+                        "IFAS delivers equivalent nitrification SRT decoupling with lower auxiliary "
+                        "system burden. MABR is preserved as an alternative pathway."
+                    ))
+            else:
+                emit(TI_MABR, MECH_AER_INT,
+                    "MABR (OxyFAS) delivers oxygen directly to the biofilm via gas-permeable "
+                    "hollow-fibre membranes, providing nitrification capacity without blower expansion.",
+                    "OxyFAS drops into existing AS tanks. Oxygen transfer efficiency up to 14 kgO₂/kWh "
+                    "vs 1–2 kgO₂/kWh for conventional diffused aeration. "
+                    "NHx resilience is maintained even when blower capacity is near maximum. "
+                    "Calibrated to Kawana modelling: NHx <0.1 mg/L across all load scenarios. "
+                    "Whole-plant value test: aeration constraint confirmed; "
+                    + ("carbon-capture architecture upstream — MABR reduces bulk aeration burden "
+                       "and supports carbon-preservation strategy. " if _has_c_strategy else
+                       "aeration is the binding constraint; IFAS cannot resolve oxygen delivery. "),
+                    [CT_NITRIFICATION],
+                    prereq="Stage 2 settling stabilisation complete" if settling_present else "",
+                    bio_level=3,
+                    bio_rationale=(
+                        "MABR is selected at Level 3 (aeration intensification) because the aeration "
+                        "system is near maximum capacity. IFAS or Hybas would not resolve the oxygen "
+                        "delivery limitation — blower headroom is the binding constraint, not SRT alone. "
+                        + ("Carbon-capture architecture upstream strengthens MABR selection: "
+                           "MABR reduces bulk aeration demand and preserves plant carbon strategy. "
+                           if _has_c_strategy else "")
+                    ))
         elif settling_present:
             # Level 2: SRT is the bottleneck; settling is already addressed; Hybas unlocks nitrification
             emit(TI_HYBAS, MECH_BIOFILM_RET,
@@ -1466,6 +1529,7 @@ def build_upgrade_pathway(
             )
 
     # If nitrification case: confirm MABR is justified by aeration constraint
+    # and whole-plant value test (WaterPoint MABR decision framework).
     if CT_NITRIFICATION in ct_set_g:
         mabr_in = any(s.technology == TI_MABR for s in stages)
         if mabr_in and not aer_const:
@@ -1475,13 +1539,52 @@ def build_upgrade_pathway(
                 "detailed design commitment. IFAS may be preferred if headroom exists."
             )
         elif mabr_in and aer_const:
+            # Evaluate whole-plant value — report result in guardrail note
+            _grl_c_strat  = bool(ctx.get("carbon_capture_upstream") or
+                                  ctx.get("aaa_upstream") or ctx.get("enhanced_primary"))
+            _grl_location = ctx.get("location_type", "metro") or "metro"
+            _grl_size     = float(ctx.get("plant_size_mld", 10.) or 10.)
+            _grl_instr    = bool(ctx.get("instrumentation_capable", True))
+            _grl_headroom = float(ctx.get("aeration_headroom_pct", 0.) or 0.)
+            # Whole-plant value test results
+            _wpv_pass   = []
+            _wpv_fail   = []
+            _wpv_pass.append("Aeration constraint confirmed — MABR bypasses blower ceiling")
+            if _grl_c_strat:
+                _wpv_pass.append("Carbon-capture architecture upstream — MABR reduces bulk aeration "
+                                  "burden and supports carbon preservation strategy")
+            else:
+                _wpv_fail.append("No carbon-capture architecture identified — whole-plant benefit "
+                                  "is limited to the constrained bioreactor")
+            if _grl_location == "remote" and not _grl_instr:
+                _wpv_fail.append("Remote location without confirmed instrumentation capability — "
+                                  "auxiliary system dependency (dual blower, condensate, exhaust O₂, "
+                                  "NH₄ sensor) is disproportionate")
+            elif _grl_size < 5.0:
+                _wpv_fail.append(f"Small plant ({_grl_size:.1f} MLD) — MABR OEM and auxiliary "
+                                  "system cost may not be proportionate; confirm against IFAS CAPEX")
+            if _grl_headroom >= 15.:
+                _wpv_fail.append(f"Aeration headroom {_grl_headroom:.0f}% ≥ 15% — "
+                                  "IFAS may deliver equivalent SRT benefit at lower complexity")
+            # Complexity / risk test summary (always appended)
+            _complexity_note = (
+                "MABR complexity / risk checklist: "
+                "(1) Dual blower system required (process air + scour/mixing air). "
+                "(2) Fine air filtration 10 µm required. "
+                "(3) Condensate management system required. "
+                "(4) Instrumentation: inlet pressure, inlet flow, exhaust O₂, NH₄ monitoring. "
+                "(5) Supplemental mixing required if tank not fully occupied by cassettes. "
+                "(6) Periodic cassette inspection and air isolation cycles required. "
+                "(7) Net whole-plant energy balance must be calculated — auxiliary blower loads "
+                "may partially offset high OTE. "
+                "(8) Operator skill dependency — confirm O&M capability before commitment."
+            )
             guardrail_notes.append(
                 "MABR justified at Level 3: aeration system is near maximum capacity. "
                 "IFAS alone would not resolve the oxygen delivery constraint. "
-                "MABR applicability notes: "
-                "Strong fit — aeration constrained, footprint constrained, or cold-climate nitrification. "
-                "Membrane lifecycle 8–10 years; FOG/scaling fouling risk requires management. "
-                "Decision tension: compact energy-efficient solution vs lower-CAPEX conventional expansion."
+                f"Whole-plant value test — PASS: {'; '.join(_wpv_pass)}. "
+                + (f"PARTIAL — consider: {'; '.join(_wpv_fail)}. " if _wpv_fail else "")
+                + _complexity_note
             )
 
     # ── DNF stack escalation guardrail ────────────────────────────────────────

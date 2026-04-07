@@ -253,49 +253,175 @@ def _check_rule_consistency(
 
 # ── Step 2: Completeness check ────────────────────────────────────────────────
 
+def _mabr_not_preferred(plant_context: Dict) -> Tuple[bool, str]:
+    """
+    Apply WaterPoint MABR whole-plant value test.
+    Returns (not_preferred: bool, reason: str).
+
+    Rules (mirror of stack_generator guards NP-1 / NP-2 / NP-3):
+      NP-1: No carbon-capture-first architecture — bolt-on without philosophy change.
+      NP-2: Remote or small plant (<5 MLD) without confirmed instrumentation capability.
+      NP-3: Aeration headroom ≥ 15% confirmed — IFAS delivers equivalent SRT benefit.
+    """
+    has_c_strategy = bool(plant_context.get("carbon_capture_upstream")
+                          or plant_context.get("aaa_upstream")
+                          or plant_context.get("enhanced_primary"))
+    location       = plant_context.get("location_type", "metro") or "metro"
+    size_mld       = float(plant_context.get("plant_size_mld", 10.) or 10.)
+    instr_capable  = bool(plant_context.get("instrumentation_capable", True))
+    aer_headroom   = float(plant_context.get("aeration_headroom_pct", 0.) or 0.)
+    greenfield     = bool(plant_context.get("greenfield", False))
+
+    np1 = (not has_c_strategy and not greenfield)
+    np2 = ((location == "remote" or size_mld < 5.0) and not instr_capable)
+    np3 = (aer_headroom >= 15.)
+
+    if np1:
+        return True, (
+            "NP-1: No carbon-capture-first architecture identified. MABR inserted as a bolt-on "
+            "without changing the plant philosophy gives marginal whole-plant benefit at real "
+            "auxiliary system complexity cost. IFAS delivers equivalent nitrification SRT benefit "
+            "with a lower operational dependency profile."
+        )
+    if np2:
+        return True, (
+            f"NP-2: {'Remote location' if location == 'remote' else f'Small plant ({size_mld:.1f} MLD)'} "
+            "without confirmed instrumentation and controls capability. MABR requires dual blower, "
+            "fine filtration, condensate management, exhaust O₂ monitoring, and NH₄ sensing — "
+            "disproportionate dependency for this operating environment."
+        )
+    if np3:
+        return True, (
+            f"NP-3: Aeration headroom {aer_headroom:.0f}% ≥ 15% confirmed. IFAS delivers equivalent "
+            "nitrification intensification (SRT decoupling) at lower auxiliary system burden. "
+            "MABR is not required when the blower is not the binding constraint."
+        )
+    return False, ""
+
+
 def _check_completeness(
     pathway: UpgradePathway,
+    plant_context: Optional[Dict] = None,
 ) -> Tuple[List[CredibilityNote], List[VerifiedAlternative]]:
-    """Ensure no pathway stops prematurely."""
-    notes: List[CredibilityNote] = []
+    """Ensure no pathway stops prematurely and MABR is only offered when justified."""
+    notes:    List[CredibilityNote]     = []
     gen_alts: List[VerifiedAlternative] = []
-    ct_types     = {c.constraint_type for c in pathway.constraints}
-    tech_in_stack= {s.technology for s in pathway.stages}
+    ctx           = plant_context or {}
+    ct_types      = {c.constraint_type for c in pathway.constraints}
+    tech_in_stack = {s.technology for s in pathway.stages}
 
-    # Nitrification: ensure IFAS vs MABR alternatives exist
+    # ── MABR in stack: whole-plant value warning ───────────────────────────────
+    # If MABR is already in the stack, verify the whole-plant value test.
+    # If the test fails, add a credibility warning — do NOT remove the technology
+    # (that is the stack_generator's job), but flag it for engineering review.
+    if TI_MABR in tech_in_stack:
+        mabr_np, mabr_np_reason = _mabr_not_preferred(ctx)
+        if mabr_np:
+            notes.append(CredibilityNote(
+                category="Rule Consistency",
+                severity="Warning",
+                message=(
+                    "MABR is in the primary stack but the WaterPoint whole-plant value test "
+                    f"indicates it is not preferred for this configuration. Reason: {mabr_np_reason} "
+                    "Review: confirm whether aeration constraint, carbon strategy, or instrumentation "
+                    "capability justifies MABR over IFAS before detailed design commitment."
+                ),
+                applied=False,   # advisory — stack not modified by credibility layer
+            ))
+
+    # ── Nitrification: IFAS vs MABR alternative completeness ──────────────────
     if CT_NITRIFICATION in ct_types:
-        biofilm_in_stack = any(t in tech_in_stack for t in (TI_IFAS, TI_HYBAS, TI_MBBR, TI_MABR))
-        alt_labels = " ".join(a.label for a in pathway.alternatives).lower()
-        has_mabr_alt = "mabr" in alt_labels or "mabr" in " ".join(
-            s.technology for s in pathway.stages).lower()
+        biofilm_in_stack = any(t in tech_in_stack
+                               for t in (TI_IFAS, TI_HYBAS, TI_MBBR, TI_MABR))
+        alt_labels   = " ".join(a.label for a in pathway.alternatives).lower()
+        has_mabr_alt = ("mabr" in alt_labels
+                        or TI_MABR in tech_in_stack)
         has_ifas_alt = any(t in tech_in_stack for t in (TI_IFAS, TI_HYBAS, TI_MBBR))
 
         if biofilm_in_stack and not has_mabr_alt:
-            gen_alts.append(VerifiedAlternative(
-                label="Option — MABR OxyFAS as aeration-efficient nitrification alternative",
-                mechanism_label="Aeration intensification (membrane O₂ delivery)",
-                stages=["MABR OxyFAS® (membrane-aerated biofilm reactor)"],
-                rationale=(
-                    "MABR delivers oxygen directly to the biofilm via hollow-fibre membranes at "
-                    "up to 14 kgO₂/kWh — 7–10× more efficient than conventional diffused aeration. "
-                    "Where aeration capacity is constrained, MABR provides nitrification intensification "
-                    "without blower expansion. NHx <0.1 mg/L is achievable across a wide load range "
-                    "(Kawana modelling calibration)."
-                ),
-                when_preferred=(
-                    "When aeration blower capacity is constrained or energy minimisation is a "
-                    "strategic priority. Suitable for plants where blower expansion is not feasible."
-                ),
-                capex_class="Medium",
-                is_generated=True,
-            ))
+            # Gate MABR alternative with not-preferred check.
+            # Only offer MABR as an alternative when it passes the whole-plant value test,
+            # OR when aeration is confirmed constrained (the primary justification).
+            mabr_np, mabr_np_reason = _mabr_not_preferred(ctx)
+            aer_constrained = bool(ctx.get("aeration_constrained", False))
+
+            if not mabr_np or aer_constrained:
+                # MABR is justified OR aeration constraint overrides the NP rules
+                _mabr_when = (
+                    "When aeration blower capacity is confirmed constrained (< 15% headroom) "
+                    "or when a carbon-capture-first architecture is in place upstream. "
+                    "Requires: dual blower system, 10 µm air filtration, condensate management, "
+                    "exhaust O₂ and NH₄ instrumentation, and confirmed operator capability."
+                )
+                if aer_constrained and mabr_np:
+                    _mabr_when += (
+                        f" Note: WaterPoint whole-plant value test flagged: {mabr_np_reason} "
+                        "Aeration constraint overrides — MABR offered as alternative for engineering "
+                        "review. Confirm auxiliary system capability before commitment."
+                    )
+                gen_alts.append(VerifiedAlternative(
+                    label="Option — MABR OxyFAS as aeration-efficient nitrification alternative",
+                    mechanism_label="Aeration intensification (membrane O₂ delivery)",
+                    stages=["MABR OxyFAS® (membrane-aerated biofilm reactor)"],
+                    rationale=(
+                        "MABR delivers oxygen directly to the biofilm via hollow-fibre membranes at "
+                        "up to 14 kgO₂/kWh — 7–10× more efficient than conventional diffused aeration. "
+                        "Where aeration capacity is constrained, MABR provides nitrification "
+                        "intensification without blower expansion. NHx <0.1 mg/L achievable "
+                        "(Kawana calibration). Most valuable when embedded in a carbon-capture-first "
+                        "plant architecture — reduces bulk aeration burden and supports carbon "
+                        "preservation strategy. Requires dual blower system, fine air filtration, "
+                        "condensate management, and NH₄/exhaust O₂ instrumentation."
+                    ),
+                    when_preferred=_mabr_when,
+                    capex_class="Medium",
+                    is_generated=True,
+                ))
+            else:
+                # MABR not preferred and no aeration constraint — suppress MABR alternative,
+                # confirm IFAS is present or add it as the completeness alternative.
+                notes.append(CredibilityNote(
+                    category="Completeness",
+                    severity="Info",
+                    message=(
+                        "MABR alternative suppressed: WaterPoint whole-plant value test indicates "
+                        f"not preferred. {mabr_np_reason} "
+                        "IFAS is the appropriate nitrification intensification alternative for this "
+                        "configuration. Aeration constraint confirmation would re-enable MABR."
+                    ),
+                    applied=True,
+                ))
+                if not has_ifas_alt:
+                    gen_alts.append(VerifiedAlternative(
+                        label="Option — IFAS as lower-complexity nitrification intensification",
+                        mechanism_label="Biofilm retention (SRT decoupling)",
+                        stages=["Integrated Fixed-Film Activated Sludge (IFAS)"],
+                        rationale=(
+                            "IFAS carriers retain nitrifying biofilm in the existing aeration zone, "
+                            "decoupling nitrification SRT from hydraulic SRT without requiring new "
+                            "tank volume. Media retention screens installed at zone outlets. "
+                            "Effective SRT can exceed 15 days independent of WAS rate. "
+                            "Lower auxiliary system complexity than MABR: no dual blower, "
+                            "no condensate management, no exhaust O₂ instrumentation required."
+                        ),
+                        when_preferred=(
+                            "When aeration headroom exists (≥ 15% spare blower capacity) or when "
+                            "operational simplicity is a priority. The preferred nitrification "
+                            "intensification option in the absence of a carbon-capture architecture "
+                            "or confirmed aeration constraint."
+                        ),
+                        capex_class="Low",
+                        is_generated=True,
+                    ))
+
         elif not biofilm_in_stack and not has_ifas_alt:
             notes.append(CredibilityNote(
                 category="Completeness",
                 severity="Info",
                 message=(
                     "Nitrification limitation identified but no biofilm retention technology appears "
-                    "in the stack. IFAS or MABR should be considered as primary or alternative."
+                    "in the stack. IFAS is the primary recommendation; MABR if aeration is "
+                    "confirmed constrained and carbon-capture architecture is in place."
                 ),
                 applied=False,
             ))
@@ -746,7 +872,7 @@ def build_credible_output(
     all_gen_alts.extend(rule_alts)
 
     # ── Step 2: Completeness ───────────────────────────────────────────────────
-    comp_notes, comp_alts = _check_completeness(pathway)
+    comp_notes, comp_alts = _check_completeness(pathway, ctx)
     all_notes.extend(comp_notes)
     all_gen_alts.extend(comp_alts)
 
