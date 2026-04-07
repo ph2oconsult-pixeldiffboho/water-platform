@@ -436,6 +436,120 @@ def _render_synthesis_layers(result, scenario, project) -> None:
             )
 
 
+    # ── E7b. BROWNFIELD vs REPLACEMENT ASSESSMENT ─────────────────────────
+    try:
+        from apps.wastewater_app.bf_gf_layer import build_bf_gf_assessment
+
+        _bfgf = build_bf_gf_assessment(pathway, feas, ctx)
+
+        _rec_icon = {
+            "Strong Brownfield":   "🟢",
+            "Brownfield Preferred":"🟡",
+            "Balanced":            "🟠",
+            "Replacement Viable":  "🔴",
+            "Strong Replacement":  "🔴",
+        }.get(_bfgf.recommendation, "⬜")
+
+        with st.expander(
+            f"{_rec_icon} Brownfield vs Replacement — {_bfgf.recommendation}",
+            expanded=False,
+        ):
+            # ── Recommendation + rationale ─────────────────────────────
+            st.markdown(f"**{_bfgf.recommendation}** — score {_bfgf.total_score}/14")
+            st.caption(_bfgf.rationale)
+
+            # ── Dimension scoring table ─────────────────────────────────
+            st.markdown("**Scoring dimensions**")
+            _dcols = st.columns([2.5, 0.8, 4])
+            _dcols[0].markdown("**Dimension**")
+            _dcols[1].markdown("**Score**")
+            _dcols[2].markdown("**Note**")
+            st.markdown(
+                "<hr style='margin:3px 0; border-color:#dde3ea;'>",
+                unsafe_allow_html=True,
+            )
+            for _dim, _dscore in _bfgf.dimension_scores.items():
+                _dnote = _bfgf.dimension_notes.get(_dim, "")
+                _dc = st.columns([2.5, 0.8, 4])
+                _dc[0].caption(_dim)
+                _dc[1].caption(str(_dscore))
+                _dc[2].caption(_dnote)
+
+            st.markdown(
+                "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                unsafe_allow_html=True,
+            )
+
+            # ── BF vs GF side-by-side ───────────────────────────────────
+            _bc, _gc = st.columns(2)
+
+            with _bc:
+                st.markdown(f"**{_bfgf.brownfield_pathway.label}**")
+                st.caption(
+                    f"CAPEX class: {_bfgf.brownfield_pathway.capex_class} · "
+                    f"Disruption: {_bfgf.brownfield_pathway.disruption} · "
+                    f"Timeline: {_bfgf.brownfield_pathway.timeline_years}"
+                )
+                st.caption("Technologies: " + ", ".join(_bfgf.brownfield_pathway.key_technologies))
+                for _b in _bfgf.brownfield_pathway.benefits:
+                    st.caption(f"✅ {_b}")
+                for _r in _bfgf.brownfield_pathway.risks:
+                    st.caption(f"⚠️ {_r}")
+
+            with _gc:
+                st.markdown(f"**{_bfgf.replacement_pathway.label}**")
+                st.caption(
+                    f"CAPEX class: {_bfgf.replacement_pathway.capex_class} · "
+                    f"Disruption: {_bfgf.replacement_pathway.disruption} · "
+                    f"Timeline: {_bfgf.replacement_pathway.timeline_years}"
+                )
+                st.caption("Technologies: " + ", ".join(_bfgf.replacement_pathway.key_technologies))
+                for _b in _bfgf.replacement_pathway.benefits:
+                    st.caption(f"✅ {_b}")
+                for _r in _bfgf.replacement_pathway.risks:
+                    st.caption(f"⚠️ {_r}")
+
+            st.markdown(
+                "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                unsafe_allow_html=True,
+            )
+
+            # ── Tipping point ───────────────────────────────────────────
+            st.markdown(
+                f"**Tipping point** — what would shift from "
+                f"*{_bfgf.tipping_point.from_category}* "
+                f"to *{_bfgf.tipping_point.to_category}*:"
+            )
+            for _t in _bfgf.tipping_point.triggers:
+                st.caption(f"→ {_t}")
+
+            # ── Decision tension ────────────────────────────────────────
+            st.info(_bfgf.decision_tension, icon="⚖️")
+
+            # ── Validation flags ────────────────────────────────────────
+            if not _bfgf.brownfield_reflects_stack:
+                st.warning(
+                    "Note: brownfield pathway technologies do not fully reflect the "
+                    "recommended primary stack — review key_technologies alignment.",
+                    icon="⚠️",
+                )
+            if not _bfgf.nereda_in_replacement_only:
+                st.warning(
+                    "Note: Nereda / AGS appears in the primary stack — "
+                    "this technology is intended as a full process replacement option only.",
+                    icon="⚠️",
+                )
+            if not _bfgf.mbr_appropriately_positioned:
+                st.warning(
+                    "Note: MBR positioning may warrant review — "
+                    "confirm it is not competing with brownfield intensification options.",
+                    icon="⚠️",
+                )
+
+    except Exception as _e7b_err:
+        with st.expander("🏗️ Brownfield vs Replacement — error", expanded=False):
+            st.warning(f"BF/GF layer could not load: {_e7b_err}")
+
     # ── E8. REFINEMENT PROMPT (Phase 1 → Phase 2) ─────────────────────────
     _render_refinement_section(pathway, ctx)
 
