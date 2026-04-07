@@ -150,6 +150,7 @@ class ComplianceReport:
     sludge_flag:          str   = ""
     diagnosis_statement:  str   = ""  # plain-language cause of failure
     closure_statement:    str   = ""  # what is required to achieve compliance
+    board_summary:        str   = ""  # five-line board-ready summary
     escalation_note:      str   = ""  # escalation mode if triggered
     effective_cod_tn_val: float = 0.
     # Confidence score layer
@@ -1112,6 +1113,241 @@ def _build_delivery_considerations(
 
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Causal Narrative Engine (v24Z70)
+# Three-tier driver classification + structured diagnosis + board summary
+# This layer modifies narrative only — no physics, scores or stacks are changed.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _classify_drivers(
+    tkn_impossible: bool,
+    carbon_limited: bool,
+    eff_codn: float,
+    cold: bool,
+    temp_c: float,
+    tn_p95_nc: bool,
+    tn_med_nc: bool,
+    cl_limited: bool,
+    overflow_risk: bool,
+    aer_constrained: bool,
+    svi_high: bool,
+    ss_material: bool,
+    sludge_trigger: bool,
+    op_flag: bool,
+) -> dict:
+    """
+    Classify every active driver into Tier 1 / 2 / 3.
+
+    Tier 1 — Compliance-critical (regulatory failure causes)
+    Tier 2 — System constraints (drivers of system behaviour)
+    Tier 3 — Operational / consequence drivers
+
+    Returns a dict with keys t1, t2, t3 each holding a list of plain strings.
+    """
+    t1, t2, t3 = [], [], []
+
+    # Tier 1: nitrogen removal impossibility
+    if tkn_impossible:
+        t1.append("high nitrogen removal requirement (>90%) exceeds typical biological limits")
+
+    # Tier 1: carbon limitation
+    if carbon_limited or (eff_codn > 0. and eff_codn < 4.5):
+        t1.append(
+            f"insufficient biodegradable carbon for biological denitrification "
+            f"(effective COD:TN {eff_codn:.2f} < 4.5 closure threshold)"
+        )
+
+    # Tier 1: temperature-limited kinetics (≤15°C)
+    if cold or temp_c <= 15.:
+        t1.append(
+            f"biological reaction rate limitation (temperature-limited kinetics "
+            f"at {temp_c:.0f}°C)"
+        )
+
+    # Tier 1: nitrification / denitrification not credible
+    if tn_p95_nc and not tkn_impossible and not carbon_limited:
+        t1.append("nitrogen compliance not achievable at 95th percentile")
+    elif tn_med_nc and not tkn_impossible and not carbon_limited:
+        t1.append("nitrogen compliance not achievable under average conditions")
+
+    # Tier 1: clarifier hydraulic failure causing compliance breach
+    if cl_limited and (tn_p95_nc or tn_med_nc):
+        t1.append("clarifier settling and hydraulic limitation causing direct compliance breach")
+
+    # Tier 2: system constraints
+    if overflow_risk:
+        t2.append("hydraulic overload under peak wet weather flow")
+    if cl_limited and not (tn_p95_nc or tn_med_nc):
+        # Clarifier is a system constraint (not direct compliance cause) here
+        t2.append("clarifier settling and SVI limitation")
+    if aer_constrained:
+        t2.append("aeration headroom exhaustion")
+    if svi_high and not cl_limited:
+        t2.append("elevated SVI and settling instability")
+    if ss_material:
+        t2.append("return liquor and sidestream ammonia load")
+
+    # Tier 3: operational consequences
+    if sludge_trigger:
+        t3.append("high solids production increases sludge handling, dewatering, and disposal burden")
+    if op_flag:
+        t3.append("operator capability and technology complexity requirements")
+
+    return {"t1": t1, "t2": t2, "t3": t3}
+
+
+def _build_causal_diagnosis(
+    tiers: dict,
+    tn_med_nc: bool,
+    tn_p95_nc: bool,
+    gap: bool,
+    greenfield: bool,
+    score: int,
+    carbon_limited: bool,
+    eff_codn: float,
+) -> str:
+    """
+    Build a structured three-sentence causal diagnosis.
+
+    Sentence 1: Tier 1 compliance cause (never Tier 3)
+    Sentence 2: Tier 2 system constraints (if present)
+    Sentence 3: Tier 3 operational consequences (if present)
+
+    Carbon closure note is injected into Sentence 1 when carbon-limited.
+    """
+    t1 = tiers["t1"]
+    t2 = tiers["t2"]
+    t3 = tiers["t3"]
+
+    # Greenfield redesign framing (preserve existing)
+    if greenfield and score < 20 and (t1 or t2):
+        primary = (t1 + t2)[0] if (t1 + t2) else "primary constraint unknown"
+        return (
+            "Current concept is not viable under the defined configuration and "
+            "requires redesign to meet the required standard. "
+            f"Primary constraint: {primary}."
+        )
+
+    sentences = []
+
+    # ── Sentence 1: Tier 1 compliance cause ───────────────────────────────────
+    if t1:
+        if tn_med_nc or tn_p95_nc or gap:
+            prefix = "Target not achievable due to"
+        else:
+            prefix = "Performance risk present due to"
+
+        if len(t1) == 1:
+            s1 = f"{prefix} {t1[0]}."
+        else:
+            joined = "; ".join(t1[:-1]) + " and " + t1[-1]
+            s1 = f"{prefix} {joined}."
+
+        # Carbon closure note (Part 3)
+        if (carbon_limited or (eff_codn > 0. and eff_codn < 4.5)):
+            s1 += (
+                " Available biodegradable carbon is insufficient for biological "
+                "denitrification; tertiary nitrogen closure is required."
+            )
+        sentences.append(s1)
+
+    elif t2:
+        # No Tier 1 — Tier 2 may lead (Part 2 enforcement rule)
+        if tn_med_nc or tn_p95_nc or gap:
+            prefix = "Target not achievable due to"
+        else:
+            prefix = "Performance risk present due to"
+        joined = "; ".join(t2[:2])
+        sentences.append(f"{prefix} {joined}.")
+
+    # ── Sentence 2: Tier 2 system constraints ─────────────────────────────────
+    if t2 and t1:  # only add Tier 2 as Sentence 2 when Tier 1 led
+        if len(t2) == 1:
+            sentences.append(
+                f"{t2[0].capitalize()} further constrains performance."
+            )
+        else:
+            joined = "; ".join(t2[:3])
+            sentences.append(
+                f"Contributing system constraints include: {joined}."
+            )
+
+    # ── Sentence 3: Tier 3 operational consequences ────────────────────────────
+    if t3:
+        joined = "; ".join(t3)
+        sentences.append(f"Operational consequences include: {joined}.")
+
+    return " ".join(sentences) if sentences else ""
+
+
+def _build_board_summary(
+    state: str,
+    tiers: dict,
+    gap: bool,
+    closure_statement: str,
+    carbon_limited: bool,
+    eff_codn: float,
+) -> str:
+    """
+    Part 7: Five-line board summary.
+
+    Line 1 — System state
+    Line 2 — Primary compliance risk (Tier 1)
+    Line 3 — Required closure (if any)
+    Line 4 — Key system constraint
+    Line 5 — Investment implication
+    """
+    t1 = tiers["t1"]
+    t2 = tiers["t2"]
+
+    # Line 1
+    l1 = f"System is in {state} condition."
+
+    # Line 2
+    if t1:
+        primary = t1[0]
+        if len(t1) > 1:
+            primary = t1[0] + " combined with " + t1[1]
+        if gap:
+            l2 = f"Nitrogen compliance is not achievable due to {primary}."
+        else:
+            l2 = f"Nitrogen compliance is at risk due to {primary}."
+    else:
+        l2 = "Compliance performance is conditional on system constraints."
+
+    # Line 3
+    if gap and closure_statement:
+        l3 = closure_statement.rstrip(".") + "."
+    elif carbon_limited or (eff_codn > 0. and eff_codn < 4.5):
+        l3 = ("Tertiary nitrogen closure is required — "
+              "biodegradable carbon is insufficient for biological denitrification alone.")
+    elif gap:
+        l3 = "Tertiary process intervention is required to close the compliance gap."
+    else:
+        l3 = "No tertiary closure is required under current assumptions."
+
+    # Line 4
+    if t2:
+        constraint_txt = "; ".join(t2[:2])
+        l4 = f"Critical system constraints: {constraint_txt}."
+    else:
+        l4 = "No acute system constraints identified under current scenario."
+
+    # Line 5
+    if gap:
+        l5 = ("Investment is required in staged intensification and tertiary closure "
+              "technologies to achieve compliance.")
+    elif t1 or t2:
+        l5 = ("Investment in constraint relief and process optimisation is required "
+              "before compliance can be reliably achieved.")
+    else:
+        l5 = ("Current configuration is adequate; minor investment may be required "
+              "to maintain performance under growth or licence tightening.")
+
+    return " ".join([l1, l2, l3, l4, l5])
+
+
 def build_compliance_report(
     pathway: UpgradePathway,
     feasibility: FeasibilityReport,
@@ -1564,99 +1800,66 @@ def build_compliance_report(
     _delivery = _build_delivery_considerations(
         pathway, ctx, _op_flag, _score)
 
-    # ── Diagnosis and closure statements (Part 4) ─────────────────────────────
-    _tn_fp = _tn_final_p
-    # SF-01: compliance-cause priority gate
-    # _SLUDGE_DRIVER and generic gap labels must never lead diagnosis.
-    # When a compliance failure exists, _diag_cause must come from a
-    # mechanistic constraint (carbon, TKN, clarifier) not an operational load.
-    _DIAG_EXCLUDED = {
+    # ── Causal Narrative Engine (v24Z70) ────────────────────────────────────
+    _tn_fp        = _tn_final_p
+    _tn_med_nc_diag = (_tn_fp.median_outcome == NOT_YET_CREDIBLE)
+    _tn_p95_nc_diag = (_tn_fp.p95_outcome   == NOT_YET_CREDIBLE)
+
+    # Clarifier signal (retained for closure/escalation logic below)
+    _svi_p95_cl = float(ctx.get("svi_p95") or ctx.get("svi_design") or
+                        ctx.get("svi_ml_g") or 0.)
+    _cl_limited = (
+        bool(ctx.get("clarifier_overloaded", False))
+        or (ctx.get("svi_ml_g") or 0.) >= 140.
+        or _svi_p95_cl >= 180.
+    )
+
+    # Classify all active drivers into Tier 1/2/3
+    _temp_c       = float(ctx.get("temp_celsius", 20.) or 20.)
+    _overflow     = bool(ctx.get("overflow_risk", False))
+    _aer_con      = bool(ctx.get("aeration_constrained", False))
+    _svi_high     = (ctx.get("svi_ml_g") or 0.) >= 120.
+    _ss_mat       = bool(ctx.get("sidestream_material", False))
+    _carbon_lim   = bool(ctx.get("carbon_limited_tn", False)) or _eff_codn < 4.5
+    _tiers = _classify_drivers(
+        tkn_impossible  = _tkn_impossible,
+        carbon_limited  = _carbon_lim,
+        eff_codn        = _eff_codn if _eff_codn < 999. else 0.,
+        cold            = _cold(ctx),
+        temp_c          = _temp_c,
+        tn_p95_nc       = _tn_p95_nc_diag,
+        tn_med_nc       = _tn_med_nc_diag,
+        cl_limited      = _cl_limited,
+        overflow_risk   = _overflow,
+        aer_constrained = _aer_con,
+        svi_high        = _svi_high,
+        ss_material     = _ss_mat,
+        sludge_trigger  = _sludge_trigger,
+        op_flag         = _op_flag,
+    )
+
+    # Build structured causal diagnosis
+    _diagnosis = _build_causal_diagnosis(
+        tiers         = _tiers,
+        tn_med_nc     = _tn_med_nc_diag,
+        tn_p95_nc     = _tn_p95_nc_diag,
+        gap           = _gap,
+        greenfield    = bool(ctx.get("greenfield", False)),
+        score         = _score,
+        carbon_limited= _carbon_lim,
+        eff_codn      = _eff_codn if _eff_codn < 999. else 0.,
+    )
+
+    # _diag_cause retained for escalation / closure note compatibility
+    _DIAG_EXCLUDED = {_SLUDGE_DRIVER,
         "Target not achievable under average conditions",
         "Target not achievable under peak conditions",
         "Selected process cannot meet target without upgrade",
-        "Target achievable under average conditions only",
         "Performance risk under peak conditions",
-        # SF-01: operational drivers must not lead compliance diagnosis
-        _SLUDGE_DRIVER,
     }
     _root_causes_4 = [d for d in _top_drivers if d not in _DIAG_EXCLUDED]
     _diag_cause = (_root_causes_4[0] if _root_causes_4
                    else _top_drivers[0] if _top_drivers else "")
-
-    # Part 3 (updated): clarifier/SVI — use design/P95 SVI when available
-    _svi_p95_cl   = float(ctx.get("svi_p95") or ctx.get("svi_design") or
-                         ctx.get("svi_ml_g") or 0.)
-    _cl_limited = (
-        bool(ctx.get("clarifier_overloaded", False))
-        or (ctx.get("svi_ml_g") or 0.) >= 140.
-        or _svi_p95_cl >= 180.  # P95/design SVI threshold
-    )
-    _CLARIFIER_CAUSE = "clarifier settling and hydraulic limitation"
-    _NITRIF_CAUSES = {
-        "Nitrification performance uncertain at peak conditions",
-        "Nitrification not reliable at peak conditions",
-        "Performance risk under peak conditions",
-        "Target achievable under average conditions only",
-    }
-    # Apply clarifier override if _cl_limited AND any top driver is nitrif-related
-    _any_nitrif_driver = any(d in _NITRIF_CAUSES for d in _top_drivers)
-    if _cl_limited and (_diag_cause in _NITRIF_CAUSES or _any_nitrif_driver):
-        _diag_cause = _CLARIFIER_CAUSE
-    # SF-01: compliance priority gate — override with mechanistic cause
-    # when TKN impossibility or carbon limit exists and diag_cause is sludge/generic
-    _compliance_gate = (
-        _tkn_impossible
-        or _tkn_in >= 50.
-        or bool(ctx.get("carbon_limited_tn", False))
-        or (_tn_fp.p95_outcome == NOT_YET_CREDIBLE)
-    )
-    if _compliance_gate and _diag_cause in (_DIAG_EXCLUDED | {_SLUDGE_DRIVER}):
-        # Force compliance cause — prefer TKN impossibility, then carbon, then clarifier
-        if _TKN_DRIVER in _top_drivers:
-            _diag_cause = _TKN_DRIVER
-        elif any("carbon" in d.lower() for d in _top_drivers):
-            _diag_cause = next(d for d in _top_drivers if "carbon" in d.lower())
-        elif _cl_limited:
-            _diag_cause = _CLARIFIER_CAUSE
-    # Part 1: distinguish 'not credible' failure from 'conditional' risk
-    _tn_med_nc_diag = (_tn_fp.median_outcome == NOT_YET_CREDIBLE)
-    _tn_p95_nc_diag = (_tn_fp.p95_outcome   == NOT_YET_CREDIBLE)
-    if _diag_cause:
-        if _tn_med_nc_diag or _tn_p95_nc_diag:
-            _diagnosis = (
-                "Current configuration cannot meet the target under current constraints due to: "
-                + _diag_cause.lower()
-                + (". Compliance is not credible at 95th percentile."
-                   if _tn_p95_nc_diag else
-                   ". Compliance is not credible under average conditions.")
-            )
-        else:
-            # TN is Achievable or Conditional — performance risk, not outright failure
-            _diagnosis = (
-                "Current configuration can meet the target under average conditions "
-                "but carries performance risk under peak or stressed conditions due to: "
-                + _diag_cause.lower() + "."
-            )
-    else:
-        _diagnosis = ""
-
-    # Part 2: Dual-cause diagnosis — append operational constraint when coexisting
-    if _sludge_trigger and (_tn_med_nc_diag or _tn_p95_nc_diag) and _diagnosis:
-        _op_constraint = (
-            "High solids production will significantly impact sludge "
-            "handling, dewatering, and disposal capacity."
-        )
-        if _op_constraint not in _diagnosis:
-            _diagnosis = _diagnosis + " Additionally, " + _op_constraint
-
-    # Part 2: Greenfield low-confidence diagnosis override
-    _gf_diag = bool(ctx.get("greenfield", False))
-    if _gf_diag and _score < 20 and _diag_cause:
-        _diagnosis = (
-            "Current concept is not viable under the defined configuration and "
-            "requires redesign to meet the required standard. "
-            "Primary constraint: " + _diag_cause.lower() + "."
-        )
 
     _esc_in_notes = any("Escalation Mode" in n for n in pathway.guardrail_notes)
     if _gap or _esc_in_notes:
@@ -1685,6 +1888,16 @@ def build_compliance_report(
         _closure = ""
         _esc_note = ""
 
+    # Board summary (Part 7)
+    _board_summary = _build_board_summary(
+        state          = pathway.system_state,
+        tiers          = _tiers,
+        gap            = _gap,
+        closure_statement = _closure,
+        carbon_limited = _carbon_lim,
+        eff_codn       = _eff_codn if _eff_codn < 999. else 0.,
+    )
+
     return ComplianceReport(
         parameters             = params,
         drivers                = drivers,
@@ -1706,5 +1919,6 @@ def build_compliance_report(
         delivery_considerations       = _delivery,
         diagnosis_statement           = _diagnosis,
         closure_statement             = _closure,
+        board_summary                 = _board_summary,
         escalation_note               = _esc_note,
     )
