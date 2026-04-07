@@ -438,9 +438,15 @@ def build_tech_abstraction(pathway, ctx: Dict) -> TechAbstractionResult:
 
     for stage in stages:
         tech = getattr(stage, "technology", "") or ""
-        # Try display label first, then TI code
         disp = getattr(stage, "tech_display", tech) or tech
-        prof = get_profile(disp) or get_profile(tech)
+        # Try TI code (technology field) first — most reliable key
+        # Fall back to display label if TI code not in registry
+        if tech in _REGISTRY:
+            prof = _REGISTRY[tech]
+        else:
+            prof = get_profile(disp)
+            if not prof.alternatives:  # fallback produced empty profile
+                prof = get_profile(tech)
         profiles.append(prof)
 
     # Check for MOB
