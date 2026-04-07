@@ -463,6 +463,15 @@ def _render_synthesis_layers(result, scenario, project) -> None:
         with st.expander('Deferral Consequence Analysis -- error', expanded=False):
             st.warning(f'Deferral engine could not load: {_e11_err}')
 
+    # -- E12. TECHNOLOGY ABSTRACTION + AVAILABILITY -----------------------
+    try:
+        from apps.wastewater_app.tech_abstraction_layer import build_tech_abstraction
+        _ta = build_tech_abstraction(pathway, ctx)
+        _render_tech_abstraction(_ta)
+    except Exception as _e12_err:
+        with st.expander('Technology Delivery Context -- error', expanded=False):
+            st.warning(f'Technology abstraction layer could not load: {_e12_err}')
+
 
 
 def _render_refinement_section(pathway, ctx: dict) -> None:
@@ -1182,4 +1191,53 @@ def _render_deferral(dce) -> None:
             st.markdown("**Consequence of delay — board summary**")
             for b in dce.board_delay_bullets:
                 st.markdown(f"- {b}")
+
+
+def _render_tech_abstraction(ta) -> None:
+    """
+    E12: Technology Abstraction, Availability and MOB Classification (v24Z76).
+    Process-class-first language with delivery risk and alternatives.
+    """
+    import streamlit as st
+
+    avail_icon = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}
+    risk_icon  = {"Low": "🟢", "Medium": "🟡", "Medium--High": "🟠", "High": "🔴"}
+
+    with st.expander("🔬 Technology Delivery Context", expanded=False):
+
+        # Part 9: Board delivery context
+        st.info("**Technology delivery context:** " + ta.delivery_context)
+
+        if ta.consistency_flags:
+            for flag in ta.consistency_flags:
+                st.warning(f"⚠️ {flag}")
+
+        st.markdown("---")
+
+        # Per-technology profiles
+        for prof in ta.profiles:
+            ai = avail_icon.get(prof.availability, "🟡")
+            ri = risk_icon.get(prof.delivery_risk, "🟡")
+
+            st.markdown(f"**{prof.process_class}**")
+
+            col_a, col_b = st.columns(2)
+            col_a.caption(
+                f"**Availability:** {ai} {prof.availability}  |  "
+                f"**Delivery risk:** {ri} {prof.delivery_risk}"
+            )
+            if prof.vendor_examples:
+                col_b.caption(f"*{prof.vendor_examples}*")
+
+            st.caption(f"**Mechanism:** {prof.mechanism[:200]}")
+
+            if prof.is_mob:
+                st.info(f"**MOB — process class definition:** {prof.mob_note}")
+
+            if prof.alternatives:
+                st.caption(
+                    "**Alternatives:** " + " | ".join(prof.alternatives[:3])
+                )
+            st.markdown("<hr style='margin:4px 0;border-color:#f0f0f0;'>",
+                        unsafe_allow_html=True)
 

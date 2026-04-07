@@ -120,23 +120,30 @@ _COMPLEXITY = {
     TI_DENFILTER: "High", TI_PDNA: "High", TI_TERT_P: "Medium",
 }
 _TECH_DISPLAY = {
-    TI_COMAG:      "CoMag® (high-rate magnetic ballasted clarification)",
-    TI_BIOMAG:     "BioMag® (ballasted MBBR-activated sludge hybrid)",
+    # v24Z76: Process-class-first language. Vendor names in parentheses as examples only.
+    TI_COMAG:      "Ballasted clarification (high-rate solids separation)"
+                   " — e.g. CoMag, BioMag or equivalent",
+    TI_BIOMAG:     "Ballasted MBBR hybrid clarification"
+                   " — e.g. BioMag or equivalent",
     TI_EQ_BASIN:   "Equalisation / flow balancing basin",
     TI_STORM_STORE:"Storm storage / attenuation infrastructure",
-    TI_INDENSE:    "inDENSE® (gravimetric biomass selection)",
-    TI_MIGINDENSE: "MOB (miGRATE™ + inDENSE®) — SBR intensification",
-    TI_MEMDENSE:   "memDENSE® (MBR biomass selection)",
-    TI_HYBAS:      "Hybas™ (IFAS / integrated biofilm)",
-    TI_IFAS:       "IFAS (integrated fixed-film activated sludge)",
-    TI_MBBR:       "MBBR / MBBR-Bardenpho",
-    TI_MABR:       "MABR OxyFAS® (membrane-aerated biofilm reactor)",
-    TI_BARDENPHO:  "Bardenpho / process zone optimisation",
+    TI_INDENSE:    "Hydrocyclone-based sludge densification"
+                   " — e.g. inDENSE or equivalent",
+    TI_MIGINDENSE: "Mobile Organic Biofilm (MOB) intensification"
+                   " — e.g. miGRATE + inDENSE or equivalent engineered biofilm systems",
+    TI_MEMDENSE:   "MBR biomass densification and selection",
+    TI_HYBAS:      "Integrated Fixed-Film Activated Sludge (IFAS)"
+                   " — e.g. Hybas or equivalent carrier-based system",
+    TI_IFAS:       "Integrated Fixed-Film Activated Sludge (IFAS)",
+    TI_MBBR:       "Moving Bed Biofilm Reactor (MBBR)",
+    TI_MABR:       "Membrane-aerated biofilm reactor (MABR)"
+                   " — e.g. OxyFAS, GS3 or equivalent",
+    TI_BARDENPHO:  "Multi-stage biological nutrient removal (Bardenpho-type)",
     TI_RECYCLE_OPT:"Recycle ratio optimisation",
     TI_ZONE_RECONF:"Zone reconfiguration / EBPR optimisation",
-    TI_DENFILTER:  "Denitrification filter (methanol-dosed tertiary denitrification)",
-    TI_PDNA:       "PdNA — Partial Denitrification-Anammox (IFAS/MBBR/MABR retained)",
-    TI_TERT_P:     "Tertiary phosphorus removal (chemical dosing + filtration)",
+    TI_DENFILTER:  "Denitrification filter (tertiary nitrogen polishing)",
+    TI_PDNA:       "Partial Denitrification-Anammox (PdNA)",
+    TI_TERT_P:     "Tertiary phosphorus removal (chemical dosing and filtration)",
 }
 
 
