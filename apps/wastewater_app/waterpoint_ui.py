@@ -453,6 +453,16 @@ def _render_synthesis_layers(result, scenario, project) -> None:
         with st.expander('Affordability & Risk Comparison -- error', expanded=False):
             st.warning(f'Affordability layer could not load: {_e10_err}')
 
+    # -- E11. DEFERRAL CONSEQUENCE ENGINE ---------------------------------
+    try:
+        from apps.wastewater_app.deferral_consequence_engine import build_deferral_consequence
+        _dce = build_deferral_consequence(pathway, _co_aff, ap, ctx)
+        if _dce.is_active:
+            _render_deferral(_dce)
+    except Exception as _e11_err:
+        with st.expander('Deferral Consequence Analysis -- error', expanded=False):
+            st.warning(f'Deferral engine could not load: {_e11_err}')
+
 
 
 def _render_refinement_section(pathway, ctx: dict) -> None:
@@ -1085,5 +1095,91 @@ def _render_affordability(pathway, co, aff, ctx: dict) -> None:
         if aff.board_bullets:
             st.markdown("**Board-level summary**")
             for b in aff.board_bullets:
+                st.markdown(f"- {b}")
+
+
+def _render_deferral(dce) -> None:
+    """
+    E11: Deferral Consequence Analysis (v24Z75).
+    Answers: "If we do nothing, what happens next?"
+    """
+    import streamlit as st
+
+    traj_icon = {
+        "Stable": "🟢", "Increasing": "🟡",
+        "Accelerating": "🟠", "Critical": "🔴",
+    }
+    cost_icon = {"Low": "🟢", "Moderate": "🟡", "High": "🟠", "Severe": "🔴"}
+
+    t_icon = traj_icon.get(dce.risk_trajectory, "🟡")
+    c_icon = cost_icon.get(dce.cost_exposure, "🟡")
+
+    with st.expander(
+        f"⏱️ Deferral Consequence Analysis — "
+        f"{t_icon} Trajectory: {dce.risk_trajectory}  |  "
+        f"{c_icon} Cost exposure: {dce.cost_exposure}",
+        expanded=(dce.risk_trajectory in ("Critical", "Accelerating")),
+    ):
+        # Risk trajectory + cost exposure header
+        col1, col2 = st.columns(2)
+        col1.metric("Risk trajectory", f"{t_icon} {dce.risk_trajectory}")
+        col2.metric("Cost exposure from deferral", f"{c_icon} {dce.cost_exposure}")
+
+        st.caption(dce.risk_trajectory_reason)
+        if dce.cost_exposure_reason:
+            st.caption(dce.cost_exposure_reason)
+
+        st.markdown("---")
+
+        # Consequence timeline
+        st.markdown("**Consequence timeline if investment is deferred**")
+        horizon_icon = {"Immediate": "🔴", "Short": "🟠", "Medium": "🟡", "Long": "🔵"}
+
+        for h in dce.consequence_timeline:
+            hi = next((v for k,v in horizon_icon.items() if k.lower() in h.horizon.lower()), "🔵")
+            with st.container():
+                st.markdown(f"**{hi} {h.horizon}**")
+                c_a, c_b = st.columns(2)
+                with c_a:
+                    st.caption("**Failure mode**")
+                    st.markdown(h.primary_failure)
+                    st.caption("**System impact**")
+                    st.markdown(h.system_impact[:180])
+                with c_b:
+                    st.caption("**Regulatory impact**")
+                    st.markdown(h.regulatory_impact[:150])
+                    st.caption("**Operational impact**")
+                    st.markdown(h.operational_impact[:120])
+                st.markdown("<hr style='margin:4px 0;border-color:#eee;'>",
+                            unsafe_allow_html=True)
+
+        # Failure escalation pathway
+        if dce.escalation_pathway:
+            st.markdown("**Failure escalation pathway**")
+            for i, step in enumerate(dce.escalation_pathway, 1):
+                st.markdown(f"{i}. {step}")
+
+        # Point of no return
+        if dce.point_of_no_return:
+            st.warning(f"**Point of no return:** {dce.point_of_no_return}")
+
+        # Per-stage deferral frames
+        if dce.stage_frames:
+            st.markdown("---")
+            st.markdown("**Per-stage deferral decision frame**")
+            for sf in dce.stage_frames:
+                st.markdown(f"**{sf.stage_label}**")
+                st.caption(
+                    f"Deferring this stage avoids: {sf.avoids}  |  "
+                    f"But introduces: {sf.introduces_risk}  |  "
+                    f"Failure mode: {sf.failure_mode}  |  "
+                    f"Likely within: {sf.time_horizon}"
+                )
+
+        # Board delay bullets
+        if dce.board_delay_bullets:
+            st.markdown("---")
+            st.markdown("**Consequence of delay — board summary**")
+            for b in dce.board_delay_bullets:
                 st.markdown(f"- {b}")
 
