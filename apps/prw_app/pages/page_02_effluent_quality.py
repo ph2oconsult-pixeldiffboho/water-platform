@@ -16,7 +16,7 @@ def render_effluent_quality():
     preset = EFFLUENT_PRESETS.get(preset_key, EFFLUENT_PRESETS["cas"])
 
     def _default(key, fallback):
-        return st.session_state.get(f"pp_{key}", fallback)
+        return float(st.session_state.get(f"pp_{key}", fallback))
 
     # Physical
     st.markdown("---")
