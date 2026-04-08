@@ -154,19 +154,18 @@ for col, app in zip(cols, APPS):
 
 # ── App routing ────────────────────────────────────────────────────────────
 
-if st.session_state.get("launch_app") == "drinking_water":
-    st.session_state["active_app"] = "drinking_water"
-    st.session_state.pop("launch_app", None)
+# Resolve any pending launch → active transition first
+_pending = st.session_state.pop("launch_app", None)
+if _pending:
+    st.session_state["active_app"] = _pending
 
-if st.session_state.get("active_app") == "drinking_water":
+_active = st.session_state.get("active_app")
+
+if _active == "drinking_water":
     from apps.drinking_water_app.app import run as run_aquapoint
     run_aquapoint()
 
-if st.session_state.get("launch_app") == "biosolids":
-    st.session_state["active_app"] = "biosolids"
-    st.session_state.pop("launch_app", None)
-
-if st.session_state.get("active_app") == "biosolids":
+elif _active == "biosolids":
     import sys
     from pathlib import Path as _Path
     _bp_dir = _Path(__file__).resolve().parent / "biosolids_app"
@@ -211,12 +210,7 @@ if st.session_state.get("active_app") == "biosolids":
     _bp_sidebar.divider()
     _bp_sidebar.caption("BioPoint V1 — Biosolids Decision Engine")
 
-if st.session_state.get("launch_app") == "wastewater":
-    # Set a persistent flag so the wastewater app stays active across rerenders
-    st.session_state["active_app"] = "wastewater"
-    st.session_state.pop("launch_app", None)
-
-if st.session_state.get("active_app") == "wastewater":
+elif _active == "wastewater":
     # Import and initialise shared session state
     from apps.ui.session_state import initialise_session_defaults
     initialise_session_defaults()
@@ -321,7 +315,7 @@ if st.session_state.get("active_app") == "wastewater":
     except Exception:
         _ww_sidebar.caption("v1.0 — Concept Stage Planning")
 
-# ── Platform footer ────────────────────────────────────────────────────────
+# ── Platform footer (homepage only) ───────────────────────────────────────
 else:
     st.divider()
     st.markdown("""
