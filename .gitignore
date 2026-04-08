@@ -43,3 +43,5 @@ Thumbs.db
 # Node (report generation scripts)
 node_modules/
 *.zip
+__pycache__/
+*.pyc
