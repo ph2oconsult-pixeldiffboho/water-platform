@@ -75,6 +75,9 @@ class SourceWaterInputs:
     ph_median: float = 7.5
     ph_min: float = 7.0
 
+    # Bromide (for ozone bromate risk assessment)
+    bromide_ug_l: float = -1.0          # -1 = not measured / unknown; 0+ = measured value
+
     # PFAS / TrOC
     pfas_detected: bool = False
     pfas_concentration_ng_l: float = 0.0
@@ -144,6 +147,10 @@ def _score_constraints(inputs: SourceWaterInputs) -> dict:
     elif inputs.turbidity_p99_ntu and inputs.turbidity_p99_ntu > 50: sol += 2
     if inputs.turbidity_event_max_ntu and inputs.turbidity_event_max_ntu > 500: sol += 2
     if inputs.source_type in ["river"]: sol += 1
+    # Stable groundwater with low median turbidity: reduce solids_events score
+    # Default p95/p99 values inflate this constraint for GW sources that are not event-driven
+    if inputs.source_type == "groundwater" and inputs.turbidity_median_ntu < 5:
+        sol = max(0, sol - 2)
     scores["solids_events"] = min(sol, 10)
 
     # NOM / DBP
@@ -169,8 +176,11 @@ def _score_constraints(inputs: SourceWaterInputs) -> dict:
     scores["algae_cyanobact"] = min(alg, 10)
 
     # Taste and odour (can overlap with algae)
+    # mib_geosmin_issue is a confirmed operational problem — it must win over
+    # general NOM/DBP concern because ozone+BAC is the only reliable continuous fix.
+    # Score decisively above nom_dbp when confirmed (8 vs max 7 for NOM alone).
     tao = 0
-    if inputs.mib_geosmin_issue: tao += 5
+    if inputs.mib_geosmin_issue: tao += 8
     if inputs.algae_risk in ["high", "confirmed_bloom"]: tao += 2
     scores["taste_odour"] = min(tao, 10)
 
@@ -183,9 +193,14 @@ def _score_constraints(inputs: SourceWaterInputs) -> dict:
 
     # Hardness
     hard = 0
-    if inputs.hardness_median_mg_l > 400: hard += 5
+    if inputs.hardness_median_mg_l > 400: hard += 7
+    elif inputs.hardness_median_mg_l > 300: hard += 5
     elif inputs.hardness_median_mg_l > 250: hard += 3
     elif inputs.hardness_median_mg_l > 150: hard += 1
+    # Groundwater and blended sources: hardness is a more significant treatment driver
+    # than for surface water where turbidity/NOM dominate
+    if inputs.source_type in ["groundwater", "blended"] and inputs.hardness_median_mg_l > 200:
+        hard += 2
     scores["hardness"] = min(hard, 10)
 
     # Low alkalinity

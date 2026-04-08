@@ -543,15 +543,25 @@ def _evaluate_archetype_G(inputs: SourceWaterInputs, classification: Classificat
             "refractory compounds not addressed by standard ozone alone."
         )
 
-    # Ozone bromide warning
-    # Assume bromate risk if high turbidity river (proxy for bromide uncertainty)
-    # In reality, bromide data should be collected
-    flags.append(
-        "⚠ Bromide assessment required before finalising ozone dose: "
-        "bromide concentrations >50 μg/L combined with ozone doses >1 mg/L "
-        "risk bromate formation above 10 μg/L (ADWG limit). "
-        "pH depression, H₂O₂ addition, or ammonia may be required for bromate control."
-    )
+    # Ozone bromide warning — calibrated to whether bromide has been measured
+    if inputs.bromide_ug_l < 0:
+        # Bromide not measured — require measurement before proceeding
+        flags.append(
+            "⚠ Bromide not measured: bromide data is required before finalising ozone. "
+            "If bromide exceeds 50 μg/L, ozone doses above 1 mg/L risk bromate formation "            "above the 10 μg/L ADWG limit. Measure bromide across seasons before detailed design."
+        )
+    elif inputs.bromide_ug_l > 100:
+        flags.append(
+            f"⚠ HIGH BROMIDE ({inputs.bromide_ug_l:.0f} μg/L): bromate formation at practical "            f"ozone doses is likely to exceed the 10 μg/L ADWG limit. "            "Bromate suppression is mandatory — pH depression, H₂O₂ co-dosing, or ammonia "            "addition must be incorporated into the ozone system design. "            "Consider whether ozone remains viable at this bromide concentration."
+        )
+    elif inputs.bromide_ug_l > 50:
+        flags.append(
+            f"⚠ ELEVATED BROMIDE ({inputs.bromide_ug_l:.0f} μg/L): bromate formation risk is "            f"significant at typical ozone doses. "            "Bromate suppression strategy (pH depression, H₂O₂, ammonia) is required. "            "Confirm bromate compliance in treatability testing before design."
+        )
+    else:
+        flags.append(
+            f"Bromide measured at {inputs.bromide_ug_l:.0f} μg/L — below 50 μg/L threshold. "            "Bromate formation at practical ozone doses is unlikely to exceed 10 μg/L ADWG limit "            "but should be verified in pilot or bench-scale testing."
+        )
 
     if inputs.cyanobacteria_confirmed:
         flags.append(

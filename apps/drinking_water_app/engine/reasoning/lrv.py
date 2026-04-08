@@ -70,11 +70,17 @@ LRV_BARRIER_CREDITS = {
                                  "Credit requires integrity verification.", "validated"),
     },
     "ro": {
-        "protozoa":  (3.5, 4.5, "Very high removal. Validated in advanced water recycling systems. "
-                                 "Credit capped conservatively — integrity testing required. "
+        "protozoa":  (3.5, 4.0, "Very high removal. Validated in advanced water recycling systems. "
+                                 "Credit capped at 4.0 log maximum per WSAA HBT single-barrier rule — "
+                                 "no single process may be credited more than 4 log for any pathogen. "
+                                 "Integrity testing required to claim credit. "
                                  "Where MF/UF precedes RO, protozoan credit is dominated by MF/UF.", "validated"),
-        "bacteria":  (4.0, 5.5, "Very high removal.", "validated"),
-        "virus":     (3.0, 5.5, "High removal. Credit requires integrity testing.", "validated"),
+        "bacteria":  (4.0, 4.0, "Very high removal. Capped at 4.0 log maximum per WSAA HBT "
+                                 "single-barrier rule — no single process credited >4 log. "
+                                 "Integrity testing required.", "validated"),
+        "virus":     (3.0, 4.0, "High removal. Capped at 4.0 log maximum per WSAA HBT "
+                                 "single-barrier rule — no single process credited >4 log. "
+                                 "Credit requires integrity testing and validated rejection data.", "validated"),
     },
     "nf": {
         "protozoa":  (3.0, 4.0, "High removal. Depends on MWCO and membrane condition.", "indicative"),
@@ -99,13 +105,32 @@ LRV_BARRIER_CREDITS = {
         "virus":     (0.0, 1.0, "Very low inactivation — secondary residual maintenance only.", "validated"),
     },
     "uv_disinfection": {
-        "protozoa":  (1.5, 2.0, "Validated. LP UV at 40 mJ/cm² achieves ~2 log Cryptosporidium, "
-                                 "~3 log Giardia. Credited conservatively at 2 log for Crypto "
-                                 "(ADWG Table 10.1 LP UV validated credit). "
-                                 "MP UV at higher doses can achieve 3+ log but requires dose verification.", "validated"),
-        "bacteria":  (1.5, 2.5, "Validated. Effective at standard UV doses.", "validated"),
-        "virus":     (1.0, 2.5, "Validated. LP UV less effective for adenovirus. "
-                                 "Higher doses required for full viral credit (>100 mJ/cm²).", "validated"),
+        "protozoa":  (4.0, 4.0, "Validated. LP UV at 22 mJ/cm² achieves 4 log Cryptosporidium "
+                                 "and 4 log Giardia inactivation per USEPA UVDGM 2006 Table 3-1, "
+                                 "referenced by WSAA Health-Based Targets. "
+                                 "22 mJ/cm² is the protozoa design dose. "
+                                 "Capped at 4.0 log per WSAA HBT single-barrier rule. "
+                                 "Credit conditional on validated dose delivery and UVT ≥72%.", "validated"),
+        "bacteria":  (4.0, 4.0, "Validated. LP UV at 40 mJ/cm² achieves 4 log bacterial inactivation "
+                                 "(WSAA HBT / reviewer reference). "
+                                 "40 mJ/cm² is the bacteria design dose — separate from the 22 mJ/cm² "
+                                 "protozoa design dose. The governing plant design dose is therefore "
+                                 "40 mJ/cm² (the higher of the two), at which protozoa also achieve "
+                                 "4 log (already met at 22 mJ/cm²). "
+                                 "Capped at 4.0 log per WSAA HBT single-barrier rule. "
+                                 "NOTE: bacteria are not in USEPA UVDGM 2006 Table 3-1; "
+                                 "this credit uses the WSAA HBT bacteria design dose reference.", "validated"),
+        "virus":     (0.5, 1.0, "LP UV virus credit is GOVERNED BY ADENOVIRUS RESISTANCE, "
+                                 "not MS2 surrogate. "
+                                 "At the 40 mJ/cm² design dose: adenovirus achieves approximately "
+                                 "0.5–1.0 log LP UV inactivation. "
+                                 "MS2 surrogate (USEPA UVDGM 2006 Table 3-1) achieves ~3.0 log at "
+                                 "40 mJ/cm² — but MS2 does not represent adenovirus resistance. "
+                                 "Human adenovirus requires ~168 mJ/cm² for 4 log LP UV — "
+                                 "not a practical design dose. "
+                                 "UV virus credit is therefore 0.5–1.0 log at the 40 mJ/cm² design dose. "
+                                 "PRIMARY VIRUS INACTIVATION CREDIT MUST COME FROM CHLORINE Ct — "
+                                 "LP UV alone is not an adequate virus barrier.", "validated"),
     },
     "ozonation": {
         "protozoa":  (0.0, 0.5, "CRITICAL: Cryptosporidium is highly resistant to ozone. "
@@ -114,13 +139,32 @@ LRV_BARRIER_CREDITS = {
                                  "up to 0.5 log at low Ct. High ozone credit for protozoa requires "
                                  "Ct >10 mg·min/L which is NOT achievable in most plants.", "validated"),
         "bacteria":  (2.0, 3.5, "Validated. Strong oxidant — effective bacterial inactivation.", "validated"),
-        "virus":     (2.0, 3.5, "Validated. Effective virus inactivation at practical Ct.", "validated"),
+        "virus":     (2.0, 3.5, "Validated. Ozone is effective for virus inactivation at practical "
+                                 "water treatment Ct (0.5–2.0 mg·min/L). Credit 2.0–3.5 log at "
+                                 "practical ozone doses. Ozone provides good virus inactivation — "
+                                 "unlike LP UV which is limited by adenovirus resistance, ozone "
+                                 "inactivates adenovirus effectively at practical Ct values.", "validated"),
     },
     "aop": {
-        "protozoa":  (1.0, 2.5, "UV/H₂O₂: credit from UV component (protozoa). "
-                                 "O₃/H₂O₂: limited additional Crypto credit over ozone alone.", "indicative"),
-        "bacteria":  (2.0, 3.5, "Indicative.", "indicative"),
-        "virus":     (2.0, 3.5, "Indicative.", "indicative"),
+        "protozoa":  (1.0, 2.5, "UV/H₂O₂ AOP: credit from the UV component only (protozoa). "
+                                 "Same dose-response as uv_disinfection for Cryptosporidium. "
+                                 "O₃/H₂O₂ (peroxone): limited additional Crypto credit over ozone alone — "
+                                 "H₂O₂ quenches ozone and reduces ozone Ct, so peroxone provides "
+                                 "less protozoa credit than ozone alone at same dose.", "indicative"),
+        "bacteria":  (0.0, 0.0, "AOP bacterial LRV credit: ZERO — insufficient validated data for "
+                                 "a defensible planning-level credit. "
+                                 "UV component provides bacterial inactivation (see uv_disinfection) "
+                                 "but the additional H₂O₂ hydroxyl radical component does not have "
+                                 "validated bacterial LRV data at practical AOP doses for drinking water. "
+                                 "Bacterial credit must come from the UV component (credited separately) "
+                                 "or from downstream chlorination.", "indicative"),
+        "virus":     (0.0, 0.0, "AOP virus LRV credit: ZERO — insufficient validated data for "
+                                 "a defensible planning-level credit. "
+                                 "LP UV component at practical AOP doses achieves ~2.0–2.5 log virus "
+                                 "(same as uv_disinfection, adenovirus governs). "
+                                 "H₂O₂ hydroxyl radical contribution to virus inactivation is not "
+                                 "validated to a standard that supports a credited LRV at this stage. "
+                                 "Virus credit must come from downstream chlorination.", "indicative"),
     },
 
     # ── Source protection ─────────────────────────────────────────────────────
@@ -216,16 +260,24 @@ def calculate_lrv(
         result.barriers.append(blrv)
 
     # Sum totals
+    # NOTE: Raw arithmetic summation is used for gap/compliance checks.
+    # Display totals are capped at (required + 2.0) to avoid presenting
+    # physically implausible values (e.g. 12 log protozoa, 13 log bacteria).
+    # The cap does not affect compliance assessment — gap_high uses raw totals.
+    DISPLAY_REDUNDANCY_CAP = 2.0   # max log surplus above target shown in UI
     for pathogen in PATHOGEN_CLASSES:
         total_low = sum(b.credited_low.get(pathogen, 0) for b in result.barriers)
         total_high = sum(b.credited_high.get(pathogen, 0) for b in result.barriers)
         required = required_lrv.get(pathogen, 0)
-        result.total_credited_low[pathogen] = round(total_low, 1)
-        result.total_credited_high[pathogen] = round(total_high, 1)
+        # Compliance uses raw totals
         result.gap_low[pathogen] = round(required - total_low, 1)
         result.gap_high[pathogen] = round(required - total_high, 1)
         result.meets_target_low[pathogen] = total_low >= required
         result.meets_target_high[pathogen] = total_high >= required
+        # Display uses capped totals
+        cap = required + DISPLAY_REDUNDANCY_CAP if required > 0 else total_high
+        result.total_credited_low[pathogen] = round(min(total_low, cap), 1)
+        result.total_credited_high[pathogen] = round(min(total_high, cap), 1)
 
     # Single-barrier dependence check
     for pathogen in PATHOGEN_CLASSES:
@@ -242,18 +294,29 @@ def calculate_lrv(
                 )
 
     # Key risks
+    # Note: gap_high uses raw (uncapped) totals for compliance assessment.
+    # This means a gap_high > 0 is a genuine deficit even if credited appears capped.
     for pathogen in PATHOGEN_CLASSES:
-        if result.gap_high.get(pathogen, 0) > 0:
+        raw_high = sum(b.credited_high.get(pathogen, 0) for b in result.barriers)
+        raw_low  = sum(b.credited_low.get(pathogen, 0) for b in result.barriers)
+        required = result.required.get(pathogen, 0)
+        if raw_high < required:
             result.key_risks.append(
-                f"⚠ {pathogen.title()} LRV DEFICIT: required {result.required.get(pathogen, 0):.1f} log, "
-                f"maximum credited {result.total_credited_high.get(pathogen, 0):.1f} log "
-                f"(gap: {result.gap_high[pathogen]:.1f} log). Additional barrier required."
+                f"⚠ {pathogen.title()} LRV DEFICIT: required {required:.1f} log, "
+                f"maximum credited {raw_high:.1f} log "
+                f"(gap: {required - raw_high:.1f} log). Additional barrier required."
             )
-        elif result.gap_low.get(pathogen, 0) > 0:
-            result.key_risks.append(
-                f"⚡ {pathogen.title()} LRV marginal: achieved only under optimistic conditions. "
-                f"Validate barrier credits and consider additional redundancy."
-            )
+        elif raw_low < required:
+            # Meets target at high end only — conditional on all barriers performing optimally.
+            # For virus specifically, flag that Ct verification is load-bearing.
+            if pathogen == "virus":
+                result.key_risks.append(
+                    f"⚡ Virus LRV conditional: target {required:.1f} log met only under 'best case' "                    f"barrier performance ({raw_low:.1f}–{raw_high:.1f} log range). "                    f"Free chlorine Ct is the load-bearing virus barrier — "                    f"verify Ct at governing pH and minimum design temperature. "                    f"Chloramine provides no additional virus inactivation credit."
+                )
+            else:
+                result.key_risks.append(
+                    f"⚡ {pathogen.title()} LRV marginal: target achieved only under optimistic "                    f"conditions ({raw_low:.1f}–{raw_high:.1f} log). "                    f"Validate barrier credits and consider additional redundancy."
+                )
 
     # Disinfection adequacy assessment
     disinfection_barriers = [b for b in result.barriers
@@ -307,7 +370,7 @@ ARCHETYPE_DEFAULT_BARRIERS = {
     "E": ["coagulation_flocculation", "sedimentation", "rapid_gravity_filtration",
           "chlorination", "uv_disinfection"],
     "F": ["coagulation_flocculation", "sedimentation", "rapid_gravity_filtration",
-          "chlorination"],
+          "uv_disinfection", "chlorination"],
     "G": ["coagulation_flocculation", "sedimentation", "rapid_gravity_filtration",
           "ozonation", "chlorination", "uv_disinfection"],
     "H": ["coagulation_flocculation", "mf_uf", "ro",

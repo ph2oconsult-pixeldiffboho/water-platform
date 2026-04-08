@@ -309,7 +309,7 @@ def _rate_complexity(stream_keys: list, inputs: SourceWaterInputs) -> str:
 
     if score <= 3: return "low"
     elif score <= 5: return "moderate"
-    elif score <= 9: return "high"
+    elif score <= 7: return "high"      # lime_sludge alone = 7 → high; +anything = very_high
     else: return "very_high"
 
 

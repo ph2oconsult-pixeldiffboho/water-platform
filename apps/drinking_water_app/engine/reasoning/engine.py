@@ -12,6 +12,16 @@ from .lrv import LRVResult, get_lrv_for_archetype, DEFAULT_LRV_TARGETS
 from .residuals import ResidualsComparisonResult, compare_residuals, assess_archetype_residuals
 from .contaminants import run_contaminant_modules
 from .scorer import ArchetypeScore, score_archetypes
+from .lrv_registry import REGULATORY_FRAMEWORK, get_framework_declaration, REQUIRED_LRV_BY_RISK
+from .assumptions import identify_load_bearing_assumptions, LoadBearingAssumption
+from .v3_modules import (
+    build_ammonia_doctrine, AmmoniaDoctrine,
+    run_simplification_challenge, SimplificationChallengeResult,
+    run_consistency_check, ConsistencyReport,
+    assess_regime_structure, RegimeStructureResult,
+    assess_cyanotoxin_dissolved_phase, CyanotoxinDissolvedPhaseResult,
+    build_residuals_penalty_profile, ResidualspenaltyProfile,
+)
 
 
 @dataclass
@@ -39,6 +49,16 @@ class AquaPointReasoningOutput:
 
     # Tier 1–4 scoring
     scores: list = field(default_factory=list)   # list of ArchetypeScore, sorted
+
+    # v3.0 new modules
+    regulatory_framework: dict = field(default_factory=dict)
+    load_bearing_assumptions: list = field(default_factory=list)
+    ammonia_doctrine: Optional[AmmoniaDoctrine] = None
+    simplification_challenge: Optional[SimplificationChallengeResult] = None
+    consistency_report: Optional[ConsistencyReport] = None
+    regime_assessment: Optional[RegimeStructureResult] = None
+    cyanotoxin_dissolved_phase: Optional[CyanotoxinDissolvedPhaseResult] = None
+    residuals_penalty_profiles: dict = field(default_factory=dict)
 
     # Final outputs
     preferred_archetype_key: str = ""
@@ -193,13 +213,33 @@ def _build_key_warnings(
             "Pre-oxidation before DAF/clarification + filtration risks releasing intracellular toxins."
         )
 
-    # Ozone + bromide
+    # Ozone + bromide — calibrated to whether bromide has been measured
     if archetype_selection.ozone_bromide_warning:
-        warnings.append(
-            "⚠ OZONE + BROMIDE: Bromide measurement is required before finalising ozone. "
-            "If bromide >50 μg/L, bromate suppression strategy is required. "
-            "Consider pH depression, H₂O₂ co-dosing, or ammonia addition."
-        )
+        if inputs.bromide_ug_l < 0:
+            warnings.append(
+                "⚠ OZONE + BROMIDE: Bromide has not been measured for this source. "
+                "Bromide data is required before finalising ozone design — measure across seasons. "
+                "If bromide exceeds 50 μg/L, bromate suppression is required."
+            )
+        elif inputs.bromide_ug_l > 100:
+            warnings.append(
+                f"⚠ HIGH BROMIDE ({inputs.bromide_ug_l:.0f} μg/L): bromate formation at practical "
+                f"ozone doses is likely to exceed the 10 μg/L ADWG limit. "
+                "Bromate suppression (pH depression, H₂O₂, or ammonia) is mandatory. "
+                "Assess whether ozone remains viable at this bromide concentration."
+            )
+        elif inputs.bromide_ug_l > 50:
+            warnings.append(
+                f"⚠ ELEVATED BROMIDE ({inputs.bromide_ug_l:.0f} μg/L): bromate formation risk is "
+                "significant at typical ozone doses. Bromate suppression strategy required. "
+                "Verify compliance in treatability testing before design."
+            )
+        else:
+            warnings.append(
+                f"Bromide measured at {inputs.bromide_ug_l:.0f} μg/L — below 50 μg/L threshold. "
+                "Bromate formation at practical ozone doses is unlikely to exceed ADWG 10 μg/L limit. "
+                "Confirm in pilot or bench-scale testing."
+            )
 
     # Problem transfer
     for flag in residuals.problem_transfer_warnings[:3]:
@@ -273,16 +313,29 @@ def run_reasoning_engine(inputs: SourceWaterInputs) -> AquaPointReasoningOutput:
     if logic_score_obj and logic_score_obj.tier1_pass:
         output.preferred_archetype_key = logic_key
         output.preferred_archetype_label = ARCHETYPES.get(logic_key, {}).get("label", logic_key)
+        output.preferred_archetype_rationale = output.archetype_selection.recommendation_rationale
     else:
         best_passing = next((s for s in output.scores if s.tier1_pass), None)
         if best_passing:
             output.preferred_archetype_key = best_passing.archetype_key
             output.preferred_archetype_label = best_passing.archetype_label
+            # Build rationale from the viable archetype assessments, not the logic_key's rationale
+            aa_match = next(
+                (a for a in output.archetype_selection.viable_archetypes
+                 if a.key == best_passing.archetype_key), None
+            )
+            if aa_match and aa_match.inclusion_rationale:
+                output.preferred_archetype_rationale = aa_match.inclusion_rationale[0]
+            else:
+                output.preferred_archetype_rationale = (
+                    f"{best_passing.archetype_label} is the highest-scoring Tier 1 compliant "
+                    f"archetype for this source water (engineering logic archetype "
+                    f"{logic_key} did not pass Tier 1 screening)."
+                )
         else:
             output.preferred_archetype_key = logic_key
             output.preferred_archetype_label = ARCHETYPES.get(logic_key, {}).get("label", logic_key)
-
-    output.preferred_archetype_rationale = output.archetype_selection.recommendation_rationale
+            output.preferred_archetype_rationale = output.archetype_selection.recommendation_rationale
 
     # ── Executive Summary ─────────────────────────────────────────────────────
     output.executive_summary = _build_executive_summary(
@@ -296,6 +349,52 @@ def run_reasoning_engine(inputs: SourceWaterInputs) -> AquaPointReasoningOutput:
     output.key_warnings = _build_key_warnings(
         output.classification, output.archetype_selection,
         output.residuals, output.scores, inputs
+    )
+
+    # ══ v3.0 MODULES ══════════════════════════════════════════════════════════
+
+    # Regulatory framework lock
+    output.regulatory_framework = REGULATORY_FRAMEWORK
+
+    # Ammonia-disinfection doctrine
+    output.ammonia_doctrine = build_ammonia_doctrine(inputs)
+
+    # Regime structure assessment
+    output.regime_assessment = assess_regime_structure(inputs, output.classification)
+
+    # Cyanotoxin dissolved-phase
+    output.cyanotoxin_dissolved_phase = assess_cyanotoxin_dissolved_phase(
+        inputs, output.preferred_archetype_key
+    )
+
+    # Residuals penalty profiles
+    contaminant_list = output.classification.contaminant_modules_required
+    for key in viable_keys:
+        output.residuals_penalty_profiles[key] = build_residuals_penalty_profile(
+            key, inputs, contaminant_list
+        )
+
+    # Load-bearing assumptions
+    output.load_bearing_assumptions = identify_load_bearing_assumptions(
+        inputs, output.classification,
+        output.preferred_archetype_key,
+        output.contaminant_modules,
+    )
+
+    # Simplification challenge
+    output.simplification_challenge = run_simplification_challenge(
+        inputs, output.preferred_archetype_key,
+        output.preferred_archetype_label, output.scores
+    )
+
+    # Consistency check (final gate)
+    output.consistency_report = run_consistency_check(
+        output.preferred_archetype_key,
+        output.required_lrv,
+        output.lrv_by_archetype,
+        inputs,
+        output.load_bearing_assumptions,
+        output.ammonia_doctrine,
     )
 
     # ── Next Steps ────────────────────────────────────────────────────────────

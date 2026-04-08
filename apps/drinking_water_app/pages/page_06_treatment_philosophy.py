@@ -383,7 +383,8 @@ def render():
         "♻️ Residuals",
         "🧪 Contaminant Modules",
         "📊 Scoring",
-        "⚠️ Uncertainties",
+        "⚠️ Assumptions & Doctrine",
+        "✅ Consistency & Next Steps",
     ])
 
     # ══ TAB 1 — ARCHETYPE SELECTION ══════════════════════════════════════════
@@ -667,14 +668,164 @@ def render():
                     render_kpi_card("Overall",            ov_str)
                 st.markdown(f"**Recommendation:** {_strength_pill(s.recommendation_strength)}", unsafe_allow_html=True)
 
-    # ══ TAB 7 — UNCERTAINTIES ════════════════════════════════════════════════
+    # ══ TAB 7 — LOAD-BEARING ASSUMPTIONS + DOCTRINE ════════════════════════
     with tabs[6]:
+
+        # ── Load-bearing assumptions ─────────────────────────────────────────
+        section_header("Load-Bearing Assumptions", "⚠️")
+        if hasattr(result, 'load_bearing_assumptions') and result.load_bearing_assumptions:
+            assumptions = result.load_bearing_assumptions
+            critical = [a for a in assumptions if a.severity == "critical"]
+            significant = [a for a in assumptions if a.severity == "significant"]
+
+            if critical:
+                st.markdown(f"**{len(critical)} Critical Assumption(s) — must be validated before design proceeds**")
+                for i, a in enumerate(critical, 1):
+                    with st.expander(f"🔴 CRITICAL {i}: {a.assumption[:80]}{'...' if len(a.assumption) > 80 else ''}", expanded=True):
+                        cols = st.columns([1, 1])
+                        with cols[0]:
+                            st.markdown("**Why it matters:**")
+                            st.markdown(a.why_it_matters)
+                            st.markdown("**Dependent element:**")
+                            st.markdown(a.dependent_element)
+                        with cols[1]:
+                            st.markdown("**If assumption proves false:**")
+                            st.markdown(a.failure_consequence)
+                            st.markdown("**Validation required:**")
+                            st.markdown(f"*{a.validation_required}*")
+
+            if significant:
+                st.markdown(f"**{len(significant)} Significant Assumption(s)**")
+                for i, a in enumerate(significant, 1):
+                    with st.expander(f"🟡 SIGNIFICANT {i}: {a.assumption[:80]}{'...' if len(a.assumption) > 80 else ''}"):
+                        st.markdown(f"**Why it matters:** {a.why_it_matters}")
+                        st.markdown(f"**Validation required:** *{a.validation_required}*")
+        else:
+            st.info("No load-bearing assumptions identified for this source and preferred philosophy.")
+
+        st.divider()
+
+        # ── Ammonia-disinfection doctrine ─────────────────────────────────────
+        section_header("Ammonia–Disinfection Operating Doctrine", "🧪")
+        if hasattr(result, 'ammonia_doctrine') and result.ammonia_doctrine:
+            doc = result.ammonia_doctrine
+            if doc.ammonia_significant:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**Raw ammonia:** {doc.raw_ammonia_median_mg_l:.2f} mg/L median NH₃-N")
+                    st.markdown(f"**Breakpoint Cl₂ (median):** ~{doc.breakpoint_cl2_median_mg_l:.1f} mg/L")
+                    st.markdown(f"**Breakpoint Cl₂ (P95):** ~{doc.breakpoint_cl2_p95_mg_l:.1f} mg/L")
+                    st.markdown(f"**Nitrification risk:** {doc.nitrification_risk}")
+                with c2:
+                    if doc.mn_pre_oxidation_conflict:
+                        st.warning(f"⚠️ Mn pre-oxidation conflict: {doc.mn_pre_oxidation_recommendation[:150]}")
+
+                for label, text in [
+                    ("What UV is doing", doc.uv_role),
+                    ("What free chlorine is doing", doc.chlorine_role),
+                    ("What chloramines are doing", doc.chloramine_role),
+                ]:
+                    with st.expander(f"📌 {label}"):
+                        st.markdown(text)
+
+                if doc.ammonia_changes:
+                    st.markdown("**How ammonia changes the design:**")
+                    for i, change in enumerate(doc.ammonia_changes, 1):
+                        st.markdown(f"{i}. {change}")
+
+                if doc.load_bearing_instruments:
+                    st.markdown("**Load-bearing instrumentation:**")
+                    for inst in doc.load_bearing_instruments:
+                        st.markdown(f"- {inst}")
+            else:
+                st.success(f"Source ammonia is negligible ({doc.raw_ammonia_median_mg_l:.3f} mg/L NH₃-N). Standard free Cl₂ Ct contact — no breakpoint chlorination required.")
+
+        st.divider()
+
+        # ── Regime structure assessment ───────────────────────────────────────
+        section_header("Regime Structure Assessment", "🔄")
+        if hasattr(result, 'regime_assessment') and result.regime_assessment:
+            ra = result.regime_assessment
+            if ra.dual_regime_detected:
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.markdown(f"**Regime A:** {ra.regime_a_description}")
+                    st.markdown(f"**Co-occurrence at peak:** {'Yes' if ra.cooccurrence_at_peak else 'No (anti-correlated)'}")
+                    st.markdown(f"*{ra.cooccurrence_evidence}*")
+                with col_b:
+                    st.markdown(f"**Regime B:** {ra.regime_b_description}")
+                    st.markdown(f"**Shared backbone practical:** {'Yes' if ra.shared_backbone_practical else 'No'}")
+                    if ra.shared_backbone_practical:
+                        st.markdown(f"*{ra.shared_backbone_description}*")
+
+                if ra.dual_mode_justified:
+                    st.success(f"✅ Dual-mode plant justified. {ra.recommendation}")
+                    if ra.regime_capital_premium:
+                        st.info(ra.regime_capital_premium)
+                else:
+                    st.info(f"Single-mode compromise acceptable. {ra.recommendation}")
+            else:
+                st.info(f"Single operating regime identified. {ra.recommendation}")
+
+        st.divider()
+
+        # ── Simplification challenge ──────────────────────────────────────────
+        section_header("Simplification Challenge", "✂️")
+        if hasattr(result, 'simplification_challenge') and result.simplification_challenge:
+            sc = result.simplification_challenge
+            if sc.challenge_passed and not sc.flags:
+                st.success(f"✅ {sc.summary}")
+            else:
+                st.warning(f"⚠️ {sc.summary}")
+                for flag in sc.flags:
+                    with st.expander(f"Flag: {flag.question}"):
+                        st.markdown(f"**Finding:** {flag.finding}")
+                        st.markdown(f"**Recommendation:** {flag.recommendation}")
+                        if flag.process_that_could_be_removed:
+                            st.markdown(f"**Process(es) to review:** {flag.process_that_could_be_removed}")
+            st.markdown(f"**Minimum viable train:** {sc.minimum_viable_train_description}")
+
+    # ══ TAB 8 — CONSISTENCY + NEXT STEPS ════════════════════════════════════
+    with tabs[7]:
+        # ── Consistency report ────────────────────────────────────────────────
+        section_header("Consistency Check", "✅")
+        if hasattr(result, 'consistency_report') and result.consistency_report:
+            cr = result.consistency_report
+            if cr.passed and not cr.warnings:
+                st.success(f"✅ {cr.summary}")
+            elif cr.passed:
+                st.warning(f"⚠️ {cr.summary}")
+                for w in cr.warnings:
+                    st.markdown(f"- **{w.check_name}:** {w.description}")
+            else:
+                st.error(f"❌ {cr.summary}")
+                for e in cr.errors:
+                    st.error(f"ERROR — {e.check_name}: {e.description}")
+                for w in cr.warnings:
+                    st.warning(f"WARNING — {w.check_name}: {w.description}")
+
+        st.divider()
+
+        # ── Regulatory framework ──────────────────────────────────────────────
+        section_header("Regulatory Framework Declaration", "📋")
+        if hasattr(result, 'regulatory_framework') and result.regulatory_framework:
+            rf = result.regulatory_framework
+            st.markdown(f"**Framework:** {rf.get('name', 'WSAA HBT / USEPA UVDGM 2006')}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("UV Protozoa dose", f"{rf.get('uv_protozoa_design_dose_mj_cm2', 22)} mJ/cm²", "4.0 log Crypto")
+            c2.metric("UV Bacteria dose", f"{rf.get('uv_bacteria_design_dose_mj_cm2', 40)} mJ/cm²", "4.0 log bacteria")
+            c3.metric("Single-barrier cap", f"{rf.get('single_barrier_max_log', 4.0):.1f} log", "WSAA HBT rule")
+            st.caption(rf.get('note', ''))
+
+        st.divider()
+
+        # ── Critical uncertainties ────────────────────────────────────────────
         section_header("Critical Uncertainties", "❓")
         for i, unc in enumerate(result.critical_uncertainties, 1):
             st.markdown(f"""
-                <div style="background:#1a1a2e;border-left:3px solid #f39c12;padding:0.6rem 1rem;
+                <div style="background:#fff8e6;border-left:3px solid #f39c12;padding:0.6rem 1rem;
                             border-radius:0 6px 6px 0;margin:0.35rem 0;
-                            font-size:0.84rem;color:#d4a843;line-height:1.55">
+                            font-size:0.84rem;color:#92400e;line-height:1.55">
                     {i}. {unc}
                 </div>
             """, unsafe_allow_html=True)
@@ -684,7 +835,7 @@ def render():
             st.markdown(f"""
                 <div style="display:flex;gap:0.8rem;align-items:flex-start;padding:0.5rem 0;
                             border-bottom:1px solid #e2e8f0;font-size:0.85rem">
-                    <span style="color:#4a9eff;font-weight:700;min-width:1.5rem">{i}.</span>
+                    <span style="color:#1a56a0;font-weight:700;min-width:1.5rem">{i}.</span>
                     <span style="color:#334155;line-height:1.55">{step}</span>
                 </div>
             """, unsafe_allow_html=True)
