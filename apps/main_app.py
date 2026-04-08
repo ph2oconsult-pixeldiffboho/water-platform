@@ -87,8 +87,8 @@ APPS = [
             "Catchment to tap planning."
         ),
         "key": "drinking_water",
-        "status": "coming",
-        "status_label": "Coming — Stage 2",
+        "status": "ready",
+        "status_label": "✓ Available",
     },
     {
         "icon": "♻️",
@@ -109,8 +109,8 @@ APPS = [
             "Mass and energy balance with end-use pathway analysis."
         ),
         "key": "biosolids",
-        "status": "coming",
-        "status_label": "Coming — Stage 4",
+        "status": "ready",
+        "status_label": "✓ Available",
     },
 ]
 
@@ -148,6 +148,61 @@ for col, app in zip(cols, APPS):
             )
 
 # ── App routing ────────────────────────────────────────────────────────────
+
+if st.session_state.get("launch_app") == "drinking_water":
+    st.session_state["active_app"] = "drinking_water"
+    st.session_state.pop("launch_app", None)
+
+if st.session_state.get("active_app") == "drinking_water":
+    from apps.drinking_water_app.app import run as run_aquapoint
+    run_aquapoint()
+
+if st.session_state.get("launch_app") == "biosolids":
+    st.session_state["active_app"] = "biosolids"
+    st.session_state.pop("launch_app", None)
+
+if st.session_state.get("active_app") == "biosolids":
+    import sys
+    from pathlib import Path as _Path
+    _bp_dir = _Path(__file__).resolve().parent / "biosolids_app"
+    if str(_bp_dir) not in sys.path:
+        sys.path.insert(0, str(_bp_dir))
+    st.divider()
+    _bp_sidebar = st.sidebar
+    _bp_sidebar.title("🌱 BioPoint")
+    _bp_sidebar.markdown("*← Back to Platform Home: restart the launcher*")
+    _bp_sidebar.divider()
+    BP_PAGES = {
+        "⚙️ Inputs":             "01_inputs",
+        "📊 Pathway Rankings":   "02_results",
+        "🔥 Drying & Coupling":  "03_drying",
+        "🛡️ ITS & PFAS":         "04_pathways",
+        "📈 Pyrolysis Envelope": "05_pyrolysis",
+    }
+    if st.session_state.get("_app_context") != "biosolids":
+        st.session_state["page"] = "01_inputs"
+        st.session_state["_app_context"] = "biosolids"
+    bp_selected = _bp_sidebar.radio(
+        "Navigate",
+        options=list(BP_PAGES.keys()),
+        index=list(BP_PAGES.values()).index(st.session_state.get("page", "01_inputs"))
+        if st.session_state.get("page") in BP_PAGES.values() else 0,
+    )
+    st.session_state["page"] = BP_PAGES[bp_selected]
+    page_key = st.session_state["page"]
+    if page_key == "01_inputs":
+        from apps.biosolids_app.pages import page_01_inputs; page_01_inputs.render()
+    elif page_key == "02_results":
+        from apps.biosolids_app.pages import page_02_results; page_02_results.render()
+    elif page_key == "03_drying":
+        from apps.biosolids_app.pages import page_03_drying; page_03_drying.render()
+    elif page_key == "04_pathways":
+        from apps.biosolids_app.pages import page_04_pathways; page_04_pathways.render()
+    elif page_key == "05_pyrolysis":
+        from apps.biosolids_app.pages import page_05_pyrolysis; page_05_pyrolysis.render()
+    _bp_sidebar.divider()
+    _bp_sidebar.caption("BioPoint V1 — Biosolids Decision Engine")
+
 if st.session_state.get("launch_app") == "wastewater":
     # Set a persistent flag so the wastewater app stays active across rerenders
     st.session_state["active_app"] = "wastewater"
