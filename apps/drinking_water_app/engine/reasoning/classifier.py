@@ -78,6 +78,9 @@ class SourceWaterInputs:
     # Bromide (for ozone bromate risk assessment)
     bromide_ug_l: float = -1.0          # -1 = not measured / unknown; 0+ = measured value
 
+    # Ammonia (for disinfection doctrine — breakpoint chlorination, Mn pre-oxidation conflict)
+    ammonia_mg_l_nh3n: float = 0.0      # NH3-N median mg/L; 0 = not detected / not measured
+
     # PFAS / TrOC
     pfas_detected: bool = False
     pfas_concentration_ng_l: float = 0.0
@@ -85,9 +88,11 @@ class SourceWaterInputs:
 
     # Pathogen / LRV context
     catchment_risk: str = "moderate"                 # low / moderate / high / very_high
-    pathogen_lrv_required_protozoa: float = 4.0      # log units
-    pathogen_lrv_required_bacteria: float = 6.0
-    pathogen_lrv_required_virus: float = 6.0
+    # Set to -1 to use framework-derived targets (recommended).
+    # Set to a positive value ONLY to explicitly override the framework target.
+    pathogen_lrv_required_protozoa: float = -1.0     # -1 = use framework target
+    pathogen_lrv_required_bacteria: float = -1.0
+    pathogen_lrv_required_virus: float = -1.0
 
     # Operational context
     is_retrofit: bool = False
@@ -167,10 +172,13 @@ def _score_constraints(inputs: SourceWaterInputs) -> dict:
     scores["nom_dbp"] = min(nom, 10)
 
     # Algae / cyanobacteria
+    # When cyanobacteria is confirmed, this constraint MUST dominate solids_events
+    # (turbidity variability), because the treatment response is fundamentally
+    # different — DAF + cell-removal-before-ozone — not just more clarification.
     alg = 0
     alg_risk_map = {"low": 0, "moderate": 2, "high": 4, "confirmed_bloom": 6}
     alg += alg_risk_map.get(inputs.algae_risk, 0)
-    if inputs.cyanobacteria_confirmed: alg += 2
+    if inputs.cyanobacteria_confirmed: alg += 4   # ensures dominance over solids_events
     if inputs.cyanotoxin_detected: alg += 2
     if inputs.mib_geosmin_issue: alg += 1
     scores["algae_cyanobact"] = min(alg, 10)
@@ -267,9 +275,17 @@ def identify_constraints(inputs: SourceWaterInputs) -> tuple:
     scores = _score_constraints(inputs)
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-    primary = ranked[0][0]
-    # Secondary: any other constraint scoring >= 3 or within 3 points of primary
     primary_score = ranked[0][1]
+
+    # If all constraints score 0 (very clean/simple source), default to solids_events
+    # as the primary driver — avoids alphabetically-arbitrary tie-breaking that can
+    # route clean groundwater to DAF or other inappropriate archetypes.
+    if primary_score == 0:
+        primary = "solids_events"
+    else:
+        primary = ranked[0][0]
+
+    # Secondary: any other constraint scoring >= 3 or within 3 points of primary
     secondary = [
         k for k, v in ranked[1:]
         if v >= 3 or (primary_score > 0 and v >= primary_score - 3)

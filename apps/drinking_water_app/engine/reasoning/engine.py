@@ -81,7 +81,8 @@ def _derive_required_lrv(inputs: SourceWaterInputs) -> dict:
     else:
         base = DEFAULT_LRV_TARGETS["potable_low_risk"]
 
-    # Override with explicit inputs if provided
+    # Override with explicit inputs only when user has deliberately set them (> 0).
+    # Default sentinel is -1 — do not override the framework target in that case.
     result = dict(base)
     if inputs.pathogen_lrv_required_protozoa > 0:
         result["protozoa"] = inputs.pathogen_lrv_required_protozoa
@@ -315,11 +316,34 @@ def run_reasoning_engine(inputs: SourceWaterInputs) -> AquaPointReasoningOutput:
         output.preferred_archetype_label = ARCHETYPES.get(logic_key, {}).get("label", logic_key)
         output.preferred_archetype_rationale = output.archetype_selection.recommendation_rationale
     else:
-        best_passing = next((s for s in output.scores if s.tier1_pass), None)
+        # logic_key failed Tier 1 — select the best constraint-appropriate fallback.
+        # Priority: (1) engineering-ordered fallback based on logic_key type,
+        # (2) top-scoring Tier 1 pass.
+        # This prevents abstract scoring from selecting an inappropriate archetype
+        # (e.g. DAF for clean groundwater when direct filtration fails Tier 1 on virus LRV).
+        FALLBACK_ORDER = {
+            "A": ["B", "C", "D"],      # DF fails → conventional → intensified → DAF
+            "B": ["D", "C", "E"],
+            "D": ["B", "C", "E"],
+            "F": ["H", "B"],            # softening fails → membrane or conventional
+            "G": ["E", "B"],            # ozone+BAC fails → enhanced coag → conventional
+            "H": ["G", "B"],
+            "I": ["H", "B"],
+        }
+        fallback_keys = FALLBACK_ORDER.get(logic_key, [])
+        passing_keys = {s.archetype_key for s in output.scores if s.tier1_pass}
+
+        # Try ordered fallback first
+        best_key = next((k for k in fallback_keys if k in passing_keys), None)
+        # Then highest scorer among all passing
+        if not best_key:
+            best_score = next((s for s in output.scores if s.tier1_pass), None)
+            best_key = best_score.archetype_key if best_score else logic_key
+
+        best_passing = next((s for s in output.scores if s.archetype_key == best_key), None)
         if best_passing:
             output.preferred_archetype_key = best_passing.archetype_key
             output.preferred_archetype_label = best_passing.archetype_label
-            # Build rationale from the viable archetype assessments, not the logic_key's rationale
             aa_match = next(
                 (a for a in output.archetype_selection.viable_archetypes
                  if a.key == best_passing.archetype_key), None
@@ -328,9 +352,7 @@ def run_reasoning_engine(inputs: SourceWaterInputs) -> AquaPointReasoningOutput:
                 output.preferred_archetype_rationale = aa_match.inclusion_rationale[0]
             else:
                 output.preferred_archetype_rationale = (
-                    f"{best_passing.archetype_label} is the highest-scoring Tier 1 compliant "
-                    f"archetype for this source water (engineering logic archetype "
-                    f"{logic_key} did not pass Tier 1 screening)."
+                    f"{best_passing.archetype_label} is the recommended fallback archetype "                    f"(engineering logic archetype {logic_key} did not pass Tier 1 screening). "
                 )
         else:
             output.preferred_archetype_key = logic_key

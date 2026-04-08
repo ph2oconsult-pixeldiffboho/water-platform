@@ -543,6 +543,17 @@ def _evaluate_archetype_G(inputs: SourceWaterInputs, classification: Classificat
             "refractory compounds not addressed by standard ozone alone."
         )
 
+    # High catchment risk: ozone is required to meet elevated virus LRV targets
+    # Conventional trains (B, C, D) cannot achieve 8 log virus without ozone.
+    # Include G as a viable option so it can compete in scoring.
+    if inputs.catchment_risk == "very_high":
+        incl.append(
+            "Very high catchment risk: elevated pathogen LRV targets (8 log virus) cannot be met "
+            "by conventional treatment + UV + chlorination alone (maximum ~6.5 log virus). "
+            "Ozone provides an additional 2.0–3.5 log virus inactivation at practical Ct values. "
+            "Ozone + BAC is required to meet the elevated virus LRV requirement for this source."
+        )
+
     # Ozone bromide warning — calibrated to whether bromide has been measured
     if inputs.bromide_ug_l < 0:
         # Bromide not measured — require measurement before proceeding
@@ -723,6 +734,21 @@ def run_archetype_selection(inputs: SourceWaterInputs,
         result.recommendation_rationale = (
             "Membrane barrier is mandatory for the recycled water treatment objective."
         )
+    elif inputs.catchment_risk == "very_high" and "G" in [a.key for a in result.viable_archetypes]:
+        # Very high catchment risk requires 8 log virus — only ozone (G) or membrane (H) can meet this.
+        # Prefer G (ozone+BAC) unless membrane is already indicated.
+        # H may still be preferred if other triggers (PFAS, TDS) are present.
+        if result.requires_membrane:
+            result.primary_recommendation = "H"
+            result.recommendation_rationale = (
+                "Very high catchment risk combined with membrane-indicated source conditions: "
+                "membrane barrier (MF/UF + RO or NF) is required to meet both the elevated "                "LRV targets (8 log virus) and the dissolved contaminant challenge."
+            )
+        else:
+            result.primary_recommendation = "G"
+            result.recommendation_rationale = (
+                "Very high catchment risk requires 8 log virus LRV — not achievable by "                "conventional treatment + UV + chlorination alone (~6.5 log virus maximum). "                "Ozone + BAC provides 2.0–3.5 additional log virus inactivation at practical Ct, "                "achieving the required barrier. The ozone system must be designed with "                "verified Ct at minimum temperature, and bromide must be assessed for bromate control."
+            )
     elif classification.primary_constraint == "algae_cyanobact":
         result.primary_recommendation = "D"
         result.recommendation_rationale = (
@@ -758,11 +784,16 @@ def run_archetype_selection(inputs: SourceWaterInputs,
                 "Hardness is the primary constraint but softening (Archetype F) is not viable "
                 "for this configuration. RO/NF membrane is the alternative for hardness reduction."
             )
-    elif classification.primary_constraint in ["pfas_troc", "arsenic", "salinity_tds"]:
+    elif classification.primary_constraint == "salinity_tds":
+        # High TDS / desalination: RO is the only pathway — route to H (membrane)
+        result.primary_recommendation = "H"
+        result.recommendation_rationale = (
+            "High TDS / salinity governs the treatment objective. RO or NF membrane is the "            "only technology capable of dissolved salt reduction to potable water standards. "            "Conventional treatment (coagulation, DAF, filtration) does not remove dissolved TDS. "            "Pretreatment for membrane protection is required. Concentrate disposal is the "            "site-controlling constraint for inland sources."
+        )
+    elif classification.primary_constraint in ["pfas_troc", "arsenic"]:
         result.primary_recommendation = "I"
         result.recommendation_rationale = (
-            "A contaminant-specific treatment train is required for the identified "
-            "dissolved contaminant challenge. Conventional treatment archetypes alone "
+            "A contaminant-specific treatment train is required for the identified "            "dissolved contaminant challenge. Conventional treatment archetypes alone "
             "are insufficient to achieve the required removal targets."
         )
     elif classification.primary_constraint == "taste_odour":

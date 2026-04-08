@@ -420,6 +420,107 @@ def identify_load_bearing_assumptions(
             triggered_by="cyanobacteria + dissolved_toxins",
         ))
 
+    # ── PFAS / Membrane concentrate ──────────────────────────────────────────
+    if inputs.pfas_detected or inputs.pfas_concentration_ng_l > 0:
+        pfas_conc = inputs.pfas_concentration_ng_l
+        assumptions.append(LoadBearingAssumption(
+            assumption=(
+                "PFAS concentrate / spent media disposal pathway exists and can be licensed "                "before plant commissioning."
+            ),
+            why_it_matters=(
+                f"Source PFAS: {pfas_conc:.0f} ng/L. GAC, IX resin, and RO all concentrate PFAS "                "into a secondary waste stream. Spent GAC/IX is classified waste in all Australian "                "jurisdictions. RO concentrate containing PFAS requires specific licensed disposal — "                "no universal pathway exists. Without a confirmed disposal route, the selected "                "PFAS treatment technology cannot proceed."
+            ),
+            dependent_element=(
+                "Entire PFAS treatment pathway (GAC adsorption / PFAS-selective IX / RO concentrate)."
+            ),
+            failure_consequence=(
+                "No confirmed disposal pathway means the PFAS treatment technology cannot be "                "commissioned — the preferred archetype fails at the residuals stage. "                "Plant cannot achieve PFAS compliance without an alternative pathway."
+            ),
+            validation_required=(
+                "Confirm licensed PFAS waste disposal facility before detailed design. "                "Obtain in-principle agreement from waste contractor. "                "If RO: characterise concentrate volume and PFAS load; confirm disposal contract. "                "If GAC/IX: confirm spent media disposal facility, cost, and long-term contract."
+            ),
+            severity="critical",
+            triggered_by="pfas_detected",
+        ))
+        assumptions.append(LoadBearingAssumption(
+            assumption=(
+                "Selected PFAS removal technology achieves the required removal across all PFAS "                "species present at source."
+            ),
+            why_it_matters=(
+                "PFAS removal efficiency varies strongly between technologies and PFAS species. "                "GAC effectively removes long-chain PFAS (PFOS, PFOA) but has limited efficacy "                "for short-chain PFAS (PFBS, PFPeA, PFHxA) with EBCT <20 min. "                "PFAS-selective IX resin removes short-chain better than GAC. "                "RO provides non-selective high rejection but generates concentrate. "                "Without species-level data, removal adequacy cannot be confirmed."
+            ),
+            dependent_element="PFAS compliance — all species must be below health-based guidance values.",
+            failure_consequence=(
+                "Short-chain PFAS breakthrough renders treatment non-compliant. "                "Technology must be re-selected or supplemented."
+            ),
+            validation_required=(
+                f"Full PFAS species analysis (including C4-C7 PFAS). "                "Bench-scale or pilot-scale treatability testing with actual source water. "                "Confirm target removal for each species before design."
+            ),
+            severity="critical",
+            triggered_by="pfas_detected",
+        ))
+
+    # ── High TDS / RO membrane ────────────────────────────────────────────────
+    if inputs.tds_median_mg_l > 1000 or inputs.source_type == "desalination":
+        assumptions.append(LoadBearingAssumption(
+            assumption=(
+                "RO membrane achieves required TDS rejection at the design recovery rate and "                "source water scaling indices."
+            ),
+            why_it_matters=(
+                f"Source TDS: {inputs.tds_median_mg_l:.0f} mg/L. RO rejection efficiency depends on "                "membrane selection, operating pressure, temperature, and scaling potential. "                "At high recovery (>70%), concentration polarisation and scaling risk increase. "                "Antiscalant selection must be validated for specific ion chemistry (CaCO3, CaSO4, SiO2)."
+            ),
+            dependent_element="TDS compliance in product water; RO recovery rate; concentrate volume.",
+            failure_consequence=(
+                "If rejection is lower than assumed: TDS exceedance in product water or reduced "                "recovery required, increasing concentrate volume and operating cost. "                "If scaling occurs: membrane fouling, flux decline, increased cleaning frequency."
+            ),
+            validation_required=(
+                "Scaling indices (Langelier, Ryznar) at design recovery. "                "Antiscalant treatability testing. "                "Membrane selection based on source ion chemistry. "                "Pilot testing at design recovery before final design."
+            ),
+            severity="critical",
+            triggered_by="high_tds",
+        ))
+        assumptions.append(LoadBearingAssumption(
+            assumption=(
+                "A technically feasible and licensed concentrate / brine disposal pathway "                "can be established prior to plant commissioning."
+            ),
+            why_it_matters=(
+                f"At {inputs.tds_median_mg_l:.0f} mg/L TDS source and 75% recovery, concentrate TDS "                "is approximately {int(inputs.tds_median_mg_l * 4):.0f} mg/L at 4× concentration. "                "Inland concentrate disposal options are severely limited: "                "sewer acceptance (TDS limits typically 1000-2000 mg/L), deep well injection "                "(geology-dependent), evaporation ponds (large land area, licensing). "                "Concentrate disposal is frequently the site-controlling constraint for inland RO."
+            ),
+            dependent_element=(
+                "Entire RO treatment philosophy — without concentrate disposal, RO cannot operate."
+            ),
+            failure_consequence=(
+                "No viable concentrate disposal pathway means RO is not feasible at this site. "                "Treatment philosophy must revert to non-membrane alternatives or partial-flow blending."
+            ),
+            validation_required=(
+                "Early-stage concentrate disposal pathway assessment (pre-feasibility). "                "Sewer authority TDS acceptance limits. "                "Hydrogeological assessment for deep well injection if considered. "                "Evaporation pond sizing, land availability, and licensing timeline if considered."
+            ),
+            severity="critical",
+            triggered_by="high_tds + concentrate",
+        ))
+
+    # ── Softening / high hardness ─────────────────────────────────────────────
+    if preferred_archetype_key == "F" or inputs.hardness_median_mg_l > 300:
+        assumptions.append(LoadBearingAssumption(
+            assumption=(
+                "Lime sludge disposal pathway exists and can be operated on a continuous basis."
+            ),
+            why_it_matters=(
+                f"Hardness {inputs.hardness_median_mg_l:.0f} mg/L CaCO3. Lime softening generates "                "10-30x the sludge volume of equivalent conventional coagulation treatment. "                "Lime sludge is gelatinous (particularly at high Mg content), poorly dewaterable, "                "and typically requires lagoon storage or significant dewatering infrastructure. "                "Lagoons require significant land area and long-term management."
+            ),
+            dependent_element=(
+                "Softening treatment philosophy — lime dosing cannot continue without sludge outlet."
+            ),
+            failure_consequence=(
+                "Lagoon capacity exceeded: plant must reduce throughput or shut down. "                "No alternative lime sludge outlet = softening plant cannot operate continuously."
+            ),
+            validation_required=(
+                "Lime sludge volume estimate at design flow. "                "Lagoon sizing and land availability assessment. "                "Agricultural lime reuse assessment (chemistry must be suitable). "                "Dewatering equipment feasibility (CaCO3 vs Mg(OH)2 fraction determines approach)."
+            ),
+            severity="critical" if inputs.hardness_median_mg_l > 350 else "significant",
+            triggered_by="softening_residuals",
+        ))
+
     # ── Sort by severity ──────────────────────────────────────────────────────
     severity_order = {"critical": 0, "significant": 1, "moderate": 2}
     assumptions.sort(key=lambda a: severity_order.get(a.severity, 3))
