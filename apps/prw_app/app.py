@@ -14,6 +14,7 @@ from .pages import (
     render_chemical_matrix,
     render_failure_modes,
     render_report,
+    render_manual,
 )
 from .engine import CLASS_COLOURS
 
@@ -67,6 +68,12 @@ PAGES = {
         "label": "Report",
         "icon": "📄",
         "render": render_report,
+    },
+    "manual": {
+        "number": 8,
+        "label": "User Manual",
+        "icon": "📖",
+        "render": render_manual,
     },
 }
 
