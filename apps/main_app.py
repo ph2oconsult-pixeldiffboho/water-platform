@@ -56,6 +56,45 @@ st.markdown("""
     }
     .badge-ready    { background: #d4edda; color: #155724; }
     .badge-coming   { background: #fff3cd; color: #856404; }
+
+    /* ── Unified sidebar ───────────────────────────────────────────────── */
+    [data-testid="stSidebar"] {
+        background: #f0f2f6;
+        border-right: 1px solid #dde1e7;
+    }
+    .sb-header { padding: 1.1rem 0.2rem 0.6rem 0.2rem; text-align: center; }
+    .sb-app-icon { font-size: 2rem; line-height: 1; margin-bottom: 4px; }
+    .sb-app-name { font-size: 1.25rem; font-weight: 800; color: #1a2b4a;
+                   letter-spacing: -0.02em; margin-bottom: 2px; }
+    .sb-app-sub  { font-size: 0.65rem; color: #7a8499; text-transform: uppercase;
+                   letter-spacing: 0.08em; }
+    .sb-section  { font-size: 0.62rem; font-weight: 700; color: #9aa0ad;
+                   text-transform: uppercase; letter-spacing: 0.1em;
+                   padding: 0.6rem 0 0.3rem 0.1rem; }
+    .sb-footer   { font-size: 0.67rem; color: #9aa0ad; text-align: center;
+                   padding: 0.5rem 0 0.2rem 0; line-height: 1.6; }
+
+    /* Active nav button */
+    [data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"] {
+        background: #e8f4f0 !important;
+        color: #0d6e57 !important;
+        border: 1px solid #b2d8cc !important;
+        border-left: 3px solid #0d9e7a !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+    }
+    /* Inactive nav buttons */
+    [data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"] {
+        background: #ffffff !important;
+        color: #2c3a4f !important;
+        border: 1px solid #dde1e7 !important;
+        font-weight: 500 !important;
+        text-align: left !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"]:hover {
+        background: #f5f7fa !important;
+        border-color: #bcc3ce !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -171,33 +210,44 @@ elif _active == "biosolids":
     _bp_dir = _Path(__file__).resolve().parent / "biosolids_app"
     if str(_bp_dir) not in sys.path:
         sys.path.insert(0, str(_bp_dir))
-    st.divider()
     _bp_sidebar = st.sidebar
-    _bp_sidebar.title("🌱 BioPoint")
-    if _bp_sidebar.button("⬅ Platform Home", key="bp_home"):
-        for _k in ("active_app", "page", "_app_context"):
-            st.session_state.pop(_k, None)
-        st.rerun()
-    _bp_sidebar.divider()
+    with _bp_sidebar:
+        st.markdown("""
+        <div class="sb-header">
+            <div class="sb-app-icon">🌱</div>
+            <div class="sb-app-name">BioPoint</div>
+            <div class="sb-app-sub">Biosolids Decision Engine</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("⬅  Platform Home", key="bp_home", use_container_width=True):
+            for _k in ("active_app", "page", "_app_context"):
+                st.session_state.pop(_k, None)
+            st.rerun()
+
+        st.markdown("<div class='sb-section'>Navigate</div>", unsafe_allow_html=True)
+
     BP_PAGES = {
-        "📂 Load Data":          "00_load_data",
-        "⚙️ Inputs":             "01_inputs",
-        "📊 Pathway Rankings":   "02_results",
-        "🔥 Drying & Coupling":  "03_drying",
-        "🛡️ ITS & PFAS":         "04_pathways",
-        "📈 Pyrolysis Envelope": "05_pyrolysis",
+        "📂  Load Data":          "00_load_data",
+        "⚙️  Inputs":             "01_inputs",
+        "📊  Pathway Rankings":   "02_results",
+        "🔥  Drying & Coupling":  "03_drying",
+        "🛡️  ITS & PFAS":         "04_pathways",
+        "📈  Pyrolysis Envelope": "05_pyrolysis",
     }
     if st.session_state.get("_app_context") != "biosolids":
         st.session_state["page"] = "01_inputs"
         st.session_state["_app_context"] = "biosolids"
-    bp_selected = _bp_sidebar.radio(
-        "Navigate",
-        options=list(BP_PAGES.keys()),
-        index=list(BP_PAGES.values()).index(st.session_state.get("page", "01_inputs"))
-        if st.session_state.get("page") in BP_PAGES.values() else 0,
-    )
-    st.session_state["page"] = BP_PAGES[bp_selected]
-    page_key = st.session_state["page"]
+
+    current_bp_page = st.session_state.get("page", "01_inputs")
+    for label, page_val in BP_PAGES.items():
+        is_active = current_bp_page == page_val
+        btn_type = "primary" if is_active else "secondary"
+        if _bp_sidebar.button(label, key=f"bp_nav_{page_val}", type=btn_type, use_container_width=True):
+            st.session_state["page"] = page_val
+            st.rerun()
+
+    page_key = st.session_state.get("page", "01_inputs")
     if page_key == "00_load_data":
         from apps.biosolids_app.pages import page_00_load_data; page_00_load_data.render()
     elif page_key == "01_inputs":
@@ -210,8 +260,7 @@ elif _active == "biosolids":
         from apps.biosolids_app.pages import page_04_pathways; page_04_pathways.render()
     elif page_key == "05_pyrolysis":
         from apps.biosolids_app.pages import page_05_pyrolysis; page_05_pyrolysis.render()
-    _bp_sidebar.divider()
-    _bp_sidebar.caption("BioPoint V1 — Biosolids Decision Engine")
+    _bp_sidebar.markdown("<div class='sb-footer'>BioPoint V1<br>ph2o Consulting</div>", unsafe_allow_html=True)
 
 elif _active == "wastewater":
     # Import and initialise shared session state
@@ -223,39 +272,48 @@ elif _active == "wastewater":
         st.session_state["page"] = "01_project_setup"
 
     # Render the full wastewater app inline
-    st.divider()
     _ww_sidebar = st.sidebar
-    _ww_sidebar.title("💧 Wastewater Planner")
-    if _ww_sidebar.button("⬅ Platform Home", key="ww_home"):
-        for _k in ("active_app", "page", "_app_context"):
-            st.session_state.pop(_k, None)
-        st.rerun()
-    _ww_sidebar.divider()
+    with _ww_sidebar:
+        st.markdown("""
+        <div class="sb-header">
+            <div class="sb-app-icon">💧</div>
+            <div class="sb-app-name">WaterPoint</div>
+            <div class="sb-app-sub">Wastewater Treatment</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("⬅  Platform Home", key="ww_home", use_container_width=True):
+            for _k in ("active_app", "page", "_app_context"):
+                st.session_state.pop(_k, None)
+            st.rerun()
+
+        st.markdown("<div class='sb-section'>Navigate</div>", unsafe_allow_html=True)
 
     PAGES = {
-        "🏠 Project Setup":        "01_project_setup",
-        "📋 Inputs":               "02_inputs",
-        "⚙️ Treatment Selection":  "03_treatment_selection",
-        "📊 Results":              "04_results",
-        "🫧 Aeration System":      "04b_aeration",
-        "♻️ Biosolids & Sludge":   "04c_biosolids",
-        "🧪 PFAS & Risk":           "04d_pfas",
-        "🔁 Compare Scenarios":    "05_comparison",
-        "📄 Report":               "06_report",
-        "🔬 Plant Data & Calibration": "07_calibration",
-        "📖 User Manual":          "08_manual",
+        "🏠  Project Setup":           "01_project_setup",
+        "📋  Inputs":                  "02_inputs",
+        "⚙️  Treatment Selection":     "03_treatment_selection",
+        "📊  Results":                 "04_results",
+        "🫧  Aeration System":         "04b_aeration",
+        "♻️  Biosolids & Sludge":      "04c_biosolids",
+        "🧪  PFAS & Risk":             "04d_pfas",
+        "🔁  Compare Scenarios":       "05_comparison",
+        "📄  Report":                  "06_report",
+        "🔬  Plant Data & Calibration":"07_calibration",
+        "📖  User Manual":             "08_manual",
     }
 
-    if "page" not in st.session_state:
-        st.session_state["page"] = "01_project_setup"
+    current_ww_page = st.session_state.get("page", "01_project_setup")
+    if current_ww_page not in PAGES.values():
+        current_ww_page = "01_project_setup"
+        st.session_state["page"] = current_ww_page
 
-    selected = _ww_sidebar.radio(
-        "Navigate",
-        options=list(PAGES.keys()),
-        index=list(PAGES.values()).index(st.session_state["page"])
-        if st.session_state["page"] in PAGES.values() else 0,
-    )
-    st.session_state["page"] = PAGES[selected]
+    for label, page_val in PAGES.items():
+        is_active = current_ww_page == page_val
+        btn_type = "primary" if is_active else "secondary"
+        if _ww_sidebar.button(label, key=f"ww_nav_{page_val}", type=btn_type, use_container_width=True):
+            st.session_state["page"] = page_val
+            st.rerun()
 
     page_key = st.session_state["page"]
 
@@ -294,19 +352,18 @@ elif _active == "wastewater":
         page_08_manual.render()
 
     # Sidebar footer
-    _ww_sidebar.divider()
     from apps.ui.session_state import has_project, has_unsaved_changes, get_current_project
     from core.project.project_manager import ProjectManager
     if has_project():
         project = get_current_project()
+        _ww_sidebar.markdown("<div class='sb-section'>Current Project</div>", unsafe_allow_html=True)
         _ww_sidebar.caption(f"📁 {project.metadata.project_name}")
         _ww_sidebar.caption(f"🏭 {project.metadata.plant_name or 'No plant set'}")
         if has_unsaved_changes():
-            if _ww_sidebar.button("💾 Save Project", type="primary"):
+            if _ww_sidebar.button("💾 Save Project", type="primary", use_container_width=True):
                 ProjectManager().save(project)
                 st.session_state["has_unsaved_changes"] = False
                 _ww_sidebar.success("Saved ✓")
-    # Version display — shows exact git commit so you always know what's running
     try:
         import subprocess
         _git_hash = subprocess.check_output(
@@ -317,9 +374,9 @@ elif _active == "wastewater":
             ["git", "log", "-1", "--format=%cd", "--date=format:%d %b %H:%M"],
             cwd=ROOT, stderr=subprocess.DEVNULL, text=True
         ).strip()
-        _ww_sidebar.caption(f"🔖 `{_git_hash}` · {_git_date}")
+        _ww_sidebar.markdown(f"<div class='sb-footer'>WaterPoint · ph2o Consulting<br><code>{_git_hash}</code> · {_git_date}</div>", unsafe_allow_html=True)
     except Exception:
-        _ww_sidebar.caption("v1.0 — Concept Stage Planning")
+        _ww_sidebar.markdown("<div class='sb-footer'>WaterPoint · ph2o Consulting</div>", unsafe_allow_html=True)
 
 # ── Platform footer (homepage only) ───────────────────────────────────────
 else:
