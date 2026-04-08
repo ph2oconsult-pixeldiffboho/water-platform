@@ -43,18 +43,15 @@ RESIDUAL_STREAMS = {
     "lime_sludge": {
         "label": "Lime / Softening Sludge",
         "volume_class": "very_high",
-        "solids_content": "5–15% TS as generated; gelatinous at high Mg content",
-        "dewaterability": "Poor to very poor — CaCO₃ sludge centrifuges to ~40% DS but is "
-                          "voluminous; Mg(OH)₂ fraction is gelatinous and very difficult to dewater",
+        "solids_content": "5–15% TS as generated; difficult to thicken further",
+        "dewaterability": "Poor — centrifuge to 35–45% DS, but voluminous",
         "generation": "Continuous",
-        "disposal_options": ["lagoon storage (most common)", "land application as agricultural lime (if suitable chemistry)", "landfill"],
+        "disposal_options": ["lagoon storage", "land application (agricultural lime — if suitable)", "landfill"],
         "special_considerations": [
-            "⚠ Lime sludge is the single largest residuals challenge for softening plants — "
-            "volume typically 10–30× greater than equivalent conventional sludge",
-            "Magnesium hydroxide sludge fraction is gelatinous and resists mechanical dewatering",
-            "High pH (10–12) — corrosive handling; chemical burns risk",
-            "Lagoon storage requires significant land area — often a site-controlling constraint",
-            "High sodium content if Na₂CO₃ used for non-carbonate hardness — limits agricultural reuse",
+            "Very high volume — often the single largest residuals challenge for softening plants",
+            "High pH — corrosive handling",
+            "Calcium carbonate sludge can re-dissolve at low pH",
+            "Magnesium hydroxide sludge is gelatinous and very difficult to dewater",
         ],
         "biopoint_relevant": True,
     },
@@ -295,7 +292,7 @@ def _rate_complexity(stream_keys: list, inputs: SourceWaterInputs) -> str:
         "spent_ix_resin": 4,
         "arsenic_bearing_media": 4,
         "membrane_cleaning_waste": 2,
-        "lime_sludge": 7,           # Very_high — volume is uniquely burdensome, requires lagoons
+        "lime_sludge": 4,
         "membrane_concentrate_ro": 4,
         "pfas_concentrate": 5,
     }
@@ -308,8 +305,8 @@ def _rate_complexity(stream_keys: list, inputs: SourceWaterInputs) -> str:
     if inputs.cyanobacteria_confirmed: score += 1
 
     if score <= 3: return "low"
-    elif score <= 5: return "moderate"
-    elif score <= 9: return "high"
+    elif score <= 6: return "moderate"
+    elif score <= 10: return "high"
     else: return "very_high"
 
 

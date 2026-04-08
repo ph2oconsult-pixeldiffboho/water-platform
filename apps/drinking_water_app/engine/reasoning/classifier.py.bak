@@ -387,38 +387,6 @@ def assess_direct_filtration(inputs: SourceWaterInputs) -> tuple:
             "cells and risks filter breakthrough during bloom events."
         )
 
-    # ── New critical exclusions ───────────────────────────────────────────────
-
-    if inputs.alkalinity_median_mg_l < 40:
-        exclusions.append(
-            f"Low alkalinity ({inputs.alkalinity_median_mg_l} mg/L CaCO₃): insufficient pH buffer "
-            f"for stable coagulation. Direct filtration requires at least 40 mg/L alkalinity "
-            f"to maintain coagulation pH control without upstream pH correction infrastructure. "
-            f"Alkalinity supplementation and full coagulation pH management require clarification stage."
-        )
-
-    if inputs.ph_min < 6.5:
-        exclusions.append(
-            f"Minimum pH {inputs.ph_min}: coagulation is unreliable below pH 6.5. "
-            f"Alum is ineffective and ferric coagulants require careful control. "
-            f"A clarification stage with pH correction is required before filtration."
-        )
-
-    if inputs.iron_median_mg_l > 0.5 and inputs.source_type == "groundwater":
-        exclusions.append(
-            f"Dissolved iron {inputs.iron_median_mg_l} mg/L in groundwater: dissolved Fe²⁺ oxidises "
-            f"on the filter medium, causing rapid filter blinding and unworkable run times. "
-            f"Pre-oxidation and clarification are required before filtration. "
-            f"Direct filtration is not viable for this source."
-        )
-
-    if inputs.manganese_median_mg_l > 0.1 and inputs.source_type == "groundwater":
-        exclusions.append(
-            f"Dissolved manganese {inputs.manganese_median_mg_l} mg/L in groundwater: dissolved Mn²⁺ "
-            f"deposits as MnO₂ on filter media, causing head loss accumulation and shortened run times. "
-            f"Pre-oxidation and dedicated manganese removal are required before granular filtration."
-        )
-
     eligible = len(exclusions) == 0
     return eligible, exclusions
 

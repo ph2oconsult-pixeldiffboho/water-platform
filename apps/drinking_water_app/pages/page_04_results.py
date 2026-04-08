@@ -70,7 +70,7 @@ def _reasoning_inputs(plant_type: str, sw: dict) -> SourceWaterInputs:
 def _kv(label, value, colour="#e8f4fd"):
     return (
         f'<div style="display:flex;justify-content:space-between;padding:0.3rem 0;'
-        f'border-bottom:1px solid #1e2d3d;font-size:0.83rem">'
+        f'border-bottom:1px solid #e2e8f0;font-size:0.83rem">'
         f'<span style="color:#8899aa">{label}</span>'
         f'<span style="color:{colour};font-weight:600">{value}</span></div>'
     )
@@ -78,7 +78,7 @@ def _kv(label, value, colour="#e8f4fd"):
 
 def _section_card(title, html_body, border="#2a3a52"):
     return f"""
-        <div style="background:#1a2332;border:1px solid {border};border-radius:8px;
+        <div style="background:#f0f4f8;border:1px solid {border};border-radius:8px;
                     padding:0.8rem 1rem;margin-bottom:0.7rem">
             <div style="font-size:0.72rem;color:#8899aa;text-transform:uppercase;
                         letter-spacing:0.05em;margin-bottom:0.5rem">{title}</div>
@@ -91,10 +91,10 @@ def _section_card(title, html_body, border="#2a3a52"):
 def render():
     st.markdown("""
         <div style="margin-bottom:1.2rem">
-            <h2 style="color:#e8f4fd;font-size:1.4rem;font-weight:600;margin-bottom:0.2rem">
+            <h2 style="color:#1a1a2e;font-size:1.4rem;font-weight:600;margin-bottom:0.2rem">
                 Analysis Results
             </h2>
-            <p style="color:#8899aa;font-size:0.87rem;margin:0">
+            <p style="color:#555;font-size:0.87rem;margin:0">
                 Comprehensive treatment train evaluation across all analysis layers.
             </p>
         </div>
@@ -146,7 +146,7 @@ def render():
         rc = "#2ecc71" if r_result.preferred_archetype_key in ["B","C","D"] else "#4a9eff"
         st.markdown(f"""
             <div style="background:#0a1d2e;border-left:3px solid #4a9eff;padding:0.65rem 1rem;
-                        border-radius:0 6px 6px 0;margin:0.5rem 0;font-size:0.83rem;color:#89b4e8">
+                        border-radius:0 6px 6px 0;margin:0.5rem 0;font-size:0.83rem;color:#1a56a0">
                 <span style="color:#4a9eff;font-weight:600">Philosophy: </span>
                 {r_result.preferred_archetype_label} — {r_result.preferred_archetype_rationale}
             </div>
@@ -158,8 +158,8 @@ def render():
     # Train display
     train_labels = [TECHNOLOGIES.get(t, {}).get("label", t) for t in selected_technologies]
     st.markdown(f"""
-        <div style="background:#0d1e30;border:1px solid #4a9eff;border-radius:8px;
-                    padding:0.6rem 1rem;font-size:0.83rem;color:#89b4e8;margin:0.5rem 0 1rem 0">
+        <div style="background:#eff6ff;border:1px solid #4a9eff;border-radius:8px;
+                    padding:0.6rem 1rem;font-size:0.83rem;color:#1a56a0;margin:0.5rem 0 1rem 0">
             <span style="color:#4a9eff;font-weight:600">Train: </span>
             {" → ".join(train_labels)}
         </div>
@@ -199,11 +199,11 @@ def render():
                     <div style="margin-bottom:0.6rem">
                         <div style="display:flex;justify-content:space-between;
                                     font-size:0.8rem;margin-bottom:0.2rem">
-                            <span style="color:#c8ddf0">{lbl}</span>
+                            <span style="color:#334155">{lbl}</span>
                             <span style="color:{c};font-weight:600">{s:.0f}/100</span>
                             <span style="color:#8899aa">weight {w:.0%}</span>
                         </div>
-                        <div style="background:#1a2332;border-radius:4px;height:10px">
+                        <div style="background:#f0f4f8;border-radius:4px;height:10px">
                             <div style="width:{bar_pct}%;background:{c};
                                         height:100%;border-radius:4px"></div>
                         </div>
@@ -219,8 +219,8 @@ def render():
                     t1 = "PASS" if s.tier1_pass else "FAIL"
                     t1c = "#2ecc71" if s.tier1_pass else "#e74c3c"
                     st.markdown(f"""
-                        <div style="background:#1a2332;border-radius:8px;padding:0.6rem;
-                                    text-align:center;border:1px solid #2a3a52">
+                        <div style="background:#f0f4f8;border-radius:8px;padding:0.6rem;
+                                    text-align:center;border:1px solid #e2e8f0">
                             <div style="font-size:0.7rem;color:#8899aa">{s.archetype_key}. {s.archetype_label[:18]}</div>
                             <div style="font-size:1.4rem;font-weight:700;color:{c}">{s.overall_score:.1f}</div>
                             <div style="font-size:0.65rem;color:{t1c}">{t1}</div>
@@ -252,7 +252,7 @@ def render():
                 pred = cdata["predicted"]
                 lim  = cdata["guideline"]
                 ok   = cdata["compliant"]
-                row[0].markdown(f"<span style='font-size:0.82rem;color:#e8f4fd'>{param_labels.get(param, param)}</span>", unsafe_allow_html=True)
+                row[0].markdown(f"<span style='font-size:0.82rem;color:#1a1a2e'>{param_labels.get(param, param)}</span>", unsafe_allow_html=True)
                 row[1].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{raw}</span>", unsafe_allow_html=True)
                 row[2].markdown(f"<span style='font-size:0.82rem;color:{'#2ecc71' if ok else '#e74c3c'}'>{pred}</span>", unsafe_allow_html=True)
                 row[3].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{lim}</span>", unsafe_allow_html=True)
@@ -312,10 +312,10 @@ def render():
             hi  = bench_d.get("high", 0)
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;padding:0.3rem 0;'
-                f'border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                f'<span style="color:#c8ddf0">{lbl}</span>'
+                f'border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                f'<span style="color:#334155">{lbl}</span>'
                 f'<span style="color:#8899aa">{lo}–{hi} kWh/ML</span>'
-                f'<span style="color:#e8f4fd;font-weight:600">{typ} kWh/ML typical</span>'
+                f'<span style="color:#1a1a2e;font-weight:600">{typ} kWh/ML typical</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -335,10 +335,10 @@ def render():
                 hdr[i].markdown(f"<span style='font-size:0.7rem;color:#8899aa'>{lbl}</span>", unsafe_allow_html=True)
             for ck, cd in chemicals.items():
                 row = st.columns([2, 2, 2, 2])
-                row[0].markdown(f"<span style='font-size:0.82rem;color:#e8f4fd'>{cd['label']}</span>", unsafe_allow_html=True)
+                row[0].markdown(f"<span style='font-size:0.82rem;color:#1a1a2e'>{cd['label']}</span>", unsafe_allow_html=True)
                 row[1].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{cd['dose_mg_L']:.1f}</span>", unsafe_allow_html=True)
                 row[2].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{cd['annual_kg']/1000:.1f}</span>", unsafe_allow_html=True)
-                row[3].markdown(f"<span style='font-size:0.82rem;color:#e8f4fd'>{format_currency(cd['annual_cost_AUD'])}</span>", unsafe_allow_html=True)
+                row[3].markdown(f"<span style='font-size:0.82rem;color:#1a1a2e'>{format_currency(cd['annual_cost_AUD'])}</span>", unsafe_allow_html=True)
         else:
             info_box("No chemical consumption data — check technology selection includes coagulation or disinfection.")
 
@@ -368,11 +368,11 @@ def render():
             pct = typ / max(total_typ, 1) * 100
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                f'padding:0.3rem 0;border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                f'<span style="color:#c8ddf0;min-width:200px">{lbl}</span>'
-                f'<div style="flex:1;margin:0 1rem;background:#1a2332;border-radius:3px;height:8px">'
+                f'padding:0.3rem 0;border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                f'<span style="color:#334155;min-width:200px">{lbl}</span>'
+                f'<div style="flex:1;margin:0 1rem;background:#f0f4f8;border-radius:3px;height:8px">'
                 f'<div style="width:{pct:.0f}%;background:#4a9eff;height:100%;border-radius:3px"></div></div>'
-                f'<span style="color:#e8f4fd;font-weight:600;min-width:80px;text-align:right">'
+                f'<span style="color:#1a1a2e;font-weight:600;min-width:80px;text-align:right">'
                 f'{format_currency(typ)}</span></div>',
                 unsafe_allow_html=True,
             )
@@ -409,7 +409,7 @@ def render():
         capex_frac = lc2.get("capex_fraction_pct", 0)
         opex_frac  = lc2.get("opex_fraction_pct", 0)
         st.markdown(f"""
-            <div style="background:#1a2332;border-radius:8px;padding:0.8rem;margin:0.5rem 0">
+            <div style="background:#f0f4f8;border-radius:8px;padding:0.8rem;margin:0.5rem 0">
                 <div style="display:flex;height:20px;border-radius:4px;overflow:hidden;margin-bottom:0.4rem">
                     <div style="width:{capex_frac:.0f}%;background:#4a9eff"></div>
                     <div style="width:{opex_frac:.0f}%;background:#2ecc71"></div>
@@ -447,8 +447,8 @@ def render():
         for tech, trisk in rk.get("technology_risks", {}).items():
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                f'padding:0.3rem 0;border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                f'<span style="color:#c8ddf0;min-width:220px">{trisk["label"]}</span>'
+                f'padding:0.3rem 0;border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                f'<span style="color:#334155;min-width:220px">{trisk["label"]}</span>'
                 f'<span style="margin:0 0.5rem">{risk_badge(trisk["implementation"])}</span>'
                 f'<span style="margin:0 0.5rem">{risk_badge(trisk["operational"])}</span>'
                 f'<span>{risk_badge(trisk["regulatory"])}</span></div>',
@@ -473,8 +473,8 @@ def render():
                     c    = "#2ecc71" if ok else "#e74c3c"
                     st.markdown(
                         f'<div style="display:flex;justify-content:space-between;padding:0.3rem 0;'
-                        f'border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                        f'<span style="color:#e8f4fd">{pathogen.title()}</span>'
+                        f'border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                        f'<span style="color:#1a1a2e">{pathogen.title()}</span>'
                         f'<span style="color:#8899aa">Required: {req:.1f} log</span>'
                         f'<span style="color:{c};font-weight:600">Credited: {hi:.1f} log</span>'
                         f'</div>',
@@ -540,7 +540,7 @@ def render():
                 icon = "✓" if ok else "✗"
                 st.markdown(
                     f'<div style="display:flex;justify-content:space-between;'
-                    f'padding:0.3rem 0;border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
+                    f'padding:0.3rem 0;border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
                     f'<span style="color:{col}">{icon} {c["parameter"]}</span>'
                     f'<span style="color:#8899aa">{c["predicted"]} {c["unit"]}</span>'
                     f'<span style="color:#8899aa">ADWG: {c["guideline"]} {c["unit"]}</span>'

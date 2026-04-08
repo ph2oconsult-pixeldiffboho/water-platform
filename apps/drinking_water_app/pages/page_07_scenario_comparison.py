@@ -201,9 +201,9 @@ def _metric_row(label, val_a, val_b, higher_is_better=True, fmt=None,
 
     return f"""
         <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1.2fr;
-                    gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #1e2d3d;
+                    gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #e2e8f0;
                     align-items:center;font-size:0.83rem">
-            <span style="color:#c8ddf0">{label}</span>
+            <span style="color:#334155">{label}</span>
             <span style="color:{c_a};font-weight:600;text-align:right">{_fmt(val_a)}</span>
             <span style="color:{c_b};font-weight:600;text-align:right">{_fmt(val_b)}</span>
             <span style="text-align:right">{delta}</span>
@@ -228,21 +228,21 @@ def _bar_chart_html(label_a, label_b, metrics: list, colour_a="#4a9eff", colour_
                 <div style="font-size:0.78rem;color:#8899aa;margin-bottom:0.2rem">{lbl}</div>
                 <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.15rem">
                     <span style="font-size:0.72rem;color:#4a9eff;min-width:80px">{label_a}</span>
-                    <div style="flex:1;background:#1a2332;border-radius:3px;height:10px">
+                    <div style="flex:1;background:#f0f4f8;border-radius:3px;height:10px">
                         <div style="width:{pct_a:.1f}%;background:{colour_a};height:100%;border-radius:3px"></div>
                     </div>
                     <span style="font-size:0.72rem;color:#e8f4fd;min-width:50px;text-align:right">{va:.1f}</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:0.5rem">
                     <span style="font-size:0.72rem;color:#2ecc71;min-width:80px">{label_b}</span>
-                    <div style="flex:1;background:#1a2332;border-radius:3px;height:10px">
+                    <div style="flex:1;background:#f0f4f8;border-radius:3px;height:10px">
                         <div style="width:{pct_b:.1f}%;background:{colour_b};height:100%;border-radius:3px"></div>
                     </div>
                     <span style="font-size:0.72rem;color:#e8f4fd;min-width:50px;text-align:right">{vb:.1f}</span>
                 </div>
             </div>"""
 
-    return f'<div style="background:#111d2b;border-radius:8px;padding:0.8rem 1rem">{rows}</div>'
+    return f'<div style="background:#f8fafc;border-radius:8px;padding:0.8rem 1rem">{rows}</div>'
 
 
 def _compliance_label(results: dict) -> str:
@@ -317,16 +317,16 @@ def render():
 
     # Preset description card
     st.markdown(f"""
-        <div style="background:#0a1d2e;border:1px solid #1a4a6e;border-radius:8px;
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
                     padding:0.75rem 1rem;margin-bottom:1rem">
             <div style="font-size:0.88rem;font-weight:600;color:#e8f4fd;margin-bottom:0.2rem">
                 {preset['icon']} {preset['label']} (Archetype {preset['archetype']})
             </div>
-            <div style="font-size:0.8rem;color:#89b4e8;margin-bottom:0.4rem">
+            <div style="font-size:0.8rem;color:#1a56a0;margin-bottom:0.4rem">
                 {preset['description']}
             </div>
             <div style="font-size:0.75rem;color:#8899aa">
-                Train: <span style="color:#4ae8ff">
+                Train: <span style="color:#0284c7">
                 {" → ".join(TECHNOLOGIES.get(t,{}).get("label",t) for t in techs_b)}
                 </span>
             </div>
@@ -337,7 +337,7 @@ def render():
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown(f"""
-            <div style="background:#0d1e30;border:2px solid #4a9eff;border-radius:8px;
+            <div style="background:#eff6ff;border:2px solid #4a9eff;border-radius:8px;
                         padding:0.7rem 0.9rem">
                 <div style="font-size:0.7rem;color:#4a9eff;text-transform:uppercase;
                             letter-spacing:0.06em">Scenario A</div>
@@ -349,7 +349,7 @@ def render():
         """, unsafe_allow_html=True)
     with col_b:
         st.markdown(f"""
-            <div style="background:#0d2010;border:2px solid #2ecc71;border-radius:8px;
+            <div style="background:#f0fdf4;border:2px solid #2ecc71;border-radius:8px;
                         padding:0.7rem 0.9rem">
                 <div style="font-size:0.7rem;color:#2ecc71;text-transform:uppercase;
                             letter-spacing:0.06em">Scenario B</div>
@@ -437,8 +437,8 @@ def render():
         colour = "#4a9eff" if winner == "A" else "#2ecc71"
         with col:
             st.markdown(f"""
-                <div style="background:#1a2332;border-radius:8px;padding:0.7rem;
-                            border:1px solid #2a3a52;text-align:center">
+                <div style="background:#f0f4f8;border-radius:8px;padding:0.7rem;
+                            border:1px solid #e2e8f0;text-align:center">
                     <div style="font-size:0.68rem;color:#8899aa;text-transform:uppercase;
                                 letter-spacing:0.04em;margin-bottom:0.3rem">{label}</div>
                     <div style="font-size:0.82rem;color:#4a9eff">A: {fmt_fn(val_a)}</div>
@@ -465,7 +465,7 @@ def render():
         # Table header
         st.markdown(f"""
             <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1.2fr;
-                        gap:0.5rem;padding:0.4rem 0;border-bottom:2px solid #2a3a52;
+                        gap:0.5rem;padding:0.4rem 0;border-bottom:2px solid #94a3b8;
                         font-size:0.72rem;font-weight:600;text-transform:uppercase;
                         letter-spacing:0.05em">
                 <span style="color:#8899aa">Metric</span>
@@ -532,17 +532,17 @@ def render():
         # Water quality compliance row (non-numeric)
         st.markdown(f"""
             <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1.2fr;
-                        gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #1e2d3d;
+                        gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #e2e8f0;
                         align-items:center;font-size:0.83rem">
-                <span style="color:#c8ddf0">ADWG Compliance</span>
+                <span style="color:#334155">ADWG Compliance</span>
                 <span style="text-align:right">{comp_a}</span>
                 <span style="text-align:right">{comp_b}</span>
                 <span style="color:#8899aa;text-align:right">—</span>
             </div>
             <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1.2fr;
-                        gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #1e2d3d;
+                        gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid #e2e8f0;
                         align-items:center;font-size:0.83rem">
-                <span style="color:#c8ddf0">Residuals Complexity</span>
+                <span style="color:#334155">Residuals Complexity</span>
                 <span style="color:#e8f4fd;text-align:right">{res_a_rating.replace('_',' ').title()}</span>
                 <span style="color:#e8f4fd;text-align:right">{res_b_rating.replace('_',' ').title()}</span>
                 <span style="color:#8899aa;text-align:right">—</span>
@@ -624,7 +624,7 @@ def render():
                     </div>
                     <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.2rem">
                         <span style="font-size:0.75rem;color:#4a9eff;min-width:90px">Scenario A</span>
-                        <div style="flex:1;background:#1a2332;border-radius:3px;height:12px;position:relative">
+                        <div style="flex:1;background:#f0f4f8;border-radius:3px;height:12px;position:relative">
                             <div style="width:{pct_a:.1f}%;background:#4a9eff;height:100%;border-radius:3px"></div>
                             <div style="position:absolute;left:100%;top:-1px;bottom:-1px;width:2px;background:#e74c3c;opacity:0.7"></div>
                         </div>
@@ -633,7 +633,7 @@ def render():
                     </div>
                     <div style="display:flex;align-items:center;gap:0.5rem">
                         <span style="font-size:0.75rem;color:#2ecc71;min-width:90px">Scenario B</span>
-                        <div style="flex:1;background:#1a2332;border-radius:3px;height:12px;position:relative">
+                        <div style="flex:1;background:#f0f4f8;border-radius:3px;height:12px;position:relative">
                             <div style="width:{pct_b:.1f}%;background:#2ecc71;height:100%;border-radius:3px"></div>
                             <div style="position:absolute;left:100%;top:-1px;bottom:-1px;width:2px;background:#e74c3c;opacity:0.7"></div>
                         </div>
@@ -660,8 +660,8 @@ def render():
             cb_d = "#2ecc71" if ok_b_d else "#e74c3c"
             st.markdown(f"""
                 <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:0.5rem;
-                            padding:0.35rem 0;border-bottom:1px solid #1e2d3d;font-size:0.83rem">
-                    <span style="color:#c8ddf0">{check_lbl}</span>
+                            padding:0.35rem 0;border-bottom:1px solid #e2e8f0;font-size:0.83rem">
+                    <span style="color:#334155">{check_lbl}</span>
                     <span style="color:{ca_d};font-weight:600;text-align:center">{ia} A</span>
                     <span style="color:{cb_d};font-weight:600;text-align:center">{ib} B</span>
                 </div>
@@ -676,7 +676,7 @@ def render():
 
         with col_r1:
             st.markdown(f"""
-                <div style="background:#0d1e30;border:2px solid #4a9eff;border-radius:8px;
+                <div style="background:#eff6ff;border:2px solid #4a9eff;border-radius:8px;
                             padding:0.8rem;margin-bottom:0.5rem">
                     <div style="font-size:0.7rem;color:#4a9eff;margin-bottom:0.3rem">SCENARIO A RESIDUALS</div>
                     <div style="font-size:0.88rem;color:{complexity_colours.get(res_a_rating,'#8899aa')};font-weight:600">
@@ -689,7 +689,7 @@ def render():
 
         with col_r2:
             st.markdown(f"""
-                <div style="background:#0d2010;border:2px solid #2ecc71;border-radius:8px;
+                <div style="background:#f0fdf4;border:2px solid #2ecc71;border-radius:8px;
                             padding:0.8rem;margin-bottom:0.5rem">
                     <div style="font-size:0.7rem;color:#2ecc71;margin-bottom:0.3rem">SCENARIO B RESIDUALS</div>
                     <div style="font-size:0.88rem;color:{complexity_colours.get(res_b_rating,'#8899aa')};font-weight:600">
@@ -723,7 +723,7 @@ def render():
         ]
         st.markdown(f"""
             <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr;gap:0.5rem;
-                        padding:0.3rem 0;border-bottom:2px solid #2a3a52;
+                        padding:0.3rem 0;border-bottom:2px solid #94a3b8;
                         font-size:0.7rem;font-weight:600;text-transform:uppercase;color:#8899aa">
                 <span>Metric</span>
                 <span style="color:#4a9eff;text-align:right">Scenario A</span>
@@ -735,8 +735,8 @@ def render():
             c_b = "#2ecc71" if vb <= va else "#e8f4fd"
             st.markdown(f"""
                 <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr;gap:0.5rem;
-                            padding:0.35rem 0;border-bottom:1px solid #1e2d3d;font-size:0.83rem">
-                    <span style="color:#c8ddf0">{lbl}</span>
+                            padding:0.35rem 0;border-bottom:1px solid #e2e8f0;font-size:0.83rem">
+                    <span style="color:#334155">{lbl}</span>
                     <span style="color:{c_a};text-align:right;font-weight:600">{va:.1f}</span>
                     <span style="color:{c_b};text-align:right;font-weight:600">{vb:.1f}</span>
                 </div>

@@ -86,10 +86,6 @@ RESIDUALS_SCORES = {
     "low": 9, "moderate": 6, "high": 3, "very_high": 1,
 }
 
-# Softening-specific residuals penalty — lime sludge is uniquely burdensome
-# and requires explicit additional penalty beyond generic very_high rating
-SOFTENING_RESIDUALS_PENALTY = 2  # Additional deduction from residuals_burden score
-
 # Variability robustness (how well the archetype handles raw water variability)
 VARIABILITY_ROBUSTNESS = {
     "A": 3,   # Direct filtration very sensitive to variability
@@ -232,9 +228,6 @@ def score_archetypes(
         # Heavy penalty for classified wastes
         if residuals and residuals.classified_waste_streams:
             s.residuals_burden = max(1, s.residuals_burden - 2)
-        # Additional penalty for softening — lime sludge volume/dewaterability is uniquely burdensome
-        if key == "F":
-            s.residuals_burden = max(1, s.residuals_burden - SOFTENING_RESIDUALS_PENALTY)
 
         s.tier3_score = round(
             (s.energy_demand * 0.25 + s.chemical_demand * 0.25 +

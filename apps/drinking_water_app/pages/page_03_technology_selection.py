@@ -75,10 +75,10 @@ def _get_hint(plant_type: str, source_water: dict):
 def render():
     st.markdown("""
         <div style="margin-bottom:1.5rem">
-            <h2 style="color:#e8f4fd;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
+            <h2 style="color:#1a1a2e;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
                 Technology Selection
             </h2>
-            <p style="color:#8899aa;font-size:0.9rem;margin:0">
+            <p style="color:#555;font-size:0.9rem;margin:0">
                 Select technologies for the analysis. The reasoning engine suggests
                 a preferred philosophy — you retain full control of the final selection.
             </p>
@@ -108,7 +108,7 @@ def render():
             train_str = " → ".join(TECHNOLOGIES[t]["label"] for t in suggested)
 
             st.markdown(f"""
-                <div style="background:#0a1d2e;border:1px solid #1a4a6e;
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;
                             border-radius:10px;padding:0.9rem 1.2rem;margin-bottom:1rem">
                     <div style="font-size:0.68rem;color:#4a9eff;text-transform:uppercase;
                                 letter-spacing:0.08em;margin-bottom:0.35rem">
@@ -117,12 +117,12 @@ def render():
                     <div style="font-size:0.92rem;font-weight:700;color:#e8f4fd;margin-bottom:0.25rem">
                         {pkey}. {hint.preferred_archetype_label}
                     </div>
-                    <div style="font-size:0.81rem;color:#89b4e8;line-height:1.6;margin-bottom:0.55rem">
+                    <div style="font-size:0.81rem;color:#1a56a0;line-height:1.6;margin-bottom:0.55rem">
                         {arch.get('philosophy', '')}
                     </div>
                     <div style="font-size:0.77rem;color:#8899aa">
                         Suggested train:
-                        <span style="color:#4ae8ff">{train_str}</span>
+                        <span style="color:#0284c7">{train_str}</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -202,8 +202,8 @@ def render():
     if new_selected:
         train_display = " → ".join(TECHNOLOGIES[t]["label"] for t in new_selected)
         st.markdown(f"""
-            <div style="background:#0d1e30;border:1px solid #4a9eff;border-radius:8px;
-                        padding:0.8rem 1rem;font-size:0.85rem;color:#89b4e8">
+            <div style="background:#eff6ff;border:1px solid #4a9eff;border-radius:8px;
+                        padding:0.8rem 1rem;font-size:0.85rem;color:#1a56a0">
                 <span style="color:#4a9eff;font-weight:600">Treatment Train: </span>
                 {train_display}
             </div>

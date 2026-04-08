@@ -160,10 +160,10 @@ def _build_report_text(inputs: dict, results: dict) -> str:
 def render():
     st.markdown("""
         <div style="margin-bottom:1.5rem">
-            <h2 style="color:#e8f4fd;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
+            <h2 style="color:#1a1a2e;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
                 Export Report
             </h2>
-            <p style="color:#8899aa;font-size:0.9rem;margin:0">
+            <p style="color:#555;font-size:0.9rem;margin:0">
                 Download a structured analysis report for client delivery or internal records.
             </p>
         </div>

@@ -14,121 +14,92 @@ from typing import Optional
 # (credited_low, credited_high, notes, validated_or_indicative)
 
 LRV_BARRIER_CREDITS = {
-    # ── Physical removal barriers ──────────────────────────────────────────────
-    # IMPORTANT: Credits reflect what regulators would accept under ADWG 2022.
-    # Coagulation-flocculation is an ENABLER of downstream barriers, not an
-    # independent LRV barrier. No standalone protozoa/virus credit is awarded.
-    # Sedimentation and filtration credits are conditional on coagulation quality
-    # and upstream turbidity — indicative credits assume well-optimised conditions.
+    # Physical removal barriers
     "coagulation_flocculation": {
-        "protozoa":  (0.0, 0.0, "Not an independent LRV barrier. Enables clarification and "
-                                 "filtration performance. Credit assigned to downstream steps.", "validated"),
-        "bacteria":  (0.0, 0.5, "Marginal. Most credit assigned to downstream filtration.", "indicative"),
-        "virus":     (0.0, 0.0, "No independent virus removal credit.", "validated"),
+        "protozoa":  (0.5, 1.0, "Indicative. Removal depends on floc quality.", "indicative"),
+        "bacteria":  (0.5, 1.0, "Indicative. Not a primary bacterial barrier.", "indicative"),
+        "virus":     (0.0, 0.5, "Limited — viruses are very small.", "indicative"),
     },
     "sedimentation": {
-        "protozoa":  (0.5, 1.5, "Gravity settling of coagulated Cryptosporidium oocysts. "
-                                 "Credit conditional on coagulation optimisation.", "indicative"),
-        "bacteria":  (0.5, 1.0, "Indicative. Requires effective coagulation upstream.", "indicative"),
-        "virus":     (0.0, 0.5, "Limited virus settling. Viruses are colloidal.", "indicative"),
+        "protozoa":  (1.0, 2.0, "Gravity settling removes flocculated Cryptosporidium oocysts.", "indicative"),
+        "bacteria":  (0.5, 1.0, "Indicative.", "indicative"),
+        "virus":     (0.0, 0.5, "Limited virus settling.", "indicative"),
     },
     "daf": {
-        "protozoa":  (1.5, 2.0, "DAF effective for Cryptosporidium when well-coagulated. "
-                                 "Validated at 1.5–2.0 log in Australian DAF studies (WRc, AWWARF).", "validated"),
-        "bacteria":  (1.0, 1.5, "Indicative.", "indicative"),
-        "virus":     (0.5, 1.0, "Limited. Viruses not effectively floated.", "indicative"),
+        "protozoa":  (1.5, 2.5, "DAF effective for Cryptosporidium when well-coagulated.", "validated"),
+        "bacteria":  (1.0, 2.0, "Indicative.", "indicative"),
+        "virus":     (0.5, 1.0, "Limited.", "indicative"),
     },
     "lamella_clarification": {
-        "protozoa":  (0.5, 1.5, "Similar performance to conventional sedimentation.", "indicative"),
+        "protozoa":  (1.0, 2.0, "Similar to conventional sedimentation.", "indicative"),
         "bacteria":  (0.5, 1.0, "Indicative.", "indicative"),
         "virus":     (0.0, 0.5, "Limited.", "indicative"),
     },
     "ballasted_clarification": {
-        "protozoa":  (1.0, 2.0, "Ballasted floc can improve Cryptosporidium removal "
-                                 "vs conventional sedimentation.", "indicative"),
+        "protozoa":  (1.0, 2.5, "Can achieve higher Cp removal due to ballasted floc.", "indicative"),
         "bacteria":  (0.5, 1.0, "Indicative.", "indicative"),
         "virus":     (0.0, 0.5, "Limited.", "indicative"),
     },
     "rapid_gravity_filtration": {
-        "protozoa":  (1.5, 2.5, "Key Cryptosporidium removal barrier. Credit conditional on "
-                                 "filter effluent turbidity <0.1 NTU and effective upstream coagulation. "
-                                 "Validated at 1.5–2.5 log under good operating conditions (ADWG Table 10.1).", "validated"),
-        "bacteria":  (0.5, 1.5, "Indicative. Not a primary bacterial barrier.", "indicative"),
-        "virus":     (0.5, 1.0, "Limited. Viruses pass most granular filters without chemical aid.", "indicative"),
+        "protozoa":  (2.0, 3.0, "Validated. Key Cryptosporidium barrier when turbidity <0.1 NTU.", "validated"),
+        "bacteria":  (1.0, 2.0, "Indicative.", "indicative"),
+        "virus":     (1.0, 2.0, "Indicative. Depends on media type and run condition.", "indicative"),
     },
     "slow_sand_filtration": {
-        "protozoa":  (2.0, 3.5, "Validated. Excellent Cryptosporidium barrier via biological "
-                                 "schmutzdecke when mature. Requires stable influent quality.", "validated"),
+        "protozoa":  (2.0, 4.0, "Validated. Excellent Cryptosporidium barrier via schmutzdecke.", "validated"),
         "bacteria":  (2.0, 3.0, "Validated.", "validated"),
-        "virus":     (1.0, 2.0, "Biological removal. Indicative.", "indicative"),
+        "virus":     (1.0, 2.0, "Indicative. Slower biological removal.", "indicative"),
     },
     "mf_uf": {
-        "protozoa":  (3.0, 4.0, "Validated absolute barrier for particles above membrane pore size. "
-                                 "Integrity testing required to claim full credit (ADWG).", "validated"),
+        "protozoa":  (3.0, 4.0, "Validated. Absolute barrier for particles > membrane pore size.", "validated"),
         "bacteria":  (3.0, 4.0, "Validated.", "validated"),
-        "virus":     (0.0, 2.0, "MF: minimal virus removal. UF: up to 2 log if MWCO ≤100 kDa. "
-                                 "Credit requires integrity verification.", "validated"),
+        "virus":     (0.5, 2.0, "Partial removal — UF provides better virus removal than MF.", "validated"),
     },
     "ro": {
-        "protozoa":  (3.5, 4.5, "Very high removal. Validated in advanced water recycling systems. "
-                                 "Credit capped conservatively — integrity testing required. "
-                                 "Where MF/UF precedes RO, protozoan credit is dominated by MF/UF.", "validated"),
-        "bacteria":  (4.0, 5.5, "Very high removal.", "validated"),
-        "virus":     (3.0, 5.5, "High removal. Credit requires integrity testing.", "validated"),
+        "protozoa":  (4.0, 6.0, "Very high removal. Validated in advanced systems.", "validated"),
+        "bacteria":  (4.0, 6.0, "Very high removal.", "validated"),
+        "virus":     (3.0, 6.0, "Validated for high LRV systems.", "validated"),
     },
     "nf": {
-        "protozoa":  (3.0, 4.0, "High removal. Depends on MWCO and membrane condition.", "indicative"),
-        "bacteria":  (3.0, 4.0, "High removal.", "indicative"),
-        "virus":     (1.5, 3.5, "Variable. Depends strongly on MWCO.", "indicative"),
+        "protozoa":  (3.0, 5.0, "High removal.", "indicative"),
+        "bacteria":  (3.0, 5.0, "High removal.", "indicative"),
+        "virus":     (2.0, 4.0, "Depends on MWCO.", "indicative"),
     },
 
-    # ── Disinfection barriers ─────────────────────────────────────────────────
+    # Disinfection barriers
     "chlorination": {
-        "protozoa":  (0.0, 0.0, "Chlorine provides NO validated credit for Cryptosporidium at "
-                                 "practical water treatment Ct values (<10 mg·min/L). "
-                                 "Giardia credit only at high Ct (>65 mg·min/L at pH 6–7). "
-                                 "Chlorine alone is not an adequate protozoan barrier.", "validated"),
-        "bacteria":  (1.5, 3.0, "Validated. Effective at typical Ct (>0.2 mg·min/L). "
-                                 "Credit reduced at high TOC or pH >8.", "validated"),
-        "virus":     (2.0, 3.5, "Validated. Effective for enteric viruses at typical Ct. "
-                                 "Credit reduced at high TOC or high pH.", "validated"),
+        "protozoa":  (0.0, 0.5, "Chlorine is NOT an effective Cryptosporidium or Giardia barrier "
+                                 "at practical Ct values. Ct requirements are very high for Giardia.", "validated"),
+        "bacteria":  (2.0, 4.0, "Validated. Effective primary disinfectant for bacteria.", "validated"),
+        "virus":     (2.0, 4.0, "Validated. Effective for viruses at typical Ct.", "validated"),
     },
     "chloramination": {
-        "protozoa":  (0.0, 0.0, "Chloramines provide NO protozoan inactivation credit.", "validated"),
-        "bacteria":  (0.0, 1.0, "Very low inactivation — secondary residual maintenance only.", "validated"),
-        "virus":     (0.0, 1.0, "Very low inactivation — secondary residual maintenance only.", "validated"),
+        "protozoa":  (0.0, 0.0, "Chloramines provide no meaningful protozoan inactivation.", "validated"),
+        "bacteria":  (0.5, 1.5, "Low inactivation — secondary residual only.", "validated"),
+        "virus":     (0.5, 1.5, "Low inactivation — secondary residual only.", "validated"),
     },
     "uv_disinfection": {
-        "protozoa":  (1.5, 2.0, "Validated. LP UV at 40 mJ/cm² achieves ~2 log Cryptosporidium, "
-                                 "~3 log Giardia. Credited conservatively at 2 log for Crypto "
-                                 "(ADWG Table 10.1 LP UV validated credit). "
-                                 "MP UV at higher doses can achieve 3+ log but requires dose verification.", "validated"),
-        "bacteria":  (1.5, 2.5, "Validated. Effective at standard UV doses.", "validated"),
-        "virus":     (1.0, 2.5, "Validated. LP UV less effective for adenovirus. "
-                                 "Higher doses required for full viral credit (>100 mJ/cm²).", "validated"),
+        "protozoa":  (2.0, 4.0, "Validated. UV is the key protozoan inactivation barrier (Cryptosporidium, Giardia).", "validated"),
+        "bacteria":  (2.0, 3.0, "Validated. Effective at typical doses.", "validated"),
+        "virus":     (1.0, 4.0, "Validated. Higher UV doses required. LP vs. MP UV differs.", "validated"),
     },
     "ozonation": {
-        "protozoa":  (0.0, 0.5, "CRITICAL: Cryptosporidium is highly resistant to ozone. "
-                                 "Practical water treatment Ct (0.5–1.5 mg·min/L at 15°C) provides "
-                                 "essentially 0 log Cryptosporidium inactivation. Giardia credit "
-                                 "up to 0.5 log at low Ct. High ozone credit for protozoa requires "
-                                 "Ct >10 mg·min/L which is NOT achievable in most plants.", "validated"),
-        "bacteria":  (2.0, 3.5, "Validated. Strong oxidant — effective bacterial inactivation.", "validated"),
-        "virus":     (2.0, 3.5, "Validated. Effective virus inactivation at practical Ct.", "validated"),
+        "protozoa":  (0.5, 2.5, "Validated for Giardia. Cryptosporidium requires very high Ct. "
+                                 "Credit is CT-verified and restricted.", "validated"),
+        "bacteria":  (2.0, 4.0, "Validated. Strong oxidant.", "validated"),
+        "virus":     (2.0, 4.0, "Validated. Effective virus inactivation.", "validated"),
     },
     "aop": {
-        "protozoa":  (1.0, 2.5, "UV/H₂O₂: credit from UV component (protozoa). "
-                                 "O₃/H₂O₂: limited additional Crypto credit over ozone alone.", "indicative"),
-        "bacteria":  (2.0, 3.5, "Indicative.", "indicative"),
-        "virus":     (2.0, 3.5, "Indicative.", "indicative"),
+        "protozoa":  (1.0, 3.0, "Indicative. UV/H₂O₂ provides UV-equivalent protozoan inactivation.", "indicative"),
+        "bacteria":  (2.0, 4.0, "Indicative.", "indicative"),
+        "virus":     (2.0, 4.0, "Indicative.", "indicative"),
     },
 
-    # ── Source protection ─────────────────────────────────────────────────────
+    # Source protection (credit in some frameworks)
     "source_protection": {
-        "protozoa":  (0.0, 1.0, "Indicative source risk reduction. Only credited in some "
-                                 "jurisdictional frameworks with formal catchment management.", "indicative"),
-        "bacteria":  (0.0, 1.0, "Indicative.", "indicative"),
-        "virus":     (0.0, 1.0, "Indicative.", "indicative"),
+        "protozoa":  (0.5, 1.0, "Indicative source risk reduction.", "indicative"),
+        "bacteria":  (0.5, 1.0, "Indicative.", "indicative"),
+        "virus":     (0.5, 1.0, "Indicative.", "indicative"),
     },
 }
 

@@ -704,10 +704,7 @@ def run_archetype_selection(inputs: SourceWaterInputs,
     result.ozone_bromide_warning = True  # requires assessment regardless
 
     # Primary recommendation heuristic
-    # Priority: mandatory archetypes first, then constraint-matched, then highest scorer.
-    # IMPORTANT: The preferred archetype must address the PRIMARY CONSTRAINT.
-    # A high-scoring archetype that does not address the governing constraint
-    # is not the right recommendation.
+    # Priority: mandatory archetypes first, then most appropriate
     if result.requires_membrane and inputs.treatment_objective == "recycled":
         result.primary_recommendation = "H"
         result.recommendation_rationale = (
@@ -717,80 +714,41 @@ def run_archetype_selection(inputs: SourceWaterInputs,
         result.primary_recommendation = "D"
         result.recommendation_rationale = (
             "DAF-led treatment is the preferred primary archetype where algae and "
-            "cyanobacteria are the dominant source water challenge. "
-            "DAF provides superior removal of low-density algal cells and associated NOM "
-            "compared to conventional sedimentation."
+            "cyanobacteria are the dominant source water challenge."
         )
     elif classification.primary_constraint == "nom_dbp":
         result.primary_recommendation = "E"
         result.recommendation_rationale = (
             "Enhanced coagulation + biofiltration targets NOM removal at the coagulation "
-            "stage and stabilises the water biologically before disinfection. "
-            "This is the appropriate primary philosophy where DBP precursor control is the "
-            "governing treatment objective."
+            "stage and stabilises the water biologically before disinfection."
         )
     elif classification.primary_constraint == "hardness":
-        # Softening is required to address hardness — regardless of its score relative
-        # to other archetypes. DAF, conventional etc. do not remove hardness.
-        if "F" in [a.key for a in result.viable_archetypes]:
-            result.primary_recommendation = "F"
-            result.recommendation_rationale = (
-                "Softening-led treatment is required where hardness reduction is the primary "
-                "objective. DAF, conventional sedimentation, and membrane systems (except RO/NF) "
-                "do not reduce hardness. Lime or lime + soda ash softening is the appropriate "
-                "primary philosophy. Note: softening generates high-volume lime sludge — "
-                "residuals handling is a co-equal design element."
-            )
-        else:
-            # Softening excluded (e.g. moderate hardness) — membrane may be next best
-            result.primary_recommendation = "H"
-            result.recommendation_rationale = (
-                "Hardness is the primary constraint but softening (Archetype F) is not viable "
-                "for this configuration. RO/NF membrane is the alternative for hardness reduction."
-            )
+        result.primary_recommendation = "F"
+        result.recommendation_rationale = (
+            "Softening-led treatment is required where hardness reduction is the primary objective."
+        )
     elif classification.primary_constraint in ["pfas_troc", "arsenic", "salinity_tds"]:
         result.primary_recommendation = "I"
         result.recommendation_rationale = (
             "A contaminant-specific treatment train is required for the identified "
-            "dissolved contaminant challenge. Conventional treatment archetypes alone "
-            "are insufficient to achieve the required removal targets."
+            "dissolved contaminant challenge."
         )
     elif classification.primary_constraint == "taste_odour":
         result.primary_recommendation = "G"
         result.recommendation_rationale = (
             "Ozone + BAC/GAC is the most effective continuous strategy for "
-            "MIB/geosmin taste and odour control. PAC dosing provides event-response "
-            "capability but is not reliable as the primary long-term strategy."
+            "MIB/geosmin taste and odour control."
         )
-    elif classification.primary_constraint in ["iron_manganese"]:
-        # Fe/Mn in groundwater — conventional with oxidation is correct, not DAF
-        if "B" in [a.key for a in result.viable_archetypes]:
-            result.primary_recommendation = "B"
-            result.recommendation_rationale = (
-                "Iron and manganese removal governs the treatment train. Conventional treatment "
-                "with pre-oxidation (aeration, chlorination, or KMnO₄) and filtration is the "
-                "established approach. DAF is not the preferred front-end for dissolved Fe/Mn "
-                "in groundwater — oxidation and granular filtration are the primary mechanisms."
-            )
-        else:
-            result.primary_recommendation = "A"
-            result.recommendation_rationale = (
-                "Iron and manganese removal with oxidation and filtration. "
-                "See iron/manganese contaminant module for pathway detail."
-            )
     elif inputs.land_constrained or inputs.is_retrofit:
         result.primary_recommendation = "C"
         result.recommendation_rationale = (
-            "Intensified clarification suits the retrofit or land-constrained context, "
-            "providing comparable solids removal to conventional sedimentation in a "
-            "significantly smaller footprint."
+            "Intensified clarification suits the retrofit or land-constrained context."
         )
     elif classification.direct_filtration_eligible:
         result.primary_recommendation = "A"
         result.recommendation_rationale = (
             "Source water quality is consistent with direct filtration. "
-            "This is the simplest and most cost-effective option for this source, "
-            "provided the source remains within the direct filtration operating envelope."
+            "This is the simplest and most robust option for this source."
         )
     else:
         result.primary_recommendation = "B"

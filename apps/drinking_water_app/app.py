@@ -72,24 +72,27 @@ PAGES = {
 
 
 def render_sidebar():
-    """Render the AquaPoint sidebar with navigation."""
+    """Render the AquaPoint sidebar with navigation — light theme matching WaterPoint."""
     with st.sidebar:
         # App header
         st.markdown(f"""
             <div style="text-align:center;padding:0.5rem 0 1rem 0">
-                <div style="font-size:1.6rem;font-weight:800;color:#4a9eff;letter-spacing:-0.03em">
+                <div style="font-size:1.6rem;font-weight:800;color:#1a56a0;letter-spacing:-0.03em">
                     💧 {APP_NAME}
                 </div>
-                <div style="font-size:0.72rem;color:#8899aa;margin-top:0.2rem;letter-spacing:0.05em">
+                <div style="font-size:0.72rem;color:#666;margin-top:0.2rem;letter-spacing:0.05em">
                     DRINKING WATER TREATMENT
                 </div>
-                <div style="font-size:0.65rem;color:#445566;margin-top:0.1rem">
+                <div style="font-size:0.65rem;color:#999;margin-top:0.1rem">
                     {APP_VERSION} | ph2o Consulting
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
         st.divider()
+
+        # Navigation label
+        st.markdown("<div style='font-size:0.72rem;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.3rem'>Navigate</div>", unsafe_allow_html=True)
 
         # Navigation
         current_page = st.session_state.get("current_page", "project_setup")
@@ -113,21 +116,21 @@ def render_sidebar():
 
         if project_name or flow:
             st.markdown("""
-                <div style="font-size:0.72rem;color:#8899aa;text-transform:uppercase;
+                <div style="font-size:0.72rem;color:#666;text-transform:uppercase;
                             letter-spacing:0.05em;margin-bottom:0.4rem">Current Project</div>
             """, unsafe_allow_html=True)
 
             if project_name:
-                st.markdown(f"<span style='font-size:0.82rem;color:#e8f4fd;font-weight:600'>{project_name}</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:0.82rem;color:#1a1a2e;font-weight:600'>{project_name}</span>", unsafe_allow_html=True)
 
             plant_label = PLANT_TYPES.get(plant_type, {}).get("label", plant_type)
-            st.markdown(f"<span style='font-size:0.78rem;color:#8899aa'>{plant_label}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size:0.78rem;color:#555'>{plant_label}</span>", unsafe_allow_html=True)
 
             if flow:
-                st.markdown(f"<span style='font-size:0.78rem;color:#8899aa'>{flow:.1f} ML/d design flow</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:0.78rem;color:#555'>{flow:.1f} ML/d design flow</span>", unsafe_allow_html=True)
 
             if selected_techs:
-                st.markdown(f"<span style='font-size:0.78rem;color:#4a9eff'>{len(selected_techs)} technologies selected</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:0.78rem;color:#1a56a0;font-weight:600'>{len(selected_techs)} technologies selected</span>", unsafe_allow_html=True)
 
             # MCA score if available
             last_results = st.session_state.get("last_results")
@@ -135,17 +138,17 @@ def render_sidebar():
                 mca_score = last_results.get("mca", {}).get("total_score", 0)
                 colour = "#2ecc71" if mca_score >= 75 else "#f39c12" if mca_score >= 50 else "#e74c3c"
                 st.markdown(f"""
-                    <div style="margin-top:0.5rem;background:#1a2332;border-radius:6px;
-                                padding:0.5rem;text-align:center">
-                        <div style="font-size:0.7rem;color:#8899aa">MCA Score</div>
+                    <div style="margin-top:0.5rem;background:#f0f4f8;border-radius:6px;
+                                padding:0.5rem;text-align:center;border:1px solid #dde">
+                        <div style="font-size:0.7rem;color:#666">MCA Score</div>
                         <div style="font-size:1.4rem;font-weight:700;color:{colour}">{mca_score:.0f}</div>
-                        <div style="font-size:0.65rem;color:#8899aa">/ 100</div>
+                        <div style="font-size:0.65rem;color:#666">/ 100</div>
                     </div>
                 """, unsafe_allow_html=True)
 
         st.divider()
         st.markdown("""
-            <div style="font-size:0.68rem;color:#445566;text-align:center">
+            <div style="font-size:0.68rem;color:#999;text-align:center">
                 Water Utility Planning Platform<br>
                 Stage 2 of 3 — Drinking Water<br>
                 ph2o Consulting
@@ -173,20 +176,11 @@ def run():
     if "selected_technologies" not in st.session_state:
         st.session_state["selected_technologies"] = []
 
-    # Apply dark theme CSS
+    # Minimal CSS — Streamlit default light theme handles everything else
     st.markdown("""
         <style>
             .main .block-container { padding-top: 1.5rem; max-width: 1100px; }
-            [data-testid="stSidebar"] { background: #0b1520; }
-            .stButton > button {
-                border-radius: 6px;
-                font-weight: 500;
-                transition: all 0.15s ease;
-            }
-            .stCheckbox > label { color: #e8f4fd !important; }
-            .stRadio > label { color: #e8f4fd !important; }
-            div[data-testid="stMetric"] label { color: #8899aa !important; }
-            div[data-testid="stMetric"] div { color: #e8f4fd !important; }
+            .stButton > button { border-radius: 6px; font-weight: 500; }
         </style>
     """, unsafe_allow_html=True)
 

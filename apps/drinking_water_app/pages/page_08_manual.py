@@ -11,7 +11,7 @@ from ..ui_helpers import section_header, info_box, warning_box, success_box
 def render():
     st.markdown("""
         <div style="margin-bottom:1rem">
-            <h2 style="color:#e8f4fd;font-size:1.4rem;font-weight:600;margin-bottom:0.2rem">
+            <h2 style="color:#1a1a2e;font-size:1.4rem;font-weight:600;margin-bottom:0.2rem">
                 📖 User Manual
             </h2>
             <p style="color:#8899aa;font-size:0.9rem;margin:0;font-style:italic">

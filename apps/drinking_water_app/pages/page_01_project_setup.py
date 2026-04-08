@@ -9,10 +9,10 @@ from ..ui_helpers import section_header, info_box
 def render():
     st.markdown(f"""
         <div style="margin-bottom:1.5rem">
-            <h2 style="color:#e8f4fd;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
+            <h2 style="color:#1a1a2e;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
                 Project Setup
             </h2>
-            <p style="color:#8899aa;font-size:0.9rem;margin:0">
+            <p style="color:#555;font-size:0.9rem;margin:0">
                 Define project parameters, plant type, and design flow for your drinking water treatment analysis.
             </p>
         </div>
@@ -193,7 +193,7 @@ def render():
         for label, val in summary_items:
             st.markdown(f"""
                 <div style="display:flex;justify-content:space-between;align-items:center;
-                            padding:0.3rem 0;border-bottom:1px solid #1e2d3d">
+                            padding:0.3rem 0;border-bottom:1px solid #e2e8f0">
                     <span style="color:#8899aa;font-size:0.82rem">{label}</span>
                     <span style="color:#e8f4fd;font-size:0.85rem;font-weight:600">{val}</span>
                 </div>

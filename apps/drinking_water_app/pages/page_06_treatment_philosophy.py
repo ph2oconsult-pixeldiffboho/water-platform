@@ -291,12 +291,12 @@ def _lrv_bar(pathogen: str, required: float, lo: float, hi: float) -> str:
     <div style="margin-bottom:0.7rem">
       <div style="display:flex;justify-content:space-between;align-items:center;
                   font-size:0.82rem;margin-bottom:0.25rem">
-        <span style="color:#e8f4fd;font-weight:600;min-width:80px">{pathogen.title()}</span>
+        <span style="color:#1a1a2e;font-weight:600;min-width:80px">{pathogen.title()}</span>
         <span style="color:#8899aa">Required: {required:.1f} log</span>
-        <span style="color:#89b4e8">Credited: {lo:.1f}–{hi:.1f} log</span>
+        <span style="color:#1a56a0">Credited: {lo:.1f}–{hi:.1f} log</span>
         <span>{status}</span>
       </div>
-      <div style="position:relative;background:#1a2332;border-radius:4px;height:12px">
+      <div style="position:relative;background:#f0f4f8;border-radius:4px;height:12px">
         <div style="width:{pct_hi:.1f}%;background:#4a9eff33;height:100%;
                     border-radius:4px;position:absolute"></div>
         <div style="width:{pct_lo:.1f}%;background:#4a9eff;height:100%;
@@ -317,7 +317,7 @@ def _archetype_card(key, label, viable, rationale="", flags=None, preferred=Fals
     else:
         border = "#3a1a1a"; bg = "#1a0a0a"; icon = "✗"; ic = "#e74c3c"; tag = ""
 
-    body   = f'<div style="font-size:0.78rem;color:#89b4e8;margin-top:0.28rem">{rationale[:170]}</div>' if rationale else ""
+    body   = f'<div style="font-size:0.78rem;color:#1a56a0;margin-top:0.28rem">{rationale[:170]}</div>' if rationale else ""
     f_html = "".join(
         f'<div style="font-size:0.72rem;color:#f39c12;margin-top:0.12rem">⚠ {f[:140]}</div>'
         for f in (flags or [])[:2]
@@ -364,9 +364,9 @@ def render():
 
     # Executive summary
     st.markdown(f"""
-        <div style="background:#0d1e30;border-left:4px solid #4a9eff;padding:0.9rem 1.2rem;
+        <div style="background:#f0f4ff;border-left:4px solid #4a9eff;padding:0.9rem 1.2rem;
                     border-radius:0 8px 8px 0;margin:0.5rem 0 0.8rem 0;
-                    font-size:0.87rem;color:#c8ddf0;line-height:1.65">
+                    font-size:0.87rem;color:#334155;line-height:1.65">
             {result.executive_summary}
         </div>
     """, unsafe_allow_html=True)
@@ -394,8 +394,8 @@ def render():
         c1, c2, c3 = st.columns(3)
         def _info_tile(heading, value, colour="#e8f4fd"):
             return (
-                f'<div style="background:#1a2332;border-radius:8px;padding:0.8rem;'
-                f'border:1px solid #2a3a52">'
+                f'<div style="background:#f0f4f8;border-radius:8px;padding:0.8rem;'
+                f'border:1px solid #e2e8f0">'
                 f'<div style="font-size:0.7rem;color:#8899aa;text-transform:uppercase;'
                 f'letter-spacing:0.05em">{heading}</div>'
                 f'<div style="font-size:0.88rem;color:{colour};font-weight:600;margin-top:0.2rem">{value}</div>'
@@ -410,7 +410,7 @@ def render():
         if cl.secondary_constraints:
             st.markdown(
                 f"<div style='font-size:0.8rem;color:#8899aa;margin:0.5rem 0'>"
-                f"Secondary: <span style='color:#c8ddf0'>{', '.join(cl.secondary_constraints)}</span></div>",
+                f"Secondary: <span style='color:#334155'>{', '.join(cl.secondary_constraints)}</span></div>",
                 unsafe_allow_html=True,
             )
 
@@ -430,7 +430,7 @@ def render():
             for i, m in enumerate(cl.contaminant_modules_required):
                 cols[i % 4].markdown(
                     f"<div style='background:#0d2d3a;border:1px solid #1a5566;border-radius:6px;"
-                    f"padding:0.4rem 0.7rem;font-size:0.8rem;color:#4ae8ff;text-align:center'>"
+                    f"padding:0.4rem 0.7rem;font-size:0.8rem;color:#0284c7;text-align:center'>"
                     f"{m.replace('_',' ').title()}</div>",
                     unsafe_allow_html=True,
                 )
@@ -460,8 +460,8 @@ def render():
         arch = ARCHETYPES.get(pkey, {})
         section_header(f"⭐  {result.preferred_archetype_label}", "🎯")
         st.markdown(f"""
-            <div style="background:#0d1e30;border:2px solid #4a9eff;border-radius:10px;
-                        padding:1rem 1.2rem;font-size:0.86rem;color:#89b4e8;line-height:1.7">
+            <div style="background:#eff6ff;border:2px solid #4a9eff;border-radius:10px;
+                        padding:1rem 1.2rem;font-size:0.86rem;color:#1a56a0;line-height:1.7">
                 {arch.get('philosophy', '')}
             </div>
         """, unsafe_allow_html=True)
@@ -488,9 +488,9 @@ def render():
         st.markdown(
             '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:0.5rem">'
             + "".join(
-                f'<div style="background:#1a2332;border-radius:6px;padding:0.45rem 0.8rem;font-size:0.8rem">'
+                f'<div style="background:#f0f4f8;border-radius:6px;padding:0.45rem 0.8rem;font-size:0.8rem">'
                 f'<span style="color:#8899aa">{lbl}: </span>'
-                f'<span style="color:#e8f4fd;font-weight:600">{val}</span></div>'
+                f'<span style="color:#1a1a2e;font-weight:600">{val}</span></div>'
                 for lbl, val in chips
             )
             + "</div>",
@@ -593,8 +593,8 @@ def render():
                         for c in sd.get("special_considerations", [])[:2]
                     )
                     st.markdown(f"""
-                        <div style="background:#1a2332;border-radius:6px;padding:0.55rem 0.85rem;margin:0.2rem 0;font-size:0.8rem">
-                          <div style="color:#e8f4fd;font-weight:600">{sd['label']}</div>
+                        <div style="background:#f0f4f8;border-radius:6px;padding:0.55rem 0.85rem;margin:0.2rem 0;font-size:0.8rem">
+                          <div style="color:#1a1a2e;font-weight:600">{sd['label']}</div>
                           <div style="color:#8899aa;margin-top:0.12rem">
                             Volume: {sd['volume_class']} | Generation: {sd['generation']}
                           </div>{sp}
@@ -683,9 +683,9 @@ def render():
         for i, step in enumerate(result.next_steps, 1):
             st.markdown(f"""
                 <div style="display:flex;gap:0.8rem;align-items:flex-start;padding:0.5rem 0;
-                            border-bottom:1px solid #1e2d3d;font-size:0.85rem">
+                            border-bottom:1px solid #e2e8f0;font-size:0.85rem">
                     <span style="color:#4a9eff;font-weight:700;min-width:1.5rem">{i}.</span>
-                    <span style="color:#c8ddf0;line-height:1.55">{step}</span>
+                    <span style="color:#334155;line-height:1.55">{step}</span>
                 </div>
             """, unsafe_allow_html=True)
 

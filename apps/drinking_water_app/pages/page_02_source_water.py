@@ -51,10 +51,10 @@ SOURCE_WATER_PRESETS = {
 def render():
     st.markdown("""
         <div style="margin-bottom:1.5rem">
-            <h2 style="color:#e8f4fd;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
+            <h2 style="color:#1a1a2e;font-size:1.4rem;font-weight:600;margin-bottom:0.3rem">
                 Source Water Quality
             </h2>
-            <p style="color:#8899aa;font-size:0.9rem;margin:0">
+            <p style="color:#555;font-size:0.9rem;margin:0">
                 Characterise source water to inform treatment train selection and performance prediction.
             </p>
         </div>
@@ -176,7 +176,7 @@ def render():
     col_c1, col_c2, col_c3 = st.columns(3)
     with col_c1:
         st.markdown(f"""
-            <div style="text-align:center;background:#1a2332;border-radius:8px;padding:1rem;border:1px solid #2a3a52">
+            <div style="text-align:center;background:#f0f4f8;border-radius:8px;padding:1rem;border:1px solid #e2e8f0">
                 <div style="font-size:0.75rem;color:#8899aa;margin-bottom:0.3rem">TREATMENT COMPLEXITY</div>
                 <div style="font-size:1.6rem;font-weight:700;color:{complexity_colour}">{complexity_label}</div>
             </div>
@@ -194,7 +194,7 @@ def render():
 
     with col_c2:
         st.markdown(f"""
-            <div style="background:#1a2332;border-radius:8px;padding:1rem;border:1px solid #2a3a52">
+            <div style="background:#f0f4f8;border-radius:8px;padding:1rem;border:1px solid #e2e8f0">
                 <div style="font-size:0.75rem;color:#8899aa;margin-bottom:0.5rem">KEY CONCERNS</div>
                 {''.join(f'<div style="font-size:0.8rem;color:#f39c12;margin:0.15rem 0">⚠ {c}</div>' for c in concerns) if concerns else '<div style="font-size:0.8rem;color:#2ecc71">✓ No major concerns</div>'}
             </div>
@@ -211,7 +211,7 @@ def render():
 
     with col_c3:
         st.markdown(f"""
-            <div style="background:#1a2332;border-radius:8px;padding:1rem;border:1px solid #2a3a52">
+            <div style="background:#f0f4f8;border-radius:8px;padding:1rem;border:1px solid #e2e8f0">
                 <div style="font-size:0.75rem;color:#8899aa;margin-bottom:0.5rem">RAW WATER ADWG EXCEEDANCES</div>
                 {''.join(f'<div style="font-size:0.8rem;color:#e74c3c;margin:0.15rem 0">✗ {e}</div>' for e in exceedances) if exceedances else '<div style="font-size:0.8rem;color:#2ecc71">✓ All within ADWG limits</div>'}
             </div>
