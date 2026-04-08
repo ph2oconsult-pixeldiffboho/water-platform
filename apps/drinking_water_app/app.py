@@ -75,6 +75,11 @@ def render_sidebar():
             </div>
         """, unsafe_allow_html=True)
 
+        if st.button("⬅ Platform Home", key="aq_home", use_container_width=True):
+            for _k in ("active_app", "page", "_app_context"):
+                st.session_state.pop(_k, None)
+            st.rerun()
+
         st.divider()
 
         # Navigation

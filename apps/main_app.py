@@ -174,7 +174,10 @@ elif _active == "biosolids":
     st.divider()
     _bp_sidebar = st.sidebar
     _bp_sidebar.title("🌱 BioPoint")
-    _bp_sidebar.markdown("*← Back to Platform Home: restart the launcher*")
+    if _bp_sidebar.button("⬅ Platform Home", key="bp_home"):
+        for _k in ("active_app", "page", "_app_context"):
+            st.session_state.pop(_k, None)
+        st.rerun()
     _bp_sidebar.divider()
     BP_PAGES = {
         "📂 Load Data":          "00_load_data",
@@ -223,7 +226,10 @@ elif _active == "wastewater":
     st.divider()
     _ww_sidebar = st.sidebar
     _ww_sidebar.title("💧 Wastewater Planner")
-    _ww_sidebar.markdown("*← Back to Platform Home: restart the launcher*")
+    if _ww_sidebar.button("⬅ Platform Home", key="ww_home"):
+        for _k in ("active_app", "page", "_app_context"):
+            st.session_state.pop(_k, None)
+        st.rerun()
     _ww_sidebar.divider()
 
     PAGES = {
