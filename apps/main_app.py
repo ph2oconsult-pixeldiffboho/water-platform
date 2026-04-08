@@ -113,7 +113,7 @@ st.divider()
 # ── Application cards ──────────────────────────────────────────────────────
 APPS = [
     {
-        "icon": "🏭",
+        "icon": "🌊",
         "title": "Wastewater Treatment",
         "description": (
             "Activated sludge, BNR, MBR and advanced biological processes. "
@@ -358,7 +358,7 @@ elif _active == "wastewater":
         project = get_current_project()
         _ww_sidebar.markdown("<div class='sb-section'>Current Project</div>", unsafe_allow_html=True)
         _ww_sidebar.caption(f"📁 {project.metadata.project_name}")
-        _ww_sidebar.caption(f"🏭 {project.metadata.plant_name or 'No plant set'}")
+        _ww_sidebar.caption(f"🌊 {project.metadata.plant_name or 'No plant set'}")
         if has_unsaved_changes():
             if _ww_sidebar.button("💾 Save Project", type="primary", use_container_width=True):
                 ProjectManager().save(project)
