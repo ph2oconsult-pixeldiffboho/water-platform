@@ -137,20 +137,11 @@ def run():
     if "selected_technologies" not in st.session_state:
         st.session_state["selected_technologies"] = []
 
-    # Apply dark theme CSS
+    # Layout CSS
     st.markdown("""
         <style>
             .main .block-container { padding-top: 1.5rem; max-width: 1100px; }
-            [data-testid="stSidebar"] { background: #0b1520; }
-            .stButton > button {
-                border-radius: 6px;
-                font-weight: 500;
-                transition: all 0.15s ease;
-            }
-            .stCheckbox > label { color: #e8f4fd !important; }
-            .stRadio > label { color: #e8f4fd !important; }
-            div[data-testid="stMetric"] label { color: #8899aa !important; }
-            div[data-testid="stMetric"] div { color: #e8f4fd !important; }
+            .stButton > button { border-radius: 6px; font-weight: 500; transition: all 0.15s ease; }
         </style>
     """, unsafe_allow_html=True)
 
