@@ -34,12 +34,17 @@ st.markdown("""
         padding: 28px 24px;
         text-align: center;
         transition: box-shadow 0.2s;
-        height: 100%;
+        height: 260px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
     }
     .app-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.10); }
-    .app-icon { font-size: 3rem; margin-bottom: 12px; }
-    .app-title { font-size: 1.2rem; font-weight: 700; color: #1f6aa5; margin-bottom: 8px; }
-    .app-desc  { font-size: 0.9rem; color: #555; margin-bottom: 0; }
+    .app-icon { font-size: 3rem; margin-bottom: 12px; flex-shrink: 0; }
+    .app-title { font-size: 1.2rem; font-weight: 700; color: #1f6aa5; margin-bottom: 8px; flex-shrink: 0; }
+    .app-desc  { font-size: 0.9rem; color: #555; margin-bottom: 0; flex-grow: 1; }
+    .app-card .status-badge { margin-top: auto; }
     .platform-header { text-align: center; padding: 32px 0 8px 0; }
     .status-badge {
         display: inline-block;
