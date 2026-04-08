@@ -48,7 +48,7 @@ def render():
     its_rows = []
     for c in its.classifications:
         its_rows.append({
-            "Pathway": c.flowsheet_name,
+            "Pathway": getattr(c, "flowsheet_name", None) or getattr(c, "system_name", c.pathway_type),
             "Level": c.its_level_short,
             "PFAS outcome": c.pfas_outcome,
             "Status": c.pfas_status,
