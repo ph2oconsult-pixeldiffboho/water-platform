@@ -142,8 +142,8 @@ APPS = [
             "HACCP/CCP framework and indirect potable reuse planning."
         ),
         "key": "prw",
-        "status": "coming",
-        "status_label": "Coming — Stage 3",
+        "status": "ready",
+        "status_label": "✓ Available",
     },
     {
         "icon": "🌱",
@@ -203,6 +203,10 @@ _active = st.session_state.get("active_app")
 if _active == "drinking_water":
     from apps.drinking_water_app.app import run as run_aquapoint
     run_aquapoint()
+
+elif _active == "prw":
+    from apps.prw_app.app import run as run_purepoint
+    run_purepoint()
 
 elif _active == "biosolids":
     import sys
