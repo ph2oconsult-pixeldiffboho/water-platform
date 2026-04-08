@@ -173,6 +173,7 @@ if st.session_state.get("active_app") == "biosolids":
     _bp_sidebar.markdown("*← Back to Platform Home: restart the launcher*")
     _bp_sidebar.divider()
     BP_PAGES = {
+        "📂 Load Data":          "00_load_data",
         "⚙️ Inputs":             "01_inputs",
         "📊 Pathway Rankings":   "02_results",
         "🔥 Drying & Coupling":  "03_drying",
@@ -190,7 +191,9 @@ if st.session_state.get("active_app") == "biosolids":
     )
     st.session_state["page"] = BP_PAGES[bp_selected]
     page_key = st.session_state["page"]
-    if page_key == "01_inputs":
+    if page_key == "00_load_data":
+        from apps.biosolids_app.pages import page_00_load_data; page_00_load_data.render()
+    elif page_key == "01_inputs":
         from apps.biosolids_app.pages import page_01_inputs; page_01_inputs.render()
     elif page_key == "02_results":
         from apps.biosolids_app.pages import page_02_results; page_02_results.render()
