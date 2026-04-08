@@ -276,7 +276,7 @@ elif _active == "wastewater":
     with _ww_sidebar:
         st.markdown("""
         <div class="sb-header">
-            <div class="sb-app-icon">💧</div>
+            <div class="sb-app-icon">🌊</div>
             <div class="sb-app-name">WaterPoint</div>
             <div class="sb-app-sub">Wastewater Treatment</div>
         </div>
