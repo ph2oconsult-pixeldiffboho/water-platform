@@ -83,14 +83,24 @@ _PAGE_KEY = "pp_page"
 
 def render_sidebar():
     """Render PurePoint navigation sidebar."""
-    st.sidebar.markdown("## PurePoint")
+    st.sidebar.markdown("""
+    <div style="padding:1.1rem 0.2rem 0.6rem 0.2rem;text-align:center;">
+        <div style="font-size:2rem;line-height:1;margin-bottom:4px;">♻️</div>
+        <div style="font-size:1.25rem;font-weight:800;color:#1a2b4a;letter-spacing:-0.02em;margin-bottom:2px;">PurePoint</div>
+        <div style="font-size:0.65rem;color:#7a8499;text-transform:uppercase;letter-spacing:0.08em;">Advanced Water Reuse Engine</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.sidebar.button("⬅  Platform Home", key="pp_home", use_container_width=True):
+        for _k in ("active_app", _PAGE_KEY, "_app_context"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+
     st.sidebar.markdown(
-        "<span style='font-size:0.75rem;color:#8fa3b8;'>"
-        "Advanced Water Reuse Decision Engine"
-        "</span>",
+        "<div style='font-size:0.62rem;font-weight:700;color:#9aa0ad;text-transform:uppercase;"
+        "letter-spacing:0.1em;padding:0.6rem 0 0.3rem 0.1rem;'>Navigate</div>",
         unsafe_allow_html=True,
     )
-    st.sidebar.markdown("---")
 
     current = st.session_state.get(_PAGE_KEY, _DEFAULT_PAGE)
 
@@ -139,7 +149,8 @@ def render_sidebar():
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        "<span style='font-size:0.72rem;color:#4a6070;'>PurePoint v1.0 · ph2o Consulting</span>",
+        "<div style='font-size:0.67rem;color:#9aa0ad;text-align:center;padding:0.5rem 0 0.2rem 0;line-height:1.6;'>"
+        "PurePoint v1.0<br>ph2o Consulting</div>",
         unsafe_allow_html=True,
     )
 
