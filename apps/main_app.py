@@ -264,6 +264,8 @@ elif _active == "biosolids":
         from apps.biosolids_app.pages import page_04_pathways; page_04_pathways.render()
     elif page_key == "05_pyrolysis":
         from apps.biosolids_app.pages import page_05_pyrolysis; page_05_pyrolysis.render()
+    elif page_key == "06_manual":
+        from apps.biosolids_app.pages import page_06_manual; page_06_manual.render()
     _bp_sidebar.markdown("<div class='sb-footer'>BioPoint V1<br>ph2o Consulting</div>", unsafe_allow_html=True)
 
 elif _active == "wastewater":
