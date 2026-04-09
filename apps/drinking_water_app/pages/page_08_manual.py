@@ -86,6 +86,7 @@ AquaPoint is designed for:
             ("3. Technology Selection", "Select the technologies in your treatment train. The AquaPoint Intelligence reasoning engine will recommend a treatment philosophy based on your source water — use the suggested train as a starting point, then modify as needed."),
             ("4. Treatment Philosophy", "Review the reasoning engine's full Gate 1–5 analysis: source classification, controlling constraints, archetype selection, LRV barrier accounting, and residuals implications. This is the qualitative backbone of the assessment."),
             ("5. Analysis Results", "Run the calc engine. Eleven analysis tabs cover MCA, water quality, energy, chemicals, CAPEX, OPEX, NPV, risk, environment, regulatory compliance, and feasibility."),
+            ("← Platform Home", "Return to the Water Utility Planning Platform launcher at any time using the Platform Home button at the top of the sidebar. This takes you back to the tool selection screen without losing your current session."),
         ]
         for title, desc in steps:
             st.markdown(f"**{title}** — {desc}")
@@ -529,6 +530,19 @@ It maintains a pathogen barrier accounting ledger for each archetype.
 - Archetype H (membrane) credits MF/UF and RO independently; UV provides additional margin
 """)
 
+        st.markdown("### Decision Readiness")
+        st.markdown("""
+The reasoning engine produces a **Decision Readiness** assessment for each scenario — one of three statuses:
+
+- **Ready** — Tier 1 safety gate passes, LRV targets met, no selection-blocking uncertainties. Proceed to detailed design.
+- **Proceed with Conditions** — Treatment selection is defensible but 1–2 engineering conditions must be carried into detailed design (e.g. single-barrier dependence, residuals disposal confirmation, Ct verification). These are design conditions, not blockers.
+- **Not Decision-Ready** — A Tier 1 failure (LRV deficit) or a selection-blocking uncertainty exists that must be resolved before committing to a treatment archetype.
+
+**Important distinction:** Single-barrier dependence and residuals disposal confirmation are *conditions*, not blockers. They do not change which archetype is selected — they require resolution at detailed design stage. A clean, low-risk groundwater scenario with single-barrier dependence and a residuals pathway to confirm will return *Proceed with Conditions*, not *Not Decision-Ready*.
+
+Selection-blocking items are those where resolving the uncertainty could change the archetype selection itself — for example, unquantified PFAS (could trigger membrane/GAC), uncharacterised cyanotoxin events (could require DAF over conventional), or extreme P99 variability data not yet available.
+""")
+
         st.markdown("### Tier 1–4 Scoring")
         st.markdown("""
 Each viable archetype is scored across 4 tiers:
@@ -796,7 +810,7 @@ whenever sludge production increases or lagoon capacity is limited.
 | LRV credits | Indicative | Based on ADWG Table 10.1. Conditional on process performance — not guaranteed. |
 | MCA score | Relative only | Scores are relative to the selected train. Weights are adjustable. |
 
-**Version:** AquaPoint v2.2 | ph2o Consulting
+**Version:** AquaPoint v3.0 | ph2o Consulting
 **Regulatory reference:** ADWG 2022 (National Health and Medical Research Council / NRMMC)
 **Engineering references:** WHO GDWQ 4th Edition; NHMRC/NRMMC Australian Drinking Water Guidelines; AWWA MOP series; WRc/UKWIR membrane and coagulation guidance
 """)
