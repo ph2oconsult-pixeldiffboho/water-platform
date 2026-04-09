@@ -27,6 +27,7 @@ def render():
         "📋 Input Reference",
         "📊 Understanding Results",
         "⚡ AquaPoint Intelligence",
+        "🧠 Decision Intelligence",
         "🔬 Engineering Notes",
         "📐 Engineering Notes II",
     ])
@@ -544,6 +545,33 @@ Selection-blocking items are those where resolving the uncertainty could change 
 """)
 
 
+        st.markdown("### Tier 1–4 Scoring")
+        st.markdown("""
+Each viable archetype is scored across 4 tiers:
+
+| Tier | Basis | Weighting |
+|---|---|---|
+| Tier 1 | Compliance / safety — LRV adequacy, disinfection presence | Pass/Fail gate |
+| Tier 2 | Robustness — variability, event response, barrier redundancy, operability | 50% of overall |
+| Tier 3 | Resources — energy, chemicals, residuals, footprint | 30% of overall |
+| Tier 4 | Cost and flexibility — CAPEX, OPEX, expandability, delivery risk | 20% of overall |
+
+A Tier 1 fail sets overall score to 0 and marks the archetype `not_recommended`.
+""")
+
+
+    # ══ TAB 7 — DECISION INTELLIGENCE LAYER ════════════════════════════════════
+    with tabs[6]:
+        st.markdown("## Decision Intelligence Layer (DIL)")
+        st.markdown("""
+The Decision Intelligence Layer runs after the reasoning engine and produces a structured 7-component report.
+It does not change treatment selection — it frames the decision for investment and governance.
+Each component is generated from the source water inputs and reasoning engine output and is specific to the scenario.
+""")
+
+        st.info("The DIL report appears on the **Treatment Philosophy** page (tab 6 in the main navigation) after running the reasoning engine.")
+
+
         st.markdown("### Decision Intelligence Layer (DIL) — Full Logic Reference")
         st.markdown("""
 The Decision Intelligence Layer runs after the reasoning engine and produces a structured 7-component report.
@@ -696,22 +724,8 @@ Only VOI items that would change which archetype is selected are blocking. The f
 - **Ready:** Proceed directly to detailed design and procurement.
 """)
 
-        st.markdown("### Tier 1–4 Scoring")
-        st.markdown("""
-Each viable archetype is scored across 4 tiers:
-
-| Tier | Basis | Weighting |
-|---|---|---|
-| Tier 1 | Compliance / safety — LRV adequacy, disinfection presence | Pass/Fail gate |
-| Tier 2 | Robustness — variability, event response, barrier redundancy, operability | 50% of overall |
-| Tier 3 | Resources — energy, chemicals, residuals, footprint | 30% of overall |
-| Tier 4 | Cost and flexibility — CAPEX, OPEX, expandability, delivery risk | 20% of overall |
-
-A Tier 1 fail sets overall score to 0 and marks the archetype `not_recommended`.
-""")
-
-    # ══ TAB 7 — ENGINEERING NOTES I ════════════════════════════════════════════
-    with tabs[6]:
+    # ══ TAB 8 — ENGINEERING NOTES I ════════════════════════════════════════════
+    with tabs[7]:
         st.markdown("## Engineering Notes — Microbial Barriers and Disinfection")
 
         st.markdown("### The Multi-Barrier Principle")
@@ -810,8 +824,8 @@ Target <8 μg/L to maintain margin below the 10 μg/L limit.
 These pH targets can conflict. pH management through the treatment train is required — not just at a single dosing point.
 """)
 
-    # ══ TAB 8 — ENGINEERING NOTES II ══════════════════════════════════════════
-    with tabs[7]:
+
+    with tabs[8]:
         st.markdown("## Engineering Notes — Source Types, PFAS, Arsenic, and Residuals")
 
         st.markdown("### Source Water Types and Design Implications")
