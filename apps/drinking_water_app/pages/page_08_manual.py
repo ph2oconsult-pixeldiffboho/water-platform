@@ -543,6 +543,159 @@ The reasoning engine produces a **Decision Readiness** assessment for each scena
 Selection-blocking items are those where resolving the uncertainty could change the archetype selection itself — for example, unquantified PFAS (could trigger membrane/GAC), uncharacterised cyanotoxin events (could require DAF over conventional), or extreme P99 variability data not yet available.
 """)
 
+
+        st.markdown("### Decision Intelligence Layer (DIL) — Full Logic Reference")
+        st.markdown("""
+The Decision Intelligence Layer runs after the reasoning engine and produces a structured 7-component report.
+It does not change treatment selection — it frames the decision for investment and governance.
+""")
+
+        with st.expander("**Component 1 — Decision Context**", expanded=False):
+            st.markdown("""
+A plain-language summary of the governing source water conditions, preferred archetype, and primary engineering constraints.
+Built from the reasoning engine output — source type, primary constraint, variability class, contaminant modules activated,
+and whether advanced treatment or membrane systems are required.
+Serves as the executive framing for the full DIL report.
+""")
+
+        with st.expander("**Component 2 — Decision Criticality**", expanded=False):
+            st.markdown("""
+Scores and classifies the overall decision criticality as **Low**, **Medium**, or **High** based on five factors:
+
+| Factor | High trigger | Score contribution |
+|--------|-------------|-------------------|
+| Compliance consequence | LRV deficit (Tier 1 failure) | +3; LRV gap only +2; single-barrier +1 |
+| Service consequence | Flow ≥ 100 ML/d | +2; 20–100 ML/d +1 |
+| Contaminant complexity | PFAS, arsenic, cyanotoxins active | +1 each |
+| Operational context | Remote operation, retrofit | +1 each |
+| Residuals complexity | High/very high residuals classification | +1 |
+
+**Criticality floors:** recycled water objective forces minimum Medium; a confirmed Tier 1 LRV failure forces High regardless of score.
+
+The criticality level governs how conditions are framed and how strongly the strategic implication language is stated.
+""")
+
+        with st.expander("**Component 3 — Data Confidence Assessment**", expanded=False):
+            st.markdown("""
+Assesses confidence in the data underlying the treatment selection across 6–8 dimensions:
+
+1. **Source water variability and event characterisation** — High if variability=low; Acceptable if moderate; Low if high/extreme
+2. **Catchment risk and pathogen loading** — Low if catchment is high/very_high (site-specific QMRA required); Acceptable if moderate
+3. **PFAS characterisation** — Very Low if PFAS detected but unquantified; Low if quantified but speciation unknown
+4. **Arsenic speciation** — Low if arsenic >10 µg/L (As(III)/As(V) split governs treatment pathway)
+5. **LRV credit validation** — Low if single-barrier dependence; Acceptable if multiple barriers
+6. **Residuals classification** — Low if classified wastes present; Acceptable otherwise
+7. **Operational data** (retrofit only) — Low if retrofit with unknown existing performance data
+8. **Remote operation** — Acceptable/Low depending on automation and staffing arrangements
+
+The overall confidence is the minimum of all active dimensions. Confidence level affects VOI language but does not block decisions.
+""")
+
+        with st.expander("**Component 4 — Value of Information (VOI)**", expanded=False):
+            st.markdown("""
+Identifies which uncertainties are worth resolving before committing to the preferred treatment philosophy.
+Each VOI dimension is classified as **High**, **Medium**, or **Low** and assessed against five change dimensions:
+
+| Change dimension | What it tests |
+|-----------------|--------------|
+| Changes archetype selection | Would new data select a different archetype entirely? |
+| Changes LRV adequacy | Would new data change the LRV target or barrier count? |
+| Changes sizing | Would new data materially change plant capacity? |
+| Changes residuals classification | Would new data reclassify waste streams? |
+| Changes lifecycle cost materially | Would new data shift NPV by >20%? |
+
+**VOI triggers and classifications:**
+
+- **PFAS unquantified** → High VOI, changes archetype selection (could require membrane/GAC vs simpler train)
+- **High/very_high catchment risk** → High VOI, changes LRV adequacy (QMRA may require additional barriers)
+- **High/extreme source variability** → High VOI, changes archetype and sizing (event characterisation governs train)
+- **Single-barrier dependence** → High VOI, does *not* change archetype (is a design condition, not a selector)
+- **Residuals disposal confirmation** → High VOI, does *not* change archetype (is a procurement condition)
+- **PFAS problem transfer** → High VOI, changes residuals classification
+- **Arsenic residuals** → Medium VOI
+- **Remote operation automation** → Medium/Low VOI
+
+**Selection-blocking rule:** Only VOI items where `changes_archetype_selection=True` can trigger `Not Decision-Ready`.
+Single-barrier dependence and residuals disposal are explicitly *not* selection-blocking.
+""")
+
+        with st.expander("**Component 5 — Risk Ownership Map**", expanded=False):
+            st.markdown("""
+Maps each risk category to its primary owner and documents the utility's exposure. Five standard dimensions plus conditionals:
+
+1. **Public health and regulatory compliance** — Primary owner: Utility (always). No contract transfers the drinking water licence obligation.
+2. **Source water quality and catchment risk** — Primary owner: Utility. Shared with catchment manager and regulator. Catchment agreements do not transfer the treatment duty.
+3. **Technology performance risk** — Primary owner: OEM/Supplier (if membrane system) or Designer. The utility's risk is the selection decision at concept stage.
+4. **Residuals and classified waste** — Primary owner: Utility. Activated when classified wastes are present (PFAS concentrate, arsenic-bearing media).
+5. **Operational continuity** — Primary owner: Utility. Escalated if remote operation.
+
+Conditional additional dims:
+- PFAS detected: PFAS liability and regulatory exposure mapped
+- Arsenic >10 µg/L: arsenic residuals classified waste obligation documented
+- High catchment risk: catchment deterioration scenario mapped
+
+Each dimension includes a plain-language `utility_exposure` statement and an operator `note` contextualised to the scenario.
+""")
+
+        with st.expander("**Component 6 — Decision Boundary**", expanded=False):
+            st.markdown("""
+Defines the envelope within which the preferred treatment philosophy is valid. Four sub-sections:
+
+**Acceptable performance range** — Quantified LRV targets (protozoa, bacteria, virus), effluent turbidity ≤0.1 NTU at P95,
+primary disinfection residual maintained at all times. Supplemented by contaminant-specific targets (PFAS health guideline,
+arsenic ≤10 µg/L, membrane integrity daily pressure hold) where applicable.
+
+**Acceptable uncertainty** — What the engineering team is willing to carry forward without resolution:
+±30% CAPEX, DBP formation potential, NOM variability at P95, PFAS absence based on current monitoring.
+These are explicitly accepted rather than ignored.
+
+**Resilience margin** — Characterised as LOW (single-barrier dependence), MODERATE (membrane without redundant capacity),
+or ADEQUATE (multiple independent barriers). Single-barrier dependence is the primary trigger for LOW.
+
+**Monitoring requirements** — Minimum 4 requirements always present: effluent turbidity, disinfection residual,
+LRV validation, and ADWG compliance sampling. Supplemented by contaminant-specific monitoring (PFAS quarterly,
+arsenic monthly, bromate weekly if ozone present, membrane pressure hold daily).
+
+**Intervention triggers** — Conditions that should halt operation and trigger re-assessment:
+effluent turbidity exceedance, loss of disinfection residual, barrier failure, contaminant detection above limit,
+extreme source event beyond design envelope.
+
+**Fallback position** — Documented alternative action if the preferred philosophy fails:
+typically source suspension and supply from alternative, or emergency chlorination-only operation.
+
+**Critical assumptions** — Minimum 4: LRV credits are conditional on process performance, cost estimates are ±40–50%,
+source water quality is representative of the design period, ADWG 2022 applies.
+""")
+
+        with st.expander("**Component 7 — Decision Readiness**", expanded=False):
+            st.markdown("""
+The decision readiness status is determined by a sequential blocking logic:
+
+**Step 1 — Tier 1 gate:** If `tier1_pass=False` OR `lrv_gap_any=True` → condition appended, blocking flag set.
+
+**Step 2 — Selection-blocking VOI:** For each VOI dimension where `voi_classification=High` AND `changes_archetype_selection=True` → condition appended, blocking flag set.
+Only VOI items that would change which archetype is selected are blocking. The following are explicitly **not** blocking:
+- LRV barrier redundancy / single-barrier dependence (`changes_archetype_selection=False`)
+- Residuals classification and disposal pathway (`changes_archetype_selection=False`)
+
+**Step 3 — Conditions (non-blocking):** The following are carried as conditions but do not block:
+- Single-barrier dependence (when Tier 1 passes and no LRV gap)
+- Residuals problem transfer (when not already covered by blocking condition)
+
+**Step 4 — Status assignment:**
+
+| has_blocking | conditions | Status |
+|-------------|-----------|--------|
+| True | any | Not Decision-Ready |
+| False | ≥1 | Proceed with Conditions |
+| False | 0 | Ready |
+
+**Strategic implications by status:**
+- **Not Decision-Ready:** Do not proceed to detailed design. Resolve LRV gaps and selection-blocking investigations first.
+- **Proceed with Conditions:** Proceed to detailed design and business case. Carry conditions into the design brief.
+- **Ready:** Proceed directly to detailed design and procurement.
+""")
+
         st.markdown("### Tier 1–4 Scoring")
         st.markdown("""
 Each viable archetype is scored across 4 tiers:
