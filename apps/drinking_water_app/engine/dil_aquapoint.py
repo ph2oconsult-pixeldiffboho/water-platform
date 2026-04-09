@@ -892,7 +892,7 @@ def _build_voi(ctx: dict, data_conf: AQDataConfidenceAssessment) -> AQVOIAssessm
         dims.append(AQVOIDimension(
             uncertainty                 = "LRV barrier redundancy — single-barrier dependence",
             voi_classification          = VOI_HIGH,
-            changes_archetype_selection = True,
+            changes_archetype_selection = False,
             changes_lrv_adequacy        = True,
             changes_sizing              = True,
             changes_residuals_classification = False,
@@ -931,7 +931,7 @@ def _build_voi(ctx: dict, data_conf: AQDataConfidenceAssessment) -> AQVOIAssessm
         dims.append(AQVOIDimension(
             uncertainty                 = "Residuals classification and disposal pathway confirmation",
             voi_classification          = VOI_HIGH,
-            changes_archetype_selection = True,
+            changes_archetype_selection = False,
             changes_lrv_adequacy        = False,
             changes_sizing              = False,
             changes_residuals_classification = True,
