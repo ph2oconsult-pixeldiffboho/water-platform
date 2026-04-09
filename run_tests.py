@@ -60,6 +60,10 @@ def main():
          "Legacy benchmark scenarios (57 checks)", True),
         (ROOT / "tests/benchmark/run_benchmarks.py",
          "Benchmark regression suite (282 checks)", True),
+        (ROOT / "tests/test_decision_intelligence.py",
+         "Decision Intelligence Layer (5 tests)", False),
+        (ROOT / "tests/test_biosolids_dil.py",
+         "BioPoint Decision Intelligence Layer (4 tests)", False),
         (ROOT / "tests/test_release_readiness.py",
          "Release readiness gate (60 checks)", False),
     ]

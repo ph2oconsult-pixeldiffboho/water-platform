@@ -58,6 +58,7 @@ def _run_engine():
     inputs = _build_inputs()
     result = run_biopoint_v1(inputs)
     st.session_state["bp_result"] = result
+    st.session_state["bp_inputs"] = inputs
     st.session_state["bp_run"] = False
     return result
 
@@ -192,3 +193,194 @@ def render():
                 ),
             })
         st.dataframe(pd.DataFrame(econ_rows), use_container_width=True, hide_index=True)
+
+    # ── Decision Intelligence Layer ───────────────────────────────────────
+    _render_biosolids_dil(result)
+
+
+def _render_biosolids_dil(result: dict) -> None:
+    """Render the BioPoint Decision Intelligence Layer expander."""
+    try:
+        from engine.dil_biosolids import build_biosolids_dil
+
+        inputs = st.session_state.get("bp_inputs")
+        if inputs is None:
+            return  # inputs not yet cached — engine hasn't run
+
+        di = build_biosolids_dil(inputs, result)
+
+        _readiness_icon = {
+            "Ready to Proceed":        "✅",
+            "Proceed with Conditions": "⚠️",
+            "Not Decision-Ready":      "🔴",
+        }
+        _crit_icon = {"Low": "🟢", "Medium": "🟡", "High": "🔴"}
+        _conf_icon = {"High": "🟢", "Acceptable": "🟡", "Low": "🔴", "Very Low": "🔴"}
+        _voi_icon  = {"High": "🔴", "Moderate": "🟡", "Low": "🟢"}
+
+        r_icon = _readiness_icon.get(di.readiness.status, "⚪")
+        c_icon = _crit_icon.get(di.criticality.level, "⚪")
+
+        with st.expander(
+            f"🧠 Decision Intelligence — {r_icon} {di.readiness.status} "
+            f"| Criticality: {c_icon} {di.criticality.level}",
+            expanded=False,
+        ):
+            st.markdown("#### Decision Context")
+            st.markdown(di.decision_context)
+
+            tabs = st.tabs([
+                "⚖️ Criticality",
+                "📊 Data Confidence",
+                "💡 Value of Information",
+                "🤝 Risk Ownership",
+                "🎯 Decision Boundary",
+                "✅ Decision Readiness",
+            ])
+
+            # Tab 1: Criticality
+            with tabs[0]:
+                st.markdown("#### Decision Criticality")
+                st.metric("Criticality", f"{c_icon} {di.criticality.level}")
+                st.markdown("---")
+                for label, text in [
+                    ("Compliance",    di.criticality.compliance_consequence),
+                    ("Service",       di.criticality.service_consequence),
+                    ("Financial",     di.criticality.financial_consequence),
+                    ("Reputational",  di.criticality.reputational_consequence),
+                    ("Asset (WoL)",   di.criticality.asset_consequence),
+                    ("Reversibility", di.criticality.reversibility),
+                    ("Regulatory",    di.criticality.regulatory_exposure),
+                ]:
+                    st.markdown(f"**{label}:** {text}")
+                st.info(di.criticality.classification_rationale)
+
+            # Tab 2: Data Confidence
+            with tabs[1]:
+                st.markdown("#### Data Confidence Assessment")
+                if di.data_confidence.high_volume_low_confidence:
+                    st.warning(
+                        "⚠️ **High-volume, low-confidence data:** "
+                        + "; ".join(di.data_confidence.high_volume_low_confidence)
+                        + ". More data of the same type will not resolve this."
+                    )
+                for d in di.data_confidence.dimensions:
+                    icon = _conf_icon.get(d.confidence, "⚪")
+                    with st.expander(
+                        f"{icon} **{d.variable}** — {d.confidence} confidence",
+                        expanded=False,
+                    ):
+                        col1, col2 = st.columns([1, 2])
+                        with col1:
+                            st.caption(f"**Data volume:** {d.volume.title()}")
+                        with col2:
+                            st.caption(f"**Issue:** {d.issue}")
+                        st.caption(f"**Decision implication:** {d.implication}")
+                st.markdown("---")
+                st.info(di.data_confidence.summary)
+                if di.data_confidence.critical_gaps:
+                    st.warning(
+                        "**Critical gaps:** "
+                        + " · ".join(di.data_confidence.critical_gaps)
+                    )
+
+            # Tab 3: Value of Information
+            with tabs[2]:
+                st.markdown("#### Value of Information")
+                st.caption(
+                    "For each uncertainty, whether more data would change the decision. "
+                    "Low VOI = proceed. High VOI = investigate before commitment."
+                )
+                for d in di.voi.dimensions:
+                    icon = _voi_icon.get(d.voi_classification, "⚪")
+                    with st.expander(
+                        f"{icon} **{d.uncertainty}** — {d.voi_classification} VOI",
+                        expanded=(d.voi_classification == "High"),
+                    ):
+                        col1, col2, col3 = st.columns(3)
+                        col1.caption(f"Changes **pathway selection**: {'Yes ⚠️' if d.changes_pathway_selection else 'No'}")
+                        col2.caption(f"Changes **sizing**: {'Yes' if d.changes_sizing else 'No'}")
+                        col3.caption(f"Changes **compliance**: {'Yes' if d.changes_compliance_confidence else 'No'}")
+                        col1.caption(f"Changes **product viability**: {'Yes ⚠️' if d.changes_product_viability else 'No'}")
+                        col2.caption(f"Changes **lifecycle cost**: {'Yes' if d.changes_lifecycle_cost else 'No'}")
+                        col3.caption(f"Changes **risk materially**: {'Yes ⚠️' if d.changes_risk_materially else 'No'}")
+                        st.markdown(f"**Rationale:** {d.rationale}")
+                st.markdown("---")
+                if di.voi.high_voi_items:
+                    st.warning(
+                        f"**High VOI:** {'; '.join(di.voi.high_voi_items)}. "
+                        "Resolve before pathway commitment."
+                    )
+                if di.voi.low_voi_items:
+                    st.success(
+                        f"**Low VOI — proceed without:** {'; '.join(di.voi.low_voi_items)}."
+                    )
+                st.info(di.voi.investigation_recommendation)
+
+            # Tab 4: Risk Ownership
+            with tabs[3]:
+                st.markdown("#### Risk Ownership Mapping")
+                st.caption("No delivery model removes the utility's accountability.")
+                for d in di.risk_ownership.dimensions:
+                    with st.expander(
+                        f"**{d.risk_category}** — Primary owner: {d.primary_owner}",
+                        expanded=False,
+                    ):
+                        if d.shared_with:
+                            st.caption(f"**Shared with:** {', '.join(d.shared_with)}")
+                        st.markdown(f"**Utility's irreducible exposure:** {d.utility_exposure}")
+                        st.caption(f"*{d.note}*")
+                st.markdown("---")
+                st.error(f"⚠️ **Accountability:** {di.risk_ownership.utility_accountability_statement}")
+                st.warning(f"**Residual risk:** {di.risk_ownership.residual_risk_statement}")
+
+            # Tab 5: Decision Boundary
+            with tabs[4]:
+                st.markdown("#### Decision Boundary")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.markdown("**Acceptable performance range**")
+                    for item in di.decision_boundary.acceptable_performance_range:
+                        st.markdown(f"• {item}")
+                    st.markdown("**Acceptable uncertainty**")
+                    for item in di.decision_boundary.acceptable_uncertainty:
+                        st.markdown(f"• {item}")
+                    st.markdown(f"**Resilience margin:** {di.decision_boundary.resilience_margin}")
+                with col_b:
+                    st.markdown("**Monitoring requirements**")
+                    for item in di.decision_boundary.monitoring_requirements:
+                        st.markdown(f"• {item}")
+                    st.markdown("**Intervention triggers**")
+                    for item in di.decision_boundary.intervention_triggers:
+                        st.markdown(f"🔔 {item}")
+                st.markdown("---")
+                st.markdown("**Critical assumptions**")
+                for item in di.decision_boundary.critical_assumptions:
+                    st.markdown(f"⚡ {item}")
+                st.info(f"**Fallback position:** {di.decision_boundary.fallback_position}")
+
+            # Tab 6: Decision Readiness
+            with tabs[5]:
+                st.markdown("#### Decision Readiness")
+                status = di.readiness.status
+                if status == "Ready to Proceed":
+                    st.success(f"✅ **{status}**")
+                elif status == "Proceed with Conditions":
+                    st.warning(f"⚠️ **{status}**")
+                else:
+                    st.error(f"🔴 **{status}**")
+                st.markdown(f"**Basis:** {di.readiness.basis}")
+                if di.readiness.conditions:
+                    st.markdown("**Conditions:**")
+                    for c in di.readiness.conditions:
+                        st.markdown(f"• {c}")
+                if di.readiness.critical_assumption_at_risk:
+                    st.error(f"⚡ **Critical assumption at risk:** {di.readiness.critical_assumption_at_risk}")
+                st.markdown("---")
+                st.markdown(f"**Strategic implication:** {di.readiness.strategic_implication}")
+
+            st.markdown("---")
+            st.caption(f"*{di.closing_statement}*")
+
+    except Exception as e:
+        st.warning(f"Decision Intelligence Layer unavailable: {e}")
