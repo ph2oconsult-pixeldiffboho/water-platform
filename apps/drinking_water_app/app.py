@@ -76,9 +76,10 @@ def render_sidebar():
     with st.sidebar:
         # App header
         st.markdown(f"""
-            <div style="text-align:center;padding:0.5rem 0 1rem 0">
+            <div style="text-align:center;padding:1rem 0 0.5rem 0">
+                <div style="font-size:2.2rem;margin-bottom:0.3rem">💧</div>
                 <div style="font-size:1.6rem;font-weight:800;color:#1a56a0;letter-spacing:-0.03em">
-                    💧 {APP_NAME}
+                    {APP_NAME}
                 </div>
                 <div style="font-size:0.72rem;color:#666;margin-top:0.2rem;letter-spacing:0.05em">
                     DRINKING WATER TREATMENT
