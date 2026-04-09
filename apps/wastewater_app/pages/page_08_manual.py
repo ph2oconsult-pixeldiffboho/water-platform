@@ -12,7 +12,7 @@ from apps.ui.ui_components import render_page_header
 def render() -> None:
     render_page_header("📖 User Manual", "Platform guide, module reference, and engineering notes.")
 
-    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_wp, tab_dil, tab_eng = st.tabs([
+    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_wp, tab_dil, tab_framework, tab_eng = st.tabs([
         "🚀 Getting Started",
         "🔄 Workflow Guide",
         "⚙️ Treatment Modules",
@@ -21,6 +21,7 @@ def render() -> None:
         "🔬 Digital Twin",
         "⚡ WaterPoint Intelligence",
         "🧠 Decision Intelligence",
+        "🎯 Decision Framework",
         "🔧 Engineering Notes",
     ])
 
@@ -1105,7 +1106,354 @@ decisions are handled by a separate DIL module within BioPoint.
 """)
 
     # ─────────────────────────────────────────────────────────────────────
-    # TAB 9 — ENGINEERING NOTES
+    # TAB 9 — DECISION FRAMEWORK (MASTER INSTRUCTION)
+    # ─────────────────────────────────────────────────────────────────────
+    with tab_framework:
+        st.markdown("## WaterPoint Decision Intelligence Engine")
+        st.markdown(
+            "WaterPoint is a **constraint-driven decision framework under uncertainty**. "
+            "It is not a modelling tool. It is not a technology selection tool. "
+            "Every output it produces is structured around a single operating principle."
+        )
+
+        st.error(
+            "**Core principle:** Do not optimise processes. "
+            "Identify the binding constraint and resolve it. "
+            "A solution that does not address the binding constraint is irrelevant."
+        )
+
+        st.markdown("---")
+        st.markdown("### The nine-part decision framework")
+        st.caption(
+            "Each part builds on the previous. Parts 1–3 establish the factual basis. "
+            "Parts 4–6 apply the constraint logic. Parts 7–9 translate into decision outputs. "
+            "The sequence is not optional — skipping upstream parts produces unreliable outputs."
+        )
+
+        # ── Part 1 ──────────────────────────────────────────────────────
+        with st.expander("**Part 1 — Define the Influent Design Envelope (IDE)**", expanded=True):
+            st.markdown("""
+Construct a defensible envelope of reality against which the process must perform.
+The IDE is not a single design point — it is a bounded range of conditions that the system must manage.
+
+**Flow envelope**
+
+| Condition | What it defines |
+|---|---|
+| ADWF | Average dry weather flow — the biological design basis |
+| Peak wet weather | The hydraulic design basis — often the governing condition |
+| Diurnal variation | The control design basis — timing of loads within a day |
+| Minimum flow | Solids retention, washout risk, septicity |
+
+**Load envelope**
+
+| Parameter | AAL | MML | Significance |
+|---|---|---|---|
+| COD | Average annual load | Maximum monthly load | AAL:MML ratio signals trade waste or seasonal influence |
+| TN | Average annual load | Maximum monthly load | Lower MML:AAL ratio than COD = different load source |
+| TP | Average annual load | Maximum monthly load | |
+| TSS | Average annual load | Maximum monthly load | High MML:AAL ratio = event-driven or variable source |
+
+**Ratios**
+
+| Ratio | Typical range | What it signals |
+|---|---|---|
+| COD:TKN | 8–13 | <8 = carbon-limited; 8–9 = at threshold; >10 = carbon-rich |
+| COD:TP | 50–80 | High = BioP potentially viable |
+| VSS:TSS | 0.75–0.90 | High = fresh active sludge; trade waste influence |
+| NH₄:TKN | 0.60–0.75 | Low = high organic N fraction; trade waste protein |
+
+**Fractionation**
+
+| Fraction | Symbol | Engineering significance |
+|---|---|---|
+| Readily biodegradable COD | Fbs | Primary driver of BioP reliability and denitrification rate |
+| Slowly biodegradable COD | Fxsp | Consumed aerobically at long SRT — does not count as effective carbon |
+| Unbiodegradable particulate | Fup | Accumulates in MLSS — affects SRT and sludge production |
+
+**IDE construction rules:**
+- Never rely on averages alone — averages conceal the governing condition
+- Never assume the peak has been observed — challenge this explicitly
+- Challenge inconsistent data (e.g. COD and TSS peaks misaligned)
+- Bound uncertainty — do not eliminate it. State what is known and what is assumed.
+""")
+
+        # ── Part 2 ──────────────────────────────────────────────────────
+        with st.expander("**Part 2 — Data Confidence and Value of Information (VOI)**"):
+            st.markdown("""
+Assess confidence in each parameter independently of data volume.
+High data volume does not equal high confidence.
+
+**Confidence levels**
+
+| Level | Meaning |
+|---|---|
+| High | Data is representative of the governing condition |
+| Acceptable | Adequate for concept stage; gaps noted but not blocking |
+| Low | Actionable gap — data does not represent the governing condition |
+| Very Low | Insufficient for design commitment without targeted investigation |
+
+**The high-volume / low-confidence paradox**
+When a parameter has high data volume but low confidence, more data of the same type will not resolve it.
+A different type of investigation is required. Example: extensive flow monitoring that does not characterise
+peak event frequency — extended monitoring adds volume but not confidence in the peak.
+
+**Value of Information (VOI)**
+
+For each uncertainty, ask: *would more data change the decision?*
+
+| Classification | Meaning | Action |
+|---|---|---|
+| **High VOI** | Investigation may change process selection, sizing, or risk | Commission before detailed design commitment |
+| **Moderate VOI** | Investigation changes sizing or economics, not selection | Initiate in parallel with concept design |
+| **Low VOI** | Data would not change the decision | Accept the uncertainty — do not delay |
+
+**Key rule:** Low confidence and High VOI are independent assessments. A parameter can have
+Very Low confidence and Low VOI — for example, N₂O emission factors. Low confidence does not
+block decisions. It informs how they are framed.
+""")
+
+        # ── Part 3 ──────────────────────────────────────────────────────
+        with st.expander("**Part 3 — Identify the Governing Condition**"):
+            st.markdown("""
+Determine which condition drives the design. Not every plant has the same governing condition.
+
+| Governing condition | When it applies | Example |
+|---|---|---|
+| Dry weather ADWF | Stable catchment, no major wet weather influence | Standard municipal plant with limited I/I |
+| Peak wet weather | High I/I, storm-driven flows | Peak 3–4× ADWF — clarifier is the constrained element |
+| Diurnal peaks | Trade waste, tourism, strong temporal variability | Morning N peak before trade waste COD pulse |
+| Seasonal events | Agricultural catchments, tourism, industrial vintage | Winery/brewery peak not captured in routine sampling |
+
+**Rule: Always design for the governing condition — not the average.**
+
+Designing for average conditions at a plant whose compliance failures occur under peak conditions
+is the most common decision error in wastewater planning. Identify the governing condition first.
+Every subsequent decision is made against it.
+""")
+
+        # ── Part 4 ──────────────────────────────────────────────────────
+        with st.expander("**Part 4 — Identify the Constraint Hierarchy**"):
+            st.markdown("""
+Classify every constraint before evaluating any technology.
+
+| Classification | Definition |
+|---|---|
+| **Primary** | The constraint causing compliance failure or limiting performance |
+| **Secondary** | Amplifies the primary constraint — resolves partially but not alone |
+| **Root cause** | The upstream driver generating the primary constraint (e.g. I/I in the collection system) |
+| **Inactive** | Not currently limiting — has headroom. Do not invest here first. |
+
+**Possible constraint types**
+
+| Constraint type | Signal |
+|---|---|
+| Hydraulic — clarifier | SOR exceeded at peak flow; solids washout events |
+| Hydraulic — EQ / buffering | No attenuation between peak inflow and secondary treatment |
+| Aeration / oxygen transfer | Blowers at or near maximum rated output; limited redundancy |
+| Reactor volume / HRT | HRT drops below required SRT at peak loading |
+| Carbon availability | Low Fbs (<0.18) constrains denitrification rate despite high COD:TKN |
+| Control strategy | Diurnal mismatch between N and COD peaks — aeration control responds incorrectly |
+
+**Critical rule:** If a parameter has headroom, it is NOT the constraint.
+
+A system with 20% blower headroom is not aeration-constrained, regardless of how attractive
+aeration-side technologies appear. Apply this rule before evaluating any technology.
+""")
+
+        # ── Part 5 ──────────────────────────────────────────────────────
+        with st.expander("**Part 5 — The Binding Constraint Test**"):
+            st.markdown("""
+Apply this test to every option before detailed evaluation.
+
+> **Does this option reduce the frequency, severity, or consequence of the failure mechanism?**
+
+If the answer is **No** — reject the option. Do not proceed to detailed evaluation.
+A technology may have excellent unit-process credentials and still fail this test.
+
+**Test application examples**
+
+| Scenario | Primary constraint | MABR passes test? | CoMag passes test? |
+|---|---|---|---|
+| Aeration at limit, TN tightening | Aeration capacity | ✅ Yes — resolves aeration without new blowers | ❌ No — does not address aeration |
+| Clarifier surcharge at 4× ADWF | Clarifier hydraulic | ❌ No — operates upstream, no hydraulic benefit | ✅ Yes — provides high-SOR wet weather treatment |
+| Carbon-limited TN at low Fbs | Denitrification carbon | ❌ No — does not add denitrification carbon | ❌ No — not relevant | 
+| Diurnal N/COD mismatch | Control strategy | ❌ No — a capital investment for a control problem | ❌ No |
+
+**The false positive risk**
+A false positive occurs when a technology is selected because it is technically appropriate
+in general, not because it resolves the actual binding constraint at this plant.
+MABR is appropriate when the aeration system is the binding constraint.
+MABR is a false positive when any other constraint is primary.
+
+The binding constraint test prevents false positives by requiring constraint resolution —
+not just technical merit — as the selection criterion.
+""")
+
+        # ── Part 6 ──────────────────────────────────────────────────────
+        with st.expander("**Part 6 — Process Evaluation Rules**"):
+            st.markdown("""
+Evaluate options only after the constraint hierarchy is established and the binding constraint test
+has been applied. Evaluation that precedes constraint identification produces technology-first
+decisions rather than constraint-resolution decisions.
+
+**Evaluation rules**
+
+- Do NOT select a technology unless it resolves the primary constraint
+- Do NOT be influenced by efficiency claims for non-binding parameters
+- Do NOT optimise a system that has an unresolved upstream constraint
+- A technology may be "good" in general and still be irrelevant at this plant
+
+**Standard options and their constraint applicability**
+
+| Option | Resolves | Does not resolve |
+|---|---|---|
+| BNR optimisation + aeration control | Energy, marginal TN improvement | Hydraulic constraints, aeration at limit |
+| MABR | Aeration at limit, TN at constrained-aeration plant | Hydraulic, carbon, clarifier limits |
+| IFAS / MBBR | Nitrification capacity (with blower headroom) | Hydraulic, aeration at limit (needs air) |
+| CoMag / ballasted clarification | Clarifier hydraulic at peak wet weather | Aeration, carbon, dry weather biology |
+| EQ / flow equalisation | Hydraulic peak attenuation | Does not treat — buffers before treatment |
+| Carbon capture (AAA / fermentation) | Denitrification carbon at low Fbs | Hydraulic, aeration, clarifier limits |
+| Sidestream PN/A | Reduces mainstream N load from reject water | Does not improve mainstream process directly |
+
+**Compound constraint scenarios**
+When multiple constraints are active simultaneously (e.g. aeration at limit AND carbon limited
+at TN 5 mg/L), the resolution requires compound technology selection. Each constraint must be
+addressed by a specific intervention. No single technology typically resolves more than one
+primary constraint — confirm which each option resolves before building the stack.
+""")
+
+        # ── Part 7 ──────────────────────────────────────────────────────
+        with st.expander("**Part 7 — System Characterisation**"):
+            st.markdown("""
+Three system-level characterisations inform every downstream decision.
+
+**Carbon status**
+
+| Status | Signal | Implication |
+|---|---|---|
+| Carbon-rich | COD:TKN > 10, Fbs adequate | Denitrification is not the constraint |
+| At threshold | COD:TKN 8–9 | Sensitive to Fbs and DO carryover — carbon capture relevant |
+| Carbon-limited | COD:TKN < 8, OR Fbs < 0.16 despite high total COD | Denitrification is constrained — external carbon or carbon capture required |
+
+**Key distinction:** Carbon status must be assessed against *effective* carbon (Fbs-driven), not total COD.
+A system with COD:TKN of 12 and Fbs of 0.14 is effectively carbon-limited for denitrification
+because the slowly biodegradable fraction is consumed aerobically at long SRT.
+
+**Aeration status**
+
+| Status | Signal | Implication |
+|---|---|---|
+| Aeration-limited | Blowers at or near rated maximum | MABR or IFAS are the correct technology direction |
+| Aeration-headroom | >15% blower capacity available | IFAS preferred over MABR; conventional optimisation first |
+| Aeration-adequate | Significant headroom (>30%) | Aeration is not a constraint; focus on other limiting factors |
+
+**System variability**
+
+| Status | Signal | Implication |
+|---|---|---|
+| Stable | Domestic only, low I/I, consistent seasonal pattern | Design for average with moderate safety factors |
+| Moderate variability | Some trade waste, seasonal influence, moderate I/I | Design for P95 conditions; targeted investigation for peaks |
+| Highly variable | Significant trade waste, tourism, high I/I, vintage peaks | Design for the unobserved peak; high VOI for event characterisation |
+""")
+
+        # ── Part 8 ──────────────────────────────────────────────────────
+        with st.expander("**Part 8 — Decision Sequencing**"):
+            st.markdown("""
+Every decision framework produces three sequenced outputs. They are not interchangeable.
+
+**Sequence structure**
+
+| Horizon | Timeframe | Criteria |
+|---|---|---|
+| **Immediate (no-regret)** | Now — 0 to 12 months | Low or no capital; does not prejudice future decisions; high confidence |
+| **Transitional** | 1–5 years | Resolves primary constraint; opens options for end-state |
+| **End-state** | 5–20 years | Full system configuration at design capacity and regulatory endpoint |
+
+**Sequencing rules**
+
+- Do not commit to end-state capital before the primary constraint is resolved
+- Do not invest in the transitional phase before no-regret actions are complete
+- Do not design the end-state before the governing condition is confirmed
+
+**No-regret actions**
+No-regret actions are interventions that are justified regardless of the end-state outcome.
+They include: aeration control optimisation, monitoring programme improvements, investigation
+campaigns that improve VOI on high-uncertainty parameters, and I/I investigation.
+They share one property: they do not close off future options and they do not require the
+end-state to be known.
+
+**Common sequencing errors**
+- Committing to MABR or IFAS capital before the hydraulic problem is characterised
+- Investing in carbon capture before the TN limit is confirmed
+- Installing advanced treatment before basic instrumentation and control is optimised
+- Designing the end-state for average loading rather than the regulatory endpoint
+""")
+
+        # ── Part 9 ──────────────────────────────────────────────────────
+        with st.expander("**Part 9 — Board-Level Output Structure**"):
+            st.markdown("""
+Every WaterPoint decision framework produces seven structured outputs for decision-maker communication.
+These outputs are not summaries — they are decision products. Each one must be stated unambiguously.
+
+| Output | What it answers | What it must NOT be |
+|---|---|---|
+| 1. Primary system constraint | What is currently limiting performance or causing compliance failure? | A list of all constraints |
+| 2. Why the system fails (mechanism) | What is the causal chain between the constraint and the compliance outcome? | A description of the technology |
+| 3. Recommended direction | What is the system-level strategy? | A technology name without constraint justification |
+| 4. What to do now | What no-regret actions proceed immediately? | A list of studies |
+| 5. What to validate next | What High VOI investigations are required before the next capital decision? | Everything that could be measured |
+| 6. End-state configuration | What does the plant look like at design capacity and regulatory endpoint? | A wishlist |
+| 7. Investment priority answer | "Invest in X before Y because X resolves the binding constraint" | Equivocal or qualified |
+
+**The direct answer requirement**
+The board-level output must include a direct answer to the investment priority question.
+This answer must:
+- Name what to invest in first
+- State why (constraint resolution, not technical merit)
+- State what is deferred and why
+
+If WaterPoint cannot produce a direct answer, the constraint hierarchy has not been resolved.
+Return to Part 4 and re-establish the constraint hierarchy before producing Part 9 outputs.
+""")
+
+        st.markdown("---")
+        st.markdown("### Language and communication standards")
+        st.markdown("""
+WaterPoint outputs must meet the following standards:
+
+**Structured** — every output follows the nine-part framework. No unstructured opinions.
+
+**Engineering-grade** — claims must be traceable to physical constraints, observed data, or published references.
+Assertions not supported by either must be identified as assumptions.
+
+**Direct and unambiguous** — the board-level answer to "what should we invest in first" must be a direct statement.
+Qualified, hedged, or equivocal answers indicate that the constraint hierarchy has not been resolved.
+
+**No hype, no vendor language** — technology descriptions use physical performance parameters
+(oxygen transfer efficiency, SOR, Fbs) not commercial claims. Vendor-specific product names
+are used only where they identify a specific configuration (e.g. CoMag, Nereda) — not as
+endorsements.
+
+**Constraint-first** — technology is always introduced after the constraint is identified.
+The correct structure is: *"The primary constraint is X. Technology Y resolves X because..."*
+Not: *"Technology Y is efficient and could help this plant."*
+""")
+
+        st.markdown("---")
+        st.info(
+            "**Using this framework in WaterPoint:** The nine-part framework is embedded in "
+            "the WaterPoint calculation engine. The constraint hierarchy, VOI assessment, and "
+            "decision sequencing are computed automatically from your inputs and displayed in "
+            "the Results page. This tab documents the engineering logic behind those outputs."
+        )
+        st.caption(
+            "*WaterPoint does not seek to eliminate uncertainty. "
+            "It helps define when uncertainty is sufficiently understood, bounded, and owned to support action.*"
+        )
+
+    # ─────────────────────────────────────────────────────────────────────
+    # TAB 10 — ENGINEERING NOTES
     # ─────────────────────────────────────────────────────────────────────
     with tab_eng:
         st.markdown("## Engineering notes and key references")
