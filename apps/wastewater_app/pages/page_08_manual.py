@@ -12,7 +12,7 @@ from apps.ui.ui_components import render_page_header
 def render() -> None:
     render_page_header("📖 User Manual", "Platform guide, module reference, and engineering notes.")
 
-    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_wp, tab_eng = st.tabs([
+    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_wp, tab_dil, tab_eng = st.tabs([
         "🚀 Getting Started",
         "🔄 Workflow Guide",
         "⚙️ Treatment Modules",
@@ -20,6 +20,7 @@ def render() -> None:
         "📊 Understanding Results",
         "🔬 Digital Twin",
         "⚡ WaterPoint Intelligence",
+        "🧠 Decision Intelligence",
         "🔧 Engineering Notes",
     ])
 
@@ -835,7 +836,276 @@ This note is presented as a mandatory decision input, not a cost item or optiona
 """)
 
     # ─────────────────────────────────────────────────────────────────────
-    # TAB 8 — ENGINEERING NOTES
+    # TAB 8 — DECISION INTELLIGENCE LAYER
+    # ─────────────────────────────────────────────────────────────────────
+    with tab_dil:
+        st.markdown("## Decision Intelligence Layer")
+        st.markdown(
+            "The Decision Intelligence Layer (DIL) operates above the process optimisation engine. "
+            "Its purpose is not to select a technology — that is the role of the stack generator "
+            "and credibility layer. Its purpose is to determine whether available evidence is "
+            "sufficient to act, where uncertainty materially affects the decision, whether further "
+            "investigation has value, who ultimately carries the residual risk, and what decision "
+            "boundary should be adopted."
+        )
+        st.info(
+            "**Where to find it:** The DIL expander appears at the bottom of the Results page (Page 04) "
+            "after calculations are run. It is labelled **🧠 Decision Intelligence** and shows the "
+            "decision readiness status and criticality level in the expander header."
+        )
+
+        with st.expander("**Core principles**", expanded=True):
+            st.markdown("""
+The DIL is built on four operating principles that govern every output it produces:
+
+**1. Good decisions are not made when uncertainty is removed.**
+They are made when uncertainty is understood, bounded, and owned.
+
+**2. Data is not valuable in itself.**
+Its value depends on the decision it informs. More modelling is not always the answer.
+The issue is often confidence in what data represents — not volume of data.
+
+**3. Low confidence does not block decisions.**
+It informs how they are framed. The DIL explicitly distinguishes between:
+- Lack of data
+- Low confidence in existing data
+- Low value in collecting more data
+
+**4. The utility always carries ultimate accountability.**
+No delivery model — D&C, DBOM, Alliance, or PPP — transfers the licence obligation
+or its public consequences. Risk allocation affects financial recourse. It does not
+transfer the underlying obligation.
+""")
+
+        with st.expander("**Component 1 — Decision Criticality**"):
+            st.markdown("""
+Classifies the decision as Low, Medium, or High based on seven consequence dimensions.
+Each dimension is assessed independently and contributes to a criticality score.
+
+| Dimension | What it assesses |
+|---|---|
+| **Compliance** | Consequence and urgency of non-compliance; TN target severity |
+| **Service** | Scale of public health and service delivery exposure |
+| **Financial** | Capital programme complexity; specialist technology dependency |
+| **Reputational** | Visibility of technology selection to regulators and sector peers |
+| **Asset (WoL)** | Whole-of-life lock-in risk; greenfield configuration permanence |
+| **Reversibility** | Cost and complexity of changing the decision after commitment |
+| **Regulatory** | Trajectory of regulatory tightening; future licence amendment exposure |
+
+**Key scoring signals:**
+
+| Signal | Criticality effect |
+|---|---|
+| Metropolitan scale (≥ 50 MLD) | +2 Service |
+| Regional or mid-scale (≥ 20 MLD) | +1 Service |
+| Aeration system at limit | +1 |
+| Overflow risk or flow ratio ≥ 2.5× | +1 |
+| TN target < 5 mg/L with TN constraint | +2 Compliance |
+| TN target < 8 mg/L or at limit | +1 Compliance |
+| Specialist technology (MABR, CoMag, BioMag, DNF) | +1–2 Financial |
+| Greenfield configuration | +2 Asset |
+| Specialist membrane / magnetite system | +1 Reversibility |
+| High regulatory pressure or tight TN | +1 Regulatory |
+
+**Thresholds:** High ≥ 7 · Medium ≥ 4 · Low < 4
+
+**Governance implications:**
+
+| Level | Governance |
+|---|---|
+| High | Full board-level authorisation and independent peer review |
+| Medium | Senior management review and documented engineering justification |
+| Low | Standard delegated authority |
+""")
+
+        with st.expander("**Component 2 — Data Confidence Assessment**"):
+            st.markdown("""
+Assesses confidence in the data underlying the decision across six variables.
+
+| Variable | What is assessed |
+|---|---|
+| Influent quality and variability | Peak event characterisation vs average conditions |
+| Flow variability and peak events | I/I magnitude, frequency, and trajectory |
+| Process performance data | Australian precedent; site-specific confirmation |
+| Pilot data and scale-up | Whether site-specific pilot testing has occurred |
+| N₂O emission factor | On-site monitoring vs IPCC Tier 1 default (±6× range) |
+| Seasonal and temperature effects | Winter nitrification design temperature |
+
+**Confidence levels:**
+
+| Level | Meaning |
+|---|---|
+| High | Reliable data; adequate for concept-stage commitment |
+| Acceptable | Adequate for concept stage; gaps noted but not blocking |
+| Low | Actionable gap — targeted investigation recommended |
+| Very Low | Insufficient for commitment without prior investigation |
+
+**The high-volume/low-confidence paradox** is explicitly flagged when a variable
+has high data volume but low confidence — for example, extensive flow monitoring
+that does not characterise peak event frequency or I/I trajectory. More data of
+the same type will not resolve this. A different type of investigation is required.
+
+**N₂O is always Very Low confidence** because on-site monitoring is the only way
+to determine it, and concept-stage decisions cannot wait for monitoring campaigns.
+This is noted, accepted, and classified as Low VOI — it does not block decisions.
+""")
+
+        with st.expander("**Component 3 — Value of Information**"):
+            st.markdown("""
+For each uncertainty, assesses whether more data would change the decision.
+This is the most operationally important DIL component — it determines what to
+investigate, what to defer, and what to accept.
+
+**Six change dimensions assessed per uncertainty:**
+
+| Dimension | Question asked |
+|---|---|
+| Process selection | Would this data change which technology is recommended? |
+| Sizing | Would this data change the scale of the commitment? |
+| Compliance confidence | Would this data change compliance reliability? |
+| Staging or timing | Would this data change the delivery sequence? |
+| Lifecycle cost | Would this data materially change the economics? |
+| Risk materially | Would this data change the risk profile? |
+
+**VOI classification:**
+
+| Classification | Meaning | Action |
+|---|---|---|
+| **High VOI** | Investigation may change the decision | Resolve before detailed design commitment |
+| **Moderate VOI** | Investigation changes sizing or economics, not selection | Initiate in parallel with procurement |
+| **Low VOI** | Proceed without investigation | Accept the uncertainty; do not delay |
+
+**Standard VOI assignments:**
+
+| Uncertainty | Typical classification | Reason |
+|---|---|---|
+| N₂O emission factor | Low VOI | Does not change selection, sizing, or compliance outcome |
+| Peak wet weather flow (flow ratio ≥ 2.0×) | High VOI | Changes CoMag sizing, EQ basin need, I/I urgency |
+| Blower audit (MABR scenario) | High VOI | Determines MABR vs IFAS — changes selection and CAPEX |
+| Extended influent characterisation | Moderate VOI | Changes sizing, not selection |
+| MABR pilot at this site | Moderate VOI | Reduces scale-up uncertainty; not mandatory for concept commitment |
+
+**Key rule:** Low confidence and High VOI are independent. N₂O always has Very Low
+confidence and Low VOI. Do not conflate them.
+""")
+
+        with st.expander("**Component 4 — Risk Ownership Mapping**"):
+            st.markdown("""
+Identifies who manages, shares, and ultimately owns each risk category across the
+full delivery lifecycle.
+
+**Six risk categories:**
+
+| Category | Primary owner | Utility's irreducible exposure |
+|---|---|---|
+| Compliance risk | Utility | Licence obligation — cannot be contracted away |
+| Technology adoption risk | OEM (specialist) / Designer (proven) | Selection decision owned at investment approval |
+| Operational reliability | Operator | Operator capability is an asset management responsibility |
+| Delivery and programme | Contractor | Programme delay creates compliance exposure for the utility |
+| Whole-of-life asset | Utility | Technology obsolescence, membrane replacement, regulatory change |
+| Customer and service | Utility | Service failure is experienced by customers regardless of delivery model |
+
+**The residual utility position** — after all contractual risk transfers — includes:
+compliance obligation, licence conditions, public health exposure, reputational
+consequence of failure, and whole-of-life asset cost.
+
+**Technology-specific notes are generated automatically:**
+- MABR: membrane replacement cycle (10–15 years), biofilm establishment protocols,
+  OEM guarantee requirements
+- CoMag/BioMag: magnetite recovery circuit maintenance, daily logging, operator
+  training as a procurement condition
+- Multi-stage programmes: sequential commissioning dependencies, stage gate requirements
+""")
+
+        with st.expander("**Component 5 — Decision Boundary**"):
+            st.markdown("""
+Defines the conditions under which the recommended option remains acceptable.
+This is the performance contract between the investment decision and the future asset.
+
+**Seven boundary elements:**
+
+| Element | What it defines |
+|---|---|
+| Acceptable performance range | TN, NH₄, TSS, and hydraulic targets to be achieved |
+| Acceptable uncertainty | Which uncertainties are formally accepted at concept stage |
+| Resilience margin | Headroom above the minimum compliance threshold |
+| Fallback position | What happens if Stage 1 does not perform as expected |
+| Monitoring requirements | Continuous and periodic monitoring required post-commissioning |
+| Intervention triggers | Performance thresholds requiring escalation or process review |
+| Critical assumptions | Conditions that must remain true for the decision to remain valid |
+
+**Intervention triggers are technology-specific.** Examples:
+- TN > licence × 1.2 on rolling 30-day average — initiate process review
+- NH₄ > 3 mg/L sustained > 48 hours — initiate aeration system investigation
+- Magnetite recovery < 90% — initiate circuit investigation and OEM notification
+- Peak flow event > design capacity — log, assess, escalate to asset management
+
+**Critical assumptions are always listed explicitly.** If any critical assumption is
+later found to be incorrect, the decision boundary must be re-assessed before proceeding.
+The most common critical assumption in MABR scenarios: *"Aeration system is at or near
+maximum capacity — to be confirmed by blower audit."*
+""")
+
+        with st.expander("**Component 6 — Decision Readiness**"):
+            st.markdown("""
+The final conclusion of the DIL. Assigns one of three statuses based on the combined
+output of all five preceding components.
+
+| Status | Meaning |
+|---|---|
+| ✅ Ready to Proceed | Engineering case is sound; investment decision can proceed directly |
+| ⚠️ Proceed with Conditions | Sufficient for investment decision; conditions carried into procurement |
+| 🔴 Not Decision-Ready | Outstanding items could change the decision; resolve before commitment |
+
+**Not Decision-Ready** is triggered when any of:
+- Credibility validation items remain unresolved (`ready_for_client = False`)
+- High VOI items exist that could change process selection
+- Data confidence is Very Low on a decision-critical variable
+
+**Proceed with Conditions** is triggered when:
+- High VOI items affect sizing or economics but not process selection
+- Data confidence gaps are actionable within the programme
+
+**Each condition is stated explicitly** — not as a general advisory but as a
+specific action with a clear scope (e.g. *"Complete blower audit before detailed
+design commitment — determines MABR vs IFAS, not timing"*).
+
+**The strategic implication** states what to do next. It distinguishes between
+*"do not proceed"* and *"proceed and carry conditions into procurement"* —
+because deferring a decision that is ready is itself a risk.
+
+**Closing statement (always present):**
+> *WaterPoint does not seek to eliminate uncertainty. It helps define when uncertainty
+> is sufficiently understood, bounded, and owned to support action.*
+""")
+
+        with st.expander("**Limitations and appropriate use**"):
+            st.markdown("""
+**The DIL is an automated decision intelligence engine.** It applies structured
+engineering logic calibrated against Australian municipal wastewater practice.
+It does not replace engineering judgement or independent peer review.
+
+**Appropriate use:**
+- Concept-stage investment decision framing
+- Structured preparation for peer review or board submission
+- Identifying which investigations to commission before detailed design
+- Defining monitoring and intervention requirements at procurement stage
+
+**Not appropriate for:**
+- Replacing independent peer review on High-criticality decisions
+- Procurement or regulatory submission without engineering sign-off
+- Decisions where plant-specific data materially differs from the inputs provided
+
+**Input sensitivity:** All DIL outputs are conditional on the accuracy of the
+`plant_context` inputs. If plant parameters are materially incorrect, re-run
+with corrected values before relying on DIL conclusions.
+
+**Scope:** The WaterPoint DIL covers the liquid phase only. Biosolids pathway
+decisions are handled by a separate DIL module within BioPoint.
+""")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # TAB 9 — ENGINEERING NOTES
     # ─────────────────────────────────────────────────────────────────────
     with tab_eng:
         st.markdown("## Engineering notes and key references")
