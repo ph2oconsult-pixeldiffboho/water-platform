@@ -75,20 +75,8 @@ def render_sidebar():
     """Render the AquaPoint sidebar with navigation — light theme matching WaterPoint."""
     with st.sidebar:
         # App header
-        st.markdown(f"""
-            <div style="text-align:center;padding:1rem 0 0.5rem 0">
-                <div style="font-size:2.2rem;margin-bottom:0.3rem">💧</div>
-                <div style="font-size:1.6rem;font-weight:800;color:#1a56a0;letter-spacing:-0.03em">
-                    {APP_NAME}
-                </div>
-                <div style="font-size:0.72rem;color:#666;margin-top:0.2rem;letter-spacing:0.05em">
-                    DRINKING WATER TREATMENT
-                </div>
-                <div style="font-size:0.65rem;color:#999;margin-top:0.1rem">
-                    {APP_VERSION} | ph2o Consulting
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+        st.sidebar.title(f"💧 {APP_NAME}")
+        st.sidebar.markdown("*Water Utility Planning Platform*")
 
         st.divider()
 
