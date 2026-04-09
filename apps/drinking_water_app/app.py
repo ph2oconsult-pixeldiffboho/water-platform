@@ -76,13 +76,12 @@ def render_sidebar():
     with st.sidebar:
         # App header
         st.markdown("""
-            <div style="padding:0.5rem 0 0.8rem 0.2rem">
-                <div style="font-size:1.5rem;font-weight:700;color:#000">💧 AquaPoint</div>
-                <div style="font-size:0.85rem;color:#555;font-style:italic;margin-top:0.1rem">Water Utility Planning Platform</div>
+            <div style="text-align:center;padding:0.8rem 0 0.6rem 0">
+                <div style="font-size:2.4rem">💧</div>
+                <div style="font-size:1.4rem;font-weight:700;color:#1a1a2e;margin-top:0.1rem">AquaPoint</div>
+                <div style="font-size:0.7rem;color:#888;letter-spacing:0.08em;margin-top:0.2rem;text-transform:uppercase">Drinking Water Treatment</div>
             </div>
         """, unsafe_allow_html=True)
-
-        st.divider()
 
 
         if st.button("← Platform Home", use_container_width=True):
