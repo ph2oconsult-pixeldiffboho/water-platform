@@ -74,6 +74,11 @@ PAGES = {
 def render_sidebar():
     """Render the AquaPoint sidebar with navigation — light theme matching WaterPoint."""
     with st.sidebar:
+        # Platform Home button
+        if st.button("← Platform Home", use_container_width=True):
+            st.session_state["active_module"] = None
+            st.rerun()
+        st.divider()
         # App header
         st.markdown(f"""
             <div style="text-align:center;padding:0.5rem 0 1rem 0">
