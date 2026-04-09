@@ -75,8 +75,12 @@ def render_sidebar():
     """Render the AquaPoint sidebar with navigation — light theme matching WaterPoint."""
     with st.sidebar:
         # App header
-        st.sidebar.title(f"💧 {APP_NAME}")
-        st.sidebar.markdown("*Water Utility Planning Platform*")
+        st.markdown("""
+            <div style="padding:0.5rem 0 0.8rem 0.2rem">
+                <div style="font-size:1.5rem;font-weight:700;color:#000">💧 AquaPoint</div>
+                <div style="font-size:0.85rem;color:#555;font-style:italic;margin-top:0.1rem">Water Utility Planning Platform</div>
+            </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
 
