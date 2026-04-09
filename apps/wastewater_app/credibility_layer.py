@@ -116,6 +116,9 @@ class CredibleOutput:
     feasibility_narrative:  str    # refined feasibility paragraph
     confidence_statement:   str    # final confidence with reason
 
+    # ── MABR decision assessment ───────────────────────────────────────────────
+    mabr_assessment:    object  # MABRAssessment — always produced; None if import fails
+
     # ── Final status ───────────────────────────────────────────────────────────
     final_confidence:   str   # High / Medium / Low
     ready_for_client:   bool  # True if no Warning/Correction credibility notes remain
@@ -919,6 +922,14 @@ def build_credible_output(
     # ── Step 6: Structured residual risks ─────────────────────────────────────
     residual_risks = _build_residual_risks(pathway, feasibility, flow_ratio)
 
+    # ── Step 6b: MABR decision assessment ─────────────────────────────────────
+    _mabr_assessment = None
+    try:
+        from apps.wastewater_app.mabr_decision_layer import assess_mabr
+        _mabr_assessment = assess_mabr(ctx)
+    except Exception:
+        pass  # fail gracefully — MABR assessment is advisory, not blocking
+
     # ── Step 7: Narrative ─────────────────────────────────────────────────────
     exec_sum    = _executive_summary(pathway, feasibility)
     why_works   = _why_stack_works(pathway)
@@ -948,6 +959,7 @@ def build_credible_output(
         credibility_notes    = all_notes,
         consistency_flags    = consistency,
         compatibility_flags  = compat_flags,
+        mabr_assessment      = _mabr_assessment,
         executive_summary    = exec_sum,
         why_stack_works      = why_works,
         ranking_clarification= _RANKING_CLARIFICATION,

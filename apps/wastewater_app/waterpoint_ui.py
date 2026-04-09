@@ -550,6 +550,137 @@ def _render_synthesis_layers(result, scenario, project) -> None:
         with st.expander("🏗️ Brownfield vs Replacement — error", expanded=False):
             st.warning(f"BF/GF layer could not load: {_e7b_err}")
 
+    # ── E7c. MABR DECISION FRAMEWORK ──────────────────────────────────────
+    try:
+        _mabr = getattr(cred, "mabr_assessment", None)
+        if _mabr is not None:
+            _mabr_dec_icon = {
+                "Strategically preferred":  "🟢",
+                "Conditionally preferred":  "🟡",
+                "Situationally useful":     "🟠",
+                "Not preferred":            "🔴",
+            }.get(_mabr.decision, "⬜")
+
+            with st.expander(
+                f"{_mabr_dec_icon} MABR Decision Framework — {_mabr.decision}",
+                expanded=False,
+            ):
+                # ── Header row: decision + role + carbon strategy ──────────
+                _mc1, _mc2, _mc3 = st.columns(3)
+                _mc1.metric("WaterPoint Decision", _mabr.decision)
+                _mc2.metric("MABR Role", _mabr.role)
+                _mc3.metric("Carbon Strategy", _mabr.carbon_strategy_label)
+
+                st.markdown(
+                    "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                    unsafe_allow_html=True,
+                )
+
+                # ── NP guard flags ─────────────────────────────────────────
+                _any_np = _mabr.np1_triggered or _mabr.np2_triggered or _mabr.np3_triggered
+                if _any_np:
+                    st.markdown("**Not-preferred guards triggered**")
+                    if _mabr.np1_triggered:
+                        st.caption("🔴 NP-1: No carbon-capture-first architecture — MABR auxiliary "
+                                   "complexity does not deliver whole-plant benefit without upstream "
+                                   "carbon strategy.")
+                    if _mabr.np2_triggered:
+                        st.caption("🔴 NP-2: Remote or small plant without confirmed instrumentation "
+                                   "capability — dual blower, condensate, exhaust O₂ and NH₄ "
+                                   "dependency is disproportionate.")
+                    if _mabr.np3_triggered:
+                        st.caption("🔴 NP-3: Aeration headroom ≥ 15% confirmed — IFAS delivers "
+                                   "equivalent nitrification intensification at lower complexity.")
+                    st.markdown(
+                        "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                        unsafe_allow_html=True,
+                    )
+
+                # ── Whole-plant value test ─────────────────────────────────
+                st.markdown("**Whole-plant value test**")
+                _wv1, _wv2 = st.columns(2)
+                with _wv1:
+                    st.caption("✅ **Passes**")
+                    for _p in _mabr.wpv_passes:
+                        st.caption(f"✅ {_p}")
+                with _wv2:
+                    st.caption("⚠️ **Fails / gaps**")
+                    for _f in _mabr.wpv_fails:
+                        st.caption(f"⚠️ {_f}")
+
+                st.markdown(
+                    "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                    unsafe_allow_html=True,
+                )
+
+                # ── Energy + complexity scores ─────────────────────────────
+                _es1, _es2 = st.columns(2)
+                _es1.markdown("**Net energy verdict**")
+                _es1.caption(_mabr.net_energy_verdict)
+                _es2.markdown(f"**Complexity / risk score: {_mabr.complexity_risk_score}/8**")
+                for _rf in _mabr.active_risk_factors:
+                    _es2.caption(f"• {_rf}")
+
+                st.markdown(
+                    "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                    unsafe_allow_html=True,
+                )
+
+                # ── Narrative sections ─────────────────────────────────────
+                _na1, _na2 = st.columns(2)
+                with _na1:
+                    st.markdown("**Role in plant architecture**")
+                    st.caption(_mabr.best_fit_role_in_plant)
+                    st.markdown("**What it replaces**")
+                    st.caption(_mabr.what_it_replaces)
+                with _na2:
+                    st.markdown("**What it enables**")
+                    st.caption(_mabr.what_it_enables)
+                    st.markdown("**Risks introduced**")
+                    st.caption(_mabr.risks_introduced)
+
+                st.markdown(
+                    "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                    unsafe_allow_html=True,
+                )
+
+                # ── Comparison table ───────────────────────────────────────
+                st.markdown("**System-level technology comparison**")
+                _ct_cols = st.columns([1.2, 1.4, 1.4, 1.2, 1.0, 1.8, 1.8])
+                for _hdr, _col in zip(
+                    ["Technology", "System role", "Carbon alignment",
+                     "Aeration energy", "Retrofit fit", "Best application",
+                     "WaterPoint view"],
+                    _ct_cols,
+                ):
+                    _col.markdown(f"**{_hdr}**")
+                st.markdown(
+                    "<hr style='margin:2px 0; border-color:#dde3ea;'>",
+                    unsafe_allow_html=True,
+                )
+                for _row in _mabr.comparison_table:
+                    _rc = st.columns([1.2, 1.4, 1.4, 1.2, 1.0, 1.8, 1.8])
+                    _rc[0].caption(f"**{_row.technology}**")
+                    _rc[1].caption(_row.system_role)
+                    _rc[2].caption(_row.carbon_alignment)
+                    _rc[3].caption(_row.aeration_energy)
+                    _rc[4].caption(_row.retrofit_fit)
+                    _rc[5].caption(_row.best_application)
+                    _rc[6].caption(_row.waterpoint_view)
+
+                st.markdown(
+                    "<hr style='margin:6px 0; border-color:#dde3ea;'>",
+                    unsafe_allow_html=True,
+                )
+
+                # ── Conclusion ─────────────────────────────────────────────
+                st.markdown("**WaterPoint conclusion**")
+                st.caption(_mabr.conclusion)
+
+    except Exception as _e7c_err:
+        with st.expander("🔬 MABR Decision Framework — error", expanded=False):
+            st.warning(f"MABR decision layer could not load: {_e7c_err}")
+
     # ── E8. REFINEMENT PROMPT (Phase 1 → Phase 2) ─────────────────────────
     _render_refinement_section(pathway, ctx)
 
