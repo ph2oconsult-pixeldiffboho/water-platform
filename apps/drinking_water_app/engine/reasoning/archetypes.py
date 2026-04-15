@@ -74,23 +74,28 @@ ARCHETYPES = {
         "footprint_class": "high",
     },
     "C": {
-        "label": "Intensified Clarification + Filtration",
+        "label": "Intensified Clarification + Filtration (Densadeg / Actiflo)",
         "philosophy": (
-            "Higher-rate clarification (lamella / sand-ballasted / chemically-ballasted) "
-            "followed by granular filtration. Smaller footprint than conventional "
-            "sedimentation with comparable solids removal."
+            "Higher-rate clarification using ballasted or lamella systems (Densadeg, Actiflo, "
+            "lamella settlers) followed by granular filtration. Smaller footprint than conventional "
+            "sedimentation with comparable solids removal. "
+            "Ballasted clarifiers can operate in COAGULATION mode (FeCl3/alum for turbidity/NOM) "
+            "or SOFTENING mode (lime/soda ash for hardness/CaCO3 removal) — or combined. "
+            "In softening mode, the dense CaCO3 precipitate improves ballast performance."
         ),
         "strengths": [
             "Reduced footprint vs. conventional sedimentation",
-            "Higher hydraulic loading rates",
+            "Higher hydraulic loading rates (Densadeg: 20-40 m/h vs 2-4 m/h conventional)",
             "Faster response to load changes (ballasted systems)",
+            "Dual-mode: coagulation OR softening in same unit — Densadeg/Actiflo",
+            "In softening mode: dense CaCO3 precipitate improves settling efficiency",
             "Suitable for retrofit and capacity upgrade",
         ],
         "weaknesses": [
             "Higher capital cost per unit area than horizontal flow clarifiers",
             "More mechanical complexity (recirculation, ballast recovery)",
-            "Ballasted systems may underperform in very cold water",
-            "Less effective for algae than DAF",
+            "Ballasted systems may underperform in very cold water (<5°C)",
+            "Less effective for algae than DAF at high cell counts (>200,000 cells/mL)",
         ],
         "residuals": "Clarifier sludge + filter backwash — comparable to conventional",
         "lrv_profile": {
@@ -396,16 +401,29 @@ def _evaluate_archetype_C(inputs: SourceWaterInputs, classification: Classificat
         aa.flags = []
         return aa
 
+    # Softening mode — Densadeg/Actiflo is well-suited to lime softening
+    # Dense CaCO3 precipitate improves ballast performance vs coagulation floc
+    if inputs.hardness_median_mg_l > 200:
+        incl.append(
+            f"Source hardness {inputs.hardness_median_mg_l:.0f} mg/L CaCO₃ is elevated. "
+            "Densadeg / Actiflo can operate in SOFTENING MODE with lime/soda ash as the primary "
+            "chemical — the dense CaCO₃ precipitate improves ballast efficiency relative to "
+            "coagulation floc. This makes ballasted clarification particularly effective for "
+            "combined softening + clarification in a single compact unit."
+        )
+
     if inputs.algae_risk in ["high", "confirmed_bloom"]:
         flags.append(
-            "Intensified clarification (lamella / ballasted) performance degrades above "
-            "200,000 cells/mL. Enter algal_cells_per_ml if cell count data is available "
-            "to apply the hard exclusion threshold. Consider DAF in preference."
+            "Intensified clarification (Densadeg / Actiflo) performance degrades above "
+            "200,000 cells/mL in coagulation mode. In softening mode, algal removal "
+            "is secondary — DAF should be considered upstream for cell removal. "
+            "Enter algal_cells_per_ml if cell count data is available."
         )
 
     if not incl:
         incl.append(
-            "Intensified clarification is a viable option offering reduced footprint. "
+            "Intensified clarification (Densadeg / Actiflo) is a viable option offering "
+            "reduced footprint. Can operate in coagulation mode, softening mode, or combined. "
             "Most advantageous where land is constrained or hydraulic capacity is the primary driver."
         )
 

@@ -17,7 +17,7 @@ ARCHETYPE_TRAINS = {
           "uv_disinfection", "chlorination"],
     "B": ["screening", "coagulation_flocculation", "sedimentation",
           "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],
-    "C": ["screening", "coagulation_flocculation", "sedimentation",
+    "C": ["screening", "actiflo_carb",
           "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],
     "D": ["screening", "coagulation_flocculation", "daf",
           "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],
@@ -46,7 +46,10 @@ CHEM_INJECTION_MAP = {
     "uv_disinfection":          ["h2o2"],
     "chlorination":             ["naocl", "chlorine"],
     "chloramination":           ["naocl", "ammonia"],
+    "actiflo_carb":             ["ferric_chloride", "alum", "polymer"],
     "chemical_softening":       ["lime", "soda_ash"],
+    "kmno4_pre_oxidation":      ["kmno4"],
+    "polydadmac":               ["polydadmac"],
 }
 
 CHEM_SHORT = {
@@ -54,15 +57,18 @@ CHEM_SHORT = {
     "soda_ash": "Na₂CO₃", "caustic_soda": "NaOH", "co2": "CO₂",
     "polymer": "Poly", "antiscalant": "Antiscalant", "acid": "H₂SO₄",
     "naocl": "NaOCl", "chlorine": "Cl₂", "ammonia": "NH₃", "h2o2": "H₂O₂",
+    "kmno4": "KMnO₄", "polydadmac": "pDADMAC",
 }
 
 SHORT_LABELS = {
     "screening": "Screens", "coagulation_flocculation": "Coag/Floc",
-    "daf": "DAF", "sedimentation": "Sed/Clarif", "rapid_gravity_filtration": "RGF",
+    "daf": "DAF", "sedimentation": "Densadeg/\nActiflo", "rapid_gravity_filtration": "RGF",
     "slow_sand_filtration": "SSF", "mf_uf": "MF/UF", "nf": "NF", "ro": "RO",
     "ozonation": "Ozone", "bac": "BAC", "gac": "GAC", "aop": "UV/AOP",
     "uv_disinfection": "UV", "chlorination": "Cl₂", "chloramination": "NH₂Cl",
+    "actiflo_carb": "Actiflo\nCarb",
     "chemical_softening": "Lime\nSoftening", "sludge_thickening": "Sludge\nThickener",
+    "kmno4_pre_oxidation": "KMnO₄\nPre-Ox", "polydadmac": "pDADMAC",
     "brine_management": "Brine\nMgmt",
 }
 
@@ -70,6 +76,7 @@ RESIDUALS_TECHS = {
     "sedimentation", "daf", "coagulation_flocculation",
     "rapid_gravity_filtration", "slow_sand_filtration",
     "mf_uf", "chemical_softening", "sludge_thickening",
+    "actiflo_carb",
 }
 
 SCORE_LABELS = {
@@ -402,6 +409,31 @@ def render():
             sel_train.insert(_insert_after + 1, 'chemical_softening')
         if 'sludge_thickening' not in sel_train:
             sel_train.append('sludge_thickening')
+
+    # Inject kmno4_pre_oxidation into train when manganese is elevated (>0.1 mg/L)
+    # Position: before coagulation — pre-oxidation must precede coagulant
+    _mn = float(source_water.get('manganese_mg_l', 0))
+    _kmno4_required = _mn > 0.1 and 'kmno4_pre_oxidation' not in sel_train
+    if _kmno4_required:
+        sel_train = list(sel_train)
+        # Insert before coagulation_flocculation
+        _coag_idx = next(
+            (i for i, t in enumerate(sel_train) if t == 'coagulation_flocculation'),
+            0
+        )
+        sel_train.insert(_coag_idx, 'kmno4_pre_oxidation')
+
+    # Inject polydadmac as coagulant aid when ballasted/high-rate clarifier is in the train
+    # Densadeg (sedimentation), Actiflo Carb, DAF — all benefit from pDADMAC
+    # Prospect PPTP: FeCl3 + pDADMAC standard for Densadeg
+    _ballasted = any(t in sel_train for t in ('sedimentation', 'actiflo_carb', 'daf'))
+    _polydadmac_required = _ballasted and 'polydadmac' not in sel_train
+    if _polydadmac_required:
+        sel_train = list(sel_train)
+        sel_train.append('polydadmac')
+        # Note: polydadmac appears as a chemical injection arrow only,
+        # not as a standalone process box (no SHORT_LABELS box drawn for it)
+
 
     process_train = [t for t in sel_train if t not in ("sludge_thickening", "brine_management")]
     sludge_train  = [t for t in sel_train if t in ("sludge_thickening", "brine_management")]

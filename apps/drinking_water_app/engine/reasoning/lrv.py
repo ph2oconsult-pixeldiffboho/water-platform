@@ -38,6 +38,17 @@ LRV_BARRIER_CREDITS = {
         "bacteria":  (1.5, 3.0, "pH >10 during lime softening lethal to most bacteria. Credit conditional on achieving target pH.", "validated"),
         "virus":     (1.0, 2.5, "Lime at pH >11 provides meaningful virus inactivation. pH-dependent — credit requires pH verification.", "indicative"),
     },
+
+    "actiflo_carb": {
+        "protozoa":  (3.0, 4.0, "Ballasted clarification + microsand floc provides validated protozoa removal. "
+                              "Paper (Kruger/Veolia): 90-99.9% algae removal including cyanobacteria. "
+                              "Credit is physical settling, not PAC.", "validated"),
+        "bacteria":  (1.5, 2.5, "Ballasted coagulation/settling provides bacterial removal. "
+                              "PAC contact provides adsorptive removal at >10 min contact time.", "indicative"),
+        "virus":     (1.0, 2.0, "Coagulation and ballasted settling provide partial virus removal. "
+                              "PAC adsorption credit indicative at >10 min contact time.", "indicative"),
+    },
+
     "daf": {
         "protozoa":  (1.5, 2.0, "DAF effective for Cryptosporidium when well-coagulated. "
                                  "Validated at 1.5–2.0 log in Australian DAF studies (WRc, AWWARF).", "validated"),

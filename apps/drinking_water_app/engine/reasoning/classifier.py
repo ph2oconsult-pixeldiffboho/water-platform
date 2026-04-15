@@ -446,11 +446,16 @@ def assess_direct_filtration(inputs: SourceWaterInputs) -> tuple:
             f"Direct filtration is not viable for this source."
         )
 
-    if inputs.manganese_median_mg_l > 0.1 and inputs.source_type == "groundwater":
+    if inputs.manganese_median_mg_l > 0.1:
+        src_label = "groundwater" if inputs.source_type == "groundwater" else "surface water"
+        kmno4_dose = round(inputs.manganese_median_mg_l / 0.27 * 1.3, 1)
         exclusions.append(
-            f"Dissolved manganese {inputs.manganese_median_mg_l} mg/L in groundwater: dissolved Mn²⁺ "
-            f"deposits as MnO₂ on filter media, causing head loss accumulation and shortened run times. "
-            f"Pre-oxidation and dedicated manganese removal are required before granular filtration."
+            f"Dissolved manganese {inputs.manganese_median_mg_l:.3f} mg/L ({src_label}): "
+            f"dissolved Mn\u00b2\u207a is not removed by conventional coagulation/filtration alone. "
+            f"KMnO\u2084 pre-oxidation (estimated dose {kmno4_dose} mg/L) oxidises Mn\u00b2\u207a \u2192 MnO\u2082(s) "
+            f"for removal by subsequent clarification and filtration. "
+            f"Prospect PPTP design basis: 1\u20132 mg/L KMnO\u2084 for Mn 0.075\u20130.83 mg/L. "
+            f"Add kmno4_pre_oxidation to the treatment train ahead of coagulation."
         )
 
     eligible = len(exclusions) == 0

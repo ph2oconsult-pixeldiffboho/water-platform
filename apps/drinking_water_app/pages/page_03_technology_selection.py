@@ -20,7 +20,7 @@ ARCHETYPE_TECH_HINTS = {
           "uv_disinfection", "chlorination"],
     "B": ["screening", "coagulation_flocculation", "sedimentation",
           "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],
-    "C": ["screening", "coagulation_flocculation", "sedimentation",
+    "C": ["screening", "actiflo_carb",
           "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],
     "D": ["screening", "coagulation_flocculation", "daf",
           "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],

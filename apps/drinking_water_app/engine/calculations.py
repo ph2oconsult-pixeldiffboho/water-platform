@@ -49,10 +49,19 @@ def screen_technology_feasibility(plant_type: str, flow_ML_d: float, source_wate
         if tech_key == "daf" and algae < 1000:
             flags.append("DAF provides greatest benefit for high-algae source waters")
 
+        # Actiflo Carb is not suitable for softening — CaCO3 precipitation fouls microsand
+        if tech_key == "actiflo_carb" and "chemical_softening" in selected_technologies:
+            feasible = False
+            flags.append(
+                "⛔ Actiflo Carb is not suitable for use with lime softening. "
+                "CaCO₃ precipitation from softening fouls the microsand recycling system (hydrocyclone). "
+                "Use conventional sedimentation or DAF upstream of softening."
+            )
+
         # Hard performance limit for high-rate ballasted clarifiers (Densadeg / Actiflo)
         # Above 200,000 cells/mL the ballast recirculation system is overwhelmed.
         # sedimentation archetype_C maps to this technology when it is intensified clarification
-        if tech_key in ("sedimentation",) and algae > 200_000:
+        if tech_key in ("sedimentation", "actiflo_carb") and algae > 200_000:
             feasible = False
             flags.append(
                 f"⛔ Algal cell count {algae:,.0f} cells/mL exceeds the upper performance limit "
@@ -99,7 +108,7 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
         "coagulation_flocculation": {"turbidity_ntu": 0.60, "toc_mg_l": 0.25, "colour_hu": 0.50, "algal_cells_ml": 0.50},
         "daf": {"turbidity_ntu": 0.70, "algal_cells_ml": 0.85, "toc_mg_l": 0.20},
         "sedimentation": {"turbidity_ntu": 0.70, "algal_cells_ml": 0.50, "toc_mg_l": 0.15},
-        "rapid_gravity_filtration": {"turbidity_ntu": 0.90, "algal_cells_ml": 0.90, "toc_mg_l": 0.10},
+        "rapid_gravity_filtration": {"turbidity_ntu": 0.90, "algal_cells_ml": 0.90, "toc_mg_l": 0.10, "manganese_mg_l": 0.55, "iron_mg_l": 0.80},
         "slow_sand_filtration": {"turbidity_ntu": 0.85, "algal_cells_ml": 0.95, "toc_mg_l": 0.30},
         "mf_uf": {"turbidity_ntu": 0.9995, "algal_cells_ml": 0.9995, "toc_mg_l": 0.05},
         "nf": {"turbidity_ntu": 0.9999, "tds_mg_l": 0.70, "hardness_mg_l": 0.80, "toc_mg_l": 0.90, "colour_hu": 0.95},
@@ -112,6 +121,26 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
         "chloramination": {},
         "uv_disinfection": {},
         "sludge_thickening": {},
+        "actiflo_carb": {
+            "turbidity_ntu": 0.93, "algal_cells_ml": 0.95, "toc_mg_l": 0.50,
+            "colour_hu": 0.70, "iron_mg_l": 0.90, "manganese_mg_l": 0.70,
+        },  # Paper: 85-99% algae; PAC removes 98-99% geosmin, 86-89% MIB, 92-99% cyanotoxins
+        "kmno4_pre_oxidation": {
+            # KMnO₄ oxidises dissolved Mn²⁺→MnO₂(s), removed by subsequent coag+clarification+filtration
+            # Combined removal across full train (KMnO₄ + coag + RGF): ~95%
+            # Note: KMnO₄ efficacy alone is ~80%; the remaining MnO₂(s) is captured in filtration
+            # Prospect: 0.83 mg/L raw → 0.03 mg/L spec requires ~96% — achievable with optimised dose
+            "manganese_mg_l": 0.88,  # 88% assigned here; RGF adds further capture
+            "iron_mg_l": 0.75,
+            "algal_cells_ml": 0.20,
+        },
+        "polydadmac": {
+            # Coagulant aid — synergistic with FeCl₃, not standalone
+            # Incremental removal over primary coagulant already counted
+            "turbidity_ntu": 0.10,
+            "algal_cells_ml": 0.10,
+            "colour_hu": 0.10,
+        },
         "chemical_softening": {"hardness_mg_l": 0.75, "tds_mg_l": 0.20, "iron_mg_l": 0.85, "manganese_mg_l": 0.85, "toc_mg_l": 0.15},
         "brine_management": {},
     }
@@ -193,6 +222,7 @@ def calculate_energy(plant_type: str, flow_ML_d: float, selected_technologies: l
         "chloramination": {"low": 2, "typical": 5, "high": 10},
         "uv_disinfection": {"low": 10, "typical": 25, "high": 60},
         "sludge_thickening": {"low": 5, "typical": 15, "high": 40},
+        "actiflo_carb": {"low": 45, "typical": 75, "high": 120},   # microsand pump + PAC mixing
         "chemical_softening": {"low": 20, "typical": 40, "high": 70},
         "brine_management": {"low": 30, "typical": 80, "high": 200},
     }
@@ -243,6 +273,9 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
         "chloramination": ["naocl", "ammonia"],
         "uv_disinfection": [],
         "sludge_thickening": ["polymer"],
+        "kmno4_pre_oxidation": ["kmno4"],
+        "polydadmac": ["polydadmac"],
+        "actiflo_carb": ["ferric_chloride", "polymer"],  # PAC handled separately (bulk powder)
         "chemical_softening": ["lime", "soda_ash"],
         "brine_management": [],
     }
@@ -279,6 +312,25 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
 
                 # Lime dose scales with hardness — higher hardness needs more lime
                 hardness = source_water.get("hardness_mg_l", 150)
+                # KMnO₄ dose based on manganese: stoichiometric + 30% excess
+                mn = source_water.get("manganese_mg_l", 0.05)
+                if chem_key == "kmno4":
+                    stoich_dose = mn / 0.27
+                    dose_typical = min(chem["high"], max(chem["low"],
+                                       round(stoich_dose * 1.3, 1)))
+
+                # PolyDADMAC dose as 8% of FeCl₃ dose (Prospect: 7–9%)
+                if chem_key == "polydadmac":
+                    design_turb = source_water.get("turbidity_p99_ntu", turbidity * 3)
+                    if design_turb > 200:
+                        fecl3_est = min(60, 20 * 2.2)
+                    elif design_turb > 50:
+                        fecl3_est = min(60, 20 * 1.6)
+                    else:
+                        fecl3_est = 20.0
+                    dose_typical = min(chem["high"], max(chem["low"],
+                                       round(fecl3_est * 0.08, 1)))
+
                 if chem_key == "lime":
                     # Approximate: 1 mg/L Ca hardness needs ~1.35 mg/L lime
                     # Softening target ~80 mg/L CaCO3; dose ≈ (hardness - 80) * 1.35

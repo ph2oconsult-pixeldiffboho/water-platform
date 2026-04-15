@@ -54,7 +54,7 @@ TECHNOLOGIES = {
         "description": "Low-density particle and algae removal by micro-bubble flotation",
     },
     "sedimentation": {
-        "label": "Sedimentation / Clarification",
+        "label": "Sedimentation / Clarification (incl. Densadeg / Actiflo)",
         "category": "Primary Treatment",
         "applicable_plants": ["conventional"],
         "description": "Gravity separation of flocculated solids (conventional or lamella)",
@@ -135,11 +135,47 @@ TECHNOLOGIES = {
         "description": "Non-chemical pathogen inactivation; protozoa and virus control",
     },
     # Residuals
+    "kmno4_pre_oxidation": {
+        "label": "KMnO₄ Pre-Oxidation",
+        "category": "Pre-Oxidation",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "Potassium permanganate dosing ahead of clarification for dissolved "
+            "manganese and iron oxidation to insoluble form. Enables removal by "
+            "subsequent coagulation and sedimentation/filtration. Also provides "
+            "limited cyanobacterial pre-treatment. Does NOT produce bromate "
+            "(safe with high-bromide source waters). "
+            "Prospect PPTP: 1–2 mg/L Normal range, 2 mg/L Design Envelope."
+        ),
+    },
+    "polydadmac": {
+        "label": "PolyDADMAC (Coagulant Aid)",
+        "category": "Primary Treatment",
+        "applicable_plants": ["conventional", "membrane"],
+        "description": (
+            "Cationic polymer used as secondary coagulant in combination with "
+            "ferric chloride or alum. Improves floc structure, density, and "
+            "settling rate. Particularly effective in ballasted clarification "
+            "(Densadeg/Actiflo). Prospect PPTP: 1.5–2.0 mg/L; ratio to FeCl₃ ~7–9%. "
+            "Not a standalone coagulant — always supplementary to primary coagulant."
+        ),
+    },
     "sludge_thickening": {
         "label": "Sludge Thickening & Dewatering",
         "category": "Residuals",
         "applicable_plants": ["conventional", "membrane"],
         "description": "Gravity or mechanical concentration of filter backwash and clarifier sludge",
+    },
+    "actiflo_carb": {
+        "label": "Actiflo® Carb (Ballasted Clarification + PAC)",
+        "category": "Primary Treatment",
+        "applicable_plants": ["conventional", "membrane"],
+        "description": (
+            "Ballasted flocculation (microsand) combined with Powdered Activated Carbon (PAC) "
+            "pre-contact tank. Removes algae, cyanobacteria, cyanotoxins, geosmin, MIB, and NOM "
+            "in a single compact unit. Performance equivalent to or exceeding DAF for algae removal. "
+            "NOT suitable for softening — CaCO₃ precipitation fouls microsand recycling system."
+        ),
     },
     "chemical_softening": {
         "label": "Chemical Softening (Lime / Soda Ash)",
@@ -368,17 +404,37 @@ CHEMICAL_DOSES_mg_L = {
         "unit_cost_AUD_kg": 4.00,
         "unit_cost_AUD_kg_pure": 4.00,
     },
+    "kmno4": {
+        "label": "Potassium Permanganate (KMnO₄)",
+        "low": 0.5, "typical": 1.5, "high": 4.0,
+        # Prospect PPTP: 1 mg/L Normal Design Range, 2 mg/L Design Envelope (500–750 MLD)
+        # Engineering basis: 1 mg/L oxidises ~0.35 mg/L Mn; practical dose 1–3 mg/L
+        # Over-dose risk: pink water (permanganate pass-through) — dose carefully
+        "concentration_pct": 97,        # crystal KMnO₄ — 97% purity
+        "density_t_m3": 1.60,           # bulk density of crystals
+        "unit_cost_AUD_kg": 2.80,       # per kg commercial product (crystals)
+        "unit_cost_AUD_kg_pure": 2.89,  # per kg pure KMnO₄ (= 2.80/0.97)
+    },
+    "polydadmac": {
+        "label": "PolyDADMAC (Coagulant Aid — LT610 equivalent)",
+        "low": 0.5, "typical": 1.5, "high": 3.0,
+        # Prospect PPTP: 1.5–2.0 mg/L active; ratio to FeCl₃ ~7–9%
+        "concentration_pct": 26,
+        "density_t_m3": 1.10,
+        "unit_cost_AUD_kg": 1.20,
+        "unit_cost_AUD_kg_pure": 4.62,
+    },
     "acid": {
         "label": "Sulfuric Acid (98% — RO pretreat)",
         "low": 1, "typical": 4, "high": 12,
-        "concentration_pct": 98,        # concentrated H₂SO₄
+        "concentration_pct": 98,
         "density_t_m3": 1.84,
         "unit_cost_AUD_kg": 0.29,
         "unit_cost_AUD_kg_pure": 0.30,
     },
 }
 
-# ─── CAPEX Reference (AUD/ML/d capacity) ─────────────────────────────────────────
+# ─── CAPEX Reference (AUD/ML/d capacity) ─────────────────────────────────────────────────────────────────────────────
 CAPEX_REFERENCE_AUD_ML_d = {
     "screening": {"low": 50_000, "typical": 150_000, "high": 400_000},
     "coagulation_flocculation": {"low": 100_000, "typical": 300_000, "high": 700_000},
@@ -397,9 +453,13 @@ CAPEX_REFERENCE_AUD_ML_d = {
     "chloramination": {"low": 80_000, "typical": 200_000, "high": 450_000},
     "uv_disinfection": {"low": 100_000, "typical": 300_000, "high": 700_000},
     "sludge_thickening": {"low": 100_000, "typical": 300_000, "high": 700_000},
+    "actiflo_carb": {"low": 500_000, "typical": 1_100_000, "high": 2_200_000},
     "chemical_softening": {"low": 400_000, "typical": 900_000, "high": 1_800_000},
+    "kmno4_pre_oxidation": {"low": 20_000, "typical": 60_000, "high": 150_000},
+    "polydadmac": {"low": 0, "typical": 0, "high": 0},
     "brine_management": {"low": 200_000, "typical": 600_000, "high": 1_500_000},
 }
+
 
 # ─── Risk Ratings ─────────────────────────────────────────────────────────────────
 TECHNOLOGY_RISK = {
@@ -419,9 +479,9 @@ TECHNOLOGY_RISK = {
     "chlorination": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
     "chloramination": {"implementation": "Low", "operational": "Medium", "regulatory": "Medium"},
     "uv_disinfection": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
-    "sludge_thickening": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
-    "chemical_softening": {"implementation": "Medium", "operational": "High", "regulatory": "Low"},
     "brine_management": {"implementation": "High", "operational": "High", "regulatory": "High"},
+    "kmno4_pre_oxidation": {"implementation": "Low", "operational": "Medium", "regulatory": "Low"},
+    "polydadmac": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
 }
 
 # ─── Scoring Weights (MCA) ────────────────────────────────────────────────────────

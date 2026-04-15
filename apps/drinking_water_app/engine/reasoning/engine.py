@@ -260,6 +260,36 @@ def _build_key_warnings(
             "Ensure 99th percentile turbidity data is robust before committing to direct filtration."
         )
 
+    # Manganese — requires KMnO₄ pre-oxidation
+    if inputs.manganese_median_mg_l > 0.1:
+        kmno4_dose = round(inputs.manganese_median_mg_l / 0.27 * 1.3, 1)
+        mn_spec = 0.03  # ADWG / TWY spec
+        achievable = inputs.manganese_median_mg_l * (1 - 0.80)  # 80% removal with KMnO₄
+        if achievable > mn_spec:
+            warnings.append(
+                f"⚠ MANGANESE {inputs.manganese_median_mg_l:.3f} mg/L → KMnO₄ pre-oxidation "
+                f"required (estimated dose {kmno4_dose} mg/L). "
+                f"At 80% removal: predicted effluent {achievable:.3f} mg/L vs spec ≤0.03 mg/L. "
+                f"For Mn >{inputs.manganese_median_mg_l*0.3:.2f} mg/L, a dedicated Mn removal "
+                f"step (greensand filter, MnO₂-coated media, or sequential KMnO₄ + filtration) "
+                f"is required to reliably meet spec. Add kmno4_pre_oxidation to train."
+            )
+        else:
+            warnings.append(
+                f"⚠ MANGANESE {inputs.manganese_median_mg_l:.3f} mg/L: KMnO₄ pre-oxidation "
+                f"required ahead of clarification. Estimated dose {kmno4_dose} mg/L. "
+                f"At 80% removal: predicted effluent {achievable:.3f} mg/L ≤ 0.03 mg/L spec. "
+                f"Add kmno4_pre_oxidation to treatment train."
+            )
+
+    # Iron — high iron flags additional pre-oxidation need
+    if inputs.iron_median_mg_l > 1.0:
+        warnings.append(
+            f"⚠ IRON {inputs.iron_median_mg_l:.2f} mg/L: dissolved Fe²⁺ requires pre-oxidation "
+            f"(KMnO₄ or Cl₂) to convert to Fe³⁺ for removal by coagulation/filtration. "
+            f"KMnO₄ is preferred where Mn is also elevated — handles both simultaneously."
+        )
+
     return warnings
 
 
