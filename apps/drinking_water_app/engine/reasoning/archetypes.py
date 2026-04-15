@@ -377,10 +377,30 @@ def _evaluate_archetype_C(inputs: SourceWaterInputs, classification: Classificat
             "Retrofit context: ballasted or lamella clarification can often be inserted "
             "into existing civil structures to increase hydraulic capacity."
         )
+    # Hard cell count limit for high-rate ballasted clarifiers (Densadeg / Actiflo)
+    # Above 200,000 cells/mL the ballast/floc system is overwhelmed.
+    # This is a technology performance exclusion, not a preference.
+    BALLASTED_CELL_LIMIT = 200_000  # cells/mL
+
+    if inputs.algal_cells_per_ml > 0 and inputs.algal_cells_per_ml > BALLASTED_CELL_LIMIT:
+        aa.exclusion_reasons = [
+            f"EXCLUDED: Algal cell count {inputs.algal_cells_per_ml:,.0f} cells/mL exceeds "
+            f"the upper performance limit for high-rate ballasted clarifiers "
+            f"(Densadeg / Actiflo upper limit: {BALLASTED_CELL_LIMIT:,} cells/mL). "
+            "At this loading the ballast recirculation system is overwhelmed, floc structure "
+            "is disrupted, and algal carry-through into filtration is unacceptable. "
+            "DAF (Archetype D) is the appropriate clarification technology above this threshold."
+        ]
+        aa.viable = False
+        aa.inclusion_rationale = []
+        aa.flags = []
+        return aa
+
     if inputs.algae_risk in ["high", "confirmed_bloom"]:
         flags.append(
-            "Intensified clarification (lamella / ballasted) is not well-suited to algal-dominated "
-            "waters — consider DAF in preference."
+            "Intensified clarification (lamella / ballasted) performance degrades above "
+            "200,000 cells/mL. Enter algal_cells_per_ml if cell count data is available "
+            "to apply the hard exclusion threshold. Consider DAF in preference."
         )
 
     if not incl:

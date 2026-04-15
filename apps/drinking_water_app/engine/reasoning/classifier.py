@@ -64,6 +64,9 @@ class SourceWaterInputs:
     cyanobacteria_confirmed: bool = False
     cyanotoxin_detected: bool = False
     mib_geosmin_issue: bool = False
+    algal_cells_per_ml: float = 0.0                  # peak / adverse cell count (cells/mL)
+                                                      # 0 = not measured / use algae_risk qualitative
+                                                      # Densadeg/Actiflo upper limit: 200,000 cells/mL
 
     # Inorganics
     hardness_median_mg_l: float = 150.0

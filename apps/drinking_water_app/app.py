@@ -13,6 +13,7 @@ from .pages import (
     render_technology_selection,
     render_treatment_philosophy,
     render_results,
+    render_pfd,
     render_report,
     render_scenario_comparison,
     render_manual,
@@ -44,29 +45,35 @@ PAGES = {
         "render": render_treatment_philosophy,
         "number": 4,
     },
+    "pfd": {
+        "label": "Process Flow Diagram",
+        "icon": "🔀",
+        "render": render_pfd,
+        "number": 5,
+    },
     "results": {
         "label": "Analysis Results",
         "icon": "📊",
         "render": render_results,
-        "number": 5,
+        "number": 6,
     },
     "report": {
         "label": "Export Report",
         "icon": "📄",
         "render": render_report,
-        "number": 6,
+        "number": 7,
     },
     "scenario_comparison": {
         "label": "Scenario Comparison",
         "icon": "⚖️",
         "render": render_scenario_comparison,
-        "number": 7,
+        "number": 8,
     },
     "manual": {
         "label": "User Manual",
         "icon": "📖",
         "render": render_manual,
-        "number": 8,
+        "number": 9,
     },
 }
 

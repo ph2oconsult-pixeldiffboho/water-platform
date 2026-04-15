@@ -5,6 +5,7 @@ from .page_01_project_setup import render as render_project_setup
 from .page_02_source_water import render as render_source_water
 from .page_03_technology_selection import render as render_technology_selection
 from .page_04_results import render as render_results
+from .page_04b_pfd import render as render_pfd
 from .page_05_report import render as render_report
 from .page_06_treatment_philosophy import render as render_treatment_philosophy
 from .page_07_scenario_comparison import render as render_scenario_comparison

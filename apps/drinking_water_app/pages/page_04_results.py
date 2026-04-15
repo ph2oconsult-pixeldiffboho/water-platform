@@ -178,6 +178,7 @@ def render():
         "🌿 Environment",
         "📋 Regulatory",
         "✅ Feasibility",
+        "🧂 Softening",
         "⚙️ Settings",
     ])
 
@@ -576,7 +577,131 @@ def render():
             """, unsafe_allow_html=True)
 
     # ══ TAB 11 — SETTINGS ════════════════════════════════════════════════════
+    # ══ TAB 10 — SOFTENING ANALYSIS ══════════════════════════════════════════
     with tabs[10]:
+        from ..engine.softening_blend import calculate_softening_blend
+
+        sw_local   = st.session_state.get("source_water", {})
+        hardness   = float(sw_local.get("hardness_mg_l", 150))
+        alkalinity = float(sw_local.get("alkalinity_mg_l", 80))
+        tds_local  = float(sw_local.get("tds_mg_l", 300))
+        flow_local = st.session_state.get("flow_ML_d", 10.0)
+        sel_tech   = st.session_state.get("selected_technologies", [])
+
+        softening_in_train = "chemical_softening" in sel_tech
+        hardness_elevated  = hardness > 200
+        show_softening     = softening_in_train or hardness_elevated
+
+        if not show_softening:
+            info_box(
+                f"Softening analysis not triggered. Raw hardness is {hardness:.0f} mg/L "
+                f"(threshold: >200 mg/L) and chemical softening is not in the selected train."
+            )
+        else:
+            if softening_in_train:
+                success_box("Chemical softening is in the selected treatment train.")
+            else:
+                warning_box(
+                    f"Raw hardness {hardness:.0f} mg/L CaCO\u2083 is elevated. "
+                    "Consider adding chemical softening to the treatment train."
+                )
+
+            section_header("Split-Stream Softening Analysis", "\U0001f9c2")
+            st.markdown(
+                "<div style=\'font-size:0.82rem;color:#555;margin-bottom:1rem\'>"
+                "Split-stream softening treats a fraction of total flow through the softening "
+                "stage, then blends with bypass to achieve target hardness and CCPP. "
+                "CCPP target: \u22125 to 0 mg/L CaCO\u2083. "
+                "Lime dose expressed as mg/L applied to the <em>softening stream</em>."
+                "</div>",
+                unsafe_allow_html=True
+            )
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                product_ph = st.number_input(
+                    "Product pH (post-recarbonation)",
+                    min_value=7.0, max_value=8.5, value=7.8, step=0.1,
+                    help="pH after CO\u2082 recarbonation. Target 7.8\u20138.2 for CCPP compliance."
+                )
+            with c2:
+                carb_frac = st.slider(
+                    "Carbonate hardness fraction", 0.40, 0.90, 0.70, 0.05,
+                    help="Fraction of total hardness that is carbonate. High-alk sources: 0.65\u20130.75."
+                )
+            with c3:
+                ca_frac = st.slider(
+                    "Ca\u00b2\u207a fraction of hardness", 0.50, 0.90, 0.75, 0.05,
+                    help="Fraction of hardness as calcium vs magnesium. Typical: 0.70\u20130.80."
+                )
+
+            blend = calculate_softening_blend(
+                total_flow_ML_d     = flow_local,
+                raw_hardness_mg_l   = hardness,
+                raw_alkalinity_mg_l = alkalinity,
+                raw_tds_mg_l        = tds_local,
+                product_ph          = product_ph,
+                carbonate_fraction  = carb_frac,
+                ca_fraction         = ca_frac,
+            )
+
+            import pandas as pd
+            rows = []
+            for o in blend.options:
+                rows.append({
+                    "Fraction":          f"{o.softening_fraction_pct:.0f}%",
+                    "Soft (ML/d)":       f"{o.softening_flow_ML_d:.1f}",
+                    "Bypass (ML/d)":     f"{o.bypass_flow_ML_d:.1f}",
+                    "Hardness (mg/L)":   f"{o.blended_hardness_mg_l:.0f}",
+                    "Alkalinity (mg/L)": f"{o.blended_alkalinity_mg_l:.0f}",
+                    "CCPP (mg/L)":       f"{o.ccpp_approx:+.1f}",
+                    "H \u2713":          "\u2713" if o.hardness_compliant else "\u2717",
+                    "CCPP \u2713":       "\u2713" if o.ccpp_compliant else "\u2717",
+                    "Alk \u2713":        "\u2713" if o.alkalinity_compliant else "\u2717",
+                    "All \u2713":        "\u2713\u2713\u2713" if o.fully_compliant else "\u2014",
+                    "Lime (mg/L)":       f"{o.lime_dose_mg_l:.0f}",
+                    "Soda (mg/L)":       f"{o.soda_ash_dose_mg_l:.0f}",
+                    "Cost ($M/yr)":      f"{o.total_chemical_cost_AUD/1e6:.2f}",
+                    "Sludge (t/d)":      f"{o.sludge_production_t_d:.1f}",
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            if blend.recommended_option:
+                rec = blend.recommended_option
+                success_box(
+                    f"**Recommended: {rec.softening_fraction_pct:.0f}% split-stream** — "
+                    f"{rec.softening_flow_ML_d:.1f} ML/d softened, "
+                    f"{rec.bypass_flow_ML_d:.1f} ML/d bypass. "
+                    f"Blended hardness {rec.blended_hardness_mg_l:.0f} mg/L | "
+                    f"CCPP {rec.ccpp_approx:+.1f} mg/L | "
+                    f"Lime {rec.lime_dose_mg_l:.0f} mg/L | "
+                    f"Cost ${rec.total_chemical_cost_AUD/1e6:.2f}M/yr | "
+                    f"Sludge {rec.sludge_production_t_d:.1f} t/d."
+                )
+            else:
+                warning_box(
+                    f"No split-stream fraction achieves all targets at pH {product_ph:.1f}. "
+                    f"Full-flow softening (100%) required. Design softener for {flow_local:.1f} ML/d."
+                )
+
+            with st.expander("Engineering notes"):
+                st.markdown("""
+**Lime dose:** Carbonate hardness removal — Ca(OH)\u2082 + Ca(HCO\u2083)\u2082 \u2192 2CaCO\u2083\u2193 + 2H\u2082O.
+Dose \u2248 hardness removed \u00d7 0.74 \u00d7 1.15 (stoichiometric excess).
+
+**Soda ash:** Non-carbonate hardness — Na\u2082CO\u2083 + CaCl\u2082 \u2192 CaCO\u2083\u2193 + 2NaCl.
+Dose \u2248 non-carbonate hardness removed \u00d7 1.06.
+
+**Recarbonation:** CO\u2082 dosed post-softening to lower pH from ~10.5 to product target.
+Restores alkalinity and drives CCPP into \u22125 to 0 range.
+
+**CCPP:** Concept-stage LSI approximation (\u00b13 mg/L). Full CCPP requires ionic strength correction.
+
+**Sludge:** Predominantly CaCO\u2083 \u2014 dewaters to >35% DS. Higher density than coagulation sludge.
+                """)
+
+    with tabs[11]:
         section_header("Analysis Parameters", "⚙️")
         col_s1, col_s2 = st.columns(2)
         with col_s1:

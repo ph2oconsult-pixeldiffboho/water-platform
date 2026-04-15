@@ -48,6 +48,17 @@ def screen_technology_feasibility(plant_type: str, flow_ML_d: float, source_wate
 
         if tech_key == "daf" and algae < 1000:
             flags.append("DAF provides greatest benefit for high-algae source waters")
+
+        # Hard performance limit for high-rate ballasted clarifiers (Densadeg / Actiflo)
+        # Above 200,000 cells/mL the ballast recirculation system is overwhelmed.
+        # sedimentation archetype_C maps to this technology when it is intensified clarification
+        if tech_key in ("sedimentation",) and algae > 200_000:
+            feasible = False
+            flags.append(
+                f"⛔ Algal cell count {algae:,.0f} cells/mL exceeds the upper performance limit "
+                f"for high-rate ballasted clarifiers (Densadeg / Actiflo: 200,000 cells/mL limit). "
+                "DAF is required above this threshold."
+            )
         if tech_key == "ro" and tds < 1000:
             flags.append("RO most applicable for brackish (TDS > 1,000 mg/L) or seawater sources")
         if tech_key == "nf" and tds < 300:
@@ -147,7 +158,7 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
                 }
 
     return {
-        "predicted_quality": {k: round(v, 3) for k, v in predicted.items()},
+        "predicted_quality": {k: round(v, 3) for k, v in predicted.items() if isinstance(v, (int, float))},
         "compliance": compliance,
         "disinfection_adequate": disinfection_adequate,
         "disinfection_technologies": disinfection_technologies,
