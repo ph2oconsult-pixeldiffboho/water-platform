@@ -111,18 +111,23 @@ def render():
             )
             source_water[param_key] = val
 
-            # ADWG guideline indicator
+            # Treatment challenge indicator
+            # ADWG limits apply to TREATED water only — not raw water.
+            # Show how much removal this parameter requires.
             guideline = ADWG_GUIDELINES.get(param_key)
             if guideline and guideline.get("limit"):
                 limit = guideline["limit"]
-                if val > limit:
+                multiple = val / limit if limit else 0
+                if multiple > 10:
                     st.markdown(
-                        f'<span style="font-size:0.75rem;color:#e74c3c">⚠ Exceeds ADWG {limit} {param_meta["unit"]}</span>',
+                        f'<span style="font-size:0.75rem;color:#e74c3c">'
+                        f'⚠ High treatment load ({multiple:.0f}× treated water target of {limit} {param_meta["unit"]})</span>',
                         unsafe_allow_html=True
                     )
-                elif val > limit * 0.8:
+                elif multiple > 3:
                     st.markdown(
-                        f'<span style="font-size:0.75rem;color:#f39c12">⚡ Approaching ADWG limit ({limit} {param_meta["unit"]})</span>',
+                        f'<span style="font-size:0.75rem;color:#f39c12">'
+                        f'⚡ Moderate treatment load ({multiple:.1f}× treated water target of {limit} {param_meta["unit"]})</span>',
                         unsafe_allow_html=True
                     )
 
@@ -200,22 +205,38 @@ def render():
             </div>
         """, unsafe_allow_html=True)
 
-    # ADWG pre-treatment exceedances
-    exceedances = []
+    # Treatment drivers — which raw water parameters require significant removal
+    # ADWG limits apply to TREATED water at the tap, not raw water.
+    # This panel shows parameters that will drive treatment train selection.
+    treatment_drivers = []
     for param_key, meta in SOURCE_WATER_QUALITY_PARAMS.items():
         guideline = ADWG_GUIDELINES.get(param_key)
         if guideline and guideline.get("limit"):
             val = source_water.get(param_key, meta["default"])
-            if val > guideline["limit"]:
-                exceedances.append(f"{meta['label']}: {val:.2f} {meta['unit']} (limit: {guideline['limit']})")
+            limit = guideline["limit"]
+            multiple = val / limit if limit else 0
+            if multiple > 1:
+                treatment_drivers.append(
+                    f"{meta['label']}: {val:.2f} {meta['unit']} "
+                    f"({multiple:.1f}× treated water target of {limit} {meta['unit']})"
+                )
 
     with col_c3:
+        driver_html = ''.join(
+            f'<div style="font-size:0.8rem;color:#e67e22;margin:0.15rem 0">'
+            f'→ {d}</div>' for d in treatment_drivers
+        )
+        no_driver_html = '<div style="font-size:0.8rem;color:#2ecc71">'\
+            '✓ All parameters within treated water targets</div>'
         st.markdown(f"""
             <div style="background:#f0f4f8;border-radius:8px;padding:1rem;border:1px solid #e2e8f0">
-                <div style="font-size:0.75rem;color:#8899aa;margin-bottom:0.5rem">RAW WATER ADWG EXCEEDANCES</div>
-                {''.join(f'<div style="font-size:0.8rem;color:#e74c3c;margin:0.15rem 0">✗ {e}</div>' for e in exceedances) if exceedances else '<div style="font-size:0.8rem;color:#2ecc71">✓ All within ADWG limits</div>'}
+                <div style="font-size:0.75rem;color:#8899aa;margin-bottom:0.3rem">TREATMENT DRIVERS</div>
+                <div style="font-size:0.68rem;color:#aaa;margin-bottom:0.4rem;font-style:italic">
+                    ADWG limits apply to treated product water, not raw water source</div>
+                {driver_html if treatment_drivers else no_driver_html}
             </div>
         """, unsafe_allow_html=True)
+
 
     # ── Navigation ────────────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
