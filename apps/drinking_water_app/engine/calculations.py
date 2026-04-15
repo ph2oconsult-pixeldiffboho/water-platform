@@ -209,14 +209,15 @@ def calculate_energy(plant_type: str, flow_ML_d: float, selected_technologies: l
 # ─── Chemical Use Assessment ──────────────────────────────────────────────────────
 
 def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
-                            source_water: dict) -> dict:
+                            source_water: dict,
+                            coagulant: str = "alum") -> dict:
     """
     Estimate chemical consumption and annual cost for the selected treatment train.
     """
     # Map technologies to chemicals they consume
     tech_chemical_map = {
-        "coagulation_flocculation": ["alum", "polymer"],
-        "daf": ["alum", "polymer"],
+        "coagulation_flocculation": [coagulant, "polymer"],
+        "daf": [coagulant, "polymer"],
         "sedimentation": [],
         "rapid_gravity_filtration": [],
         "slow_sand_filtration": [],
@@ -252,6 +253,18 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
                     dose_typical = min(chem["high"], dose_typical * 1.3)
                 if chem_key == "alum" and toc > 8:
                     dose_typical = min(chem["high"], dose_typical * 1.2)
+                # Ferric chloride — higher dose than alum; scales more steeply with turbidity
+                if chem_key == "ferric_chloride":
+                    # Ferric dose scales with design turbidity (use P99 where available)
+                    design_turb = source_water.get("turbidity_p99_ntu", turbidity * 3)
+                    if design_turb > 200:
+                        dose_typical = min(chem["high"], chem["typical"] * 2.2)   # ~44 mg/L at 268 NTU
+                    elif design_turb > 50:
+                        dose_typical = min(chem["high"], chem["typical"] * 1.6)
+                    elif turbidity > 20:
+                        dose_typical = min(chem["high"], chem["typical"] * 1.3)
+                    if toc > 8:
+                        dose_typical = min(chem["high"], dose_typical * 1.15)
 
                 # Lime dose scales with hardness — higher hardness needs more lime
                 hardness = source_water.get("hardness_mg_l", 150)
@@ -692,7 +705,9 @@ def run_full_analysis(inputs: dict) -> dict:
     results["energy"] = calculate_energy(plant_type, flow_ML_d, selected_technologies, electricity_cost)
 
     # 4. Chemical Use
-    results["chemical_use"] = calculate_chemical_use(flow_ML_d, selected_technologies, source_water)
+    coagulant = inputs.get("coagulant", "alum")
+    results["chemical_use"] = calculate_chemical_use(flow_ML_d, selected_technologies, source_water, coagulant)
+    results["coagulant"] = coagulant
 
     # 5. CAPEX
     results["capex"] = calculate_capex(flow_ML_d, selected_technologies, contingency_pct)

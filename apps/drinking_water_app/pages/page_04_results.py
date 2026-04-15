@@ -38,6 +38,7 @@ def _calc_inputs() -> dict:
             "capex_contingency_pct":  st.session_state.get("capex_contingency", LIFECYCLE_DEFAULTS["capex_contingency_pct"]),
         },
         "electricity_cost_AUD_kWh": st.session_state.get("electricity_cost", 0.12),
+        "coagulant":                st.session_state.get("coagulant", "alum"),
         "mca_weights":              st.session_state.get("mca_weights", MCA_DEFAULT_WEIGHTS),
     }
 

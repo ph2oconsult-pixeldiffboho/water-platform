@@ -75,6 +75,36 @@ def render():
 
         info_box(selected_plant["description"])
 
+        # ── Coagulant Selection ──────────────────────────────────────────────
+        section_header("Primary Coagulant", "🧪")
+
+        COAGULANT_OPTIONS = {
+            "alum":          "Alum — Al₂(SO₄)₃  (low colour/TOC sources, pH 6.5–8)",
+            "ferric_chloride": "Ferric Chloride — FeCl₃  (high turbidity, Fe/Mn, low pH tolerance)",
+        }
+        current_coag = st.session_state.get("coagulant", "alum")
+        if current_coag not in COAGULANT_OPTIONS:
+            current_coag = "alum"
+
+        selected_coag = st.radio(
+            "Primary coagulant",
+            options=list(COAGULANT_OPTIONS.keys()),
+            format_func=lambda k: COAGULANT_OPTIONS[k],
+            index=list(COAGULANT_OPTIONS.keys()).index(current_coag),
+            label_visibility="collapsed",
+        )
+        st.session_state["coagulant"] = selected_coag
+
+        coag_notes = {
+            "alum": "Typical dose 5–80 mg/L. Best performance at pH 6.5–8.0. "
+                    "Generates aluminium hydroxide floc. Lower unit cost than ferric.",
+            "ferric_chloride": "Typical dose 10–80 mg/L. Effective across pH 4–9. "
+                               "Superior Fe/Mn co-precipitation. Higher unit cost. "
+                               "Preferred for high-turbidity surface water and iron-bearing groundwater.",
+        }
+        from ..ui_helpers import info_box as _ib
+        _ib(coag_notes[selected_coag])
+
         # ── Design Flow ──────────────────────────────────────────────────────
         section_header("Design Flow", "💧")
 
