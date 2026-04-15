@@ -113,21 +113,31 @@ def render():
 
             # Treatment challenge indicator
             # ADWG limits apply to TREATED water only — not raw water.
-            # Show how much removal this parameter requires.
+            # Per-parameter thresholds calibrated to engineering significance.
+            _CHALLENGE_THRESHOLDS = {
+                "turbidity_ntu":  (20,  100),
+                "iron_mg_l":      (5,   17),
+                "manganese_mg_l": (3,   10),
+                "colour_hu":      (3,   10),
+                "tds_mg_l":       (1.5, 3),
+                "hardness_mg_l":  (2,   5),
+            }
             guideline = ADWG_GUIDELINES.get(param_key)
-            if guideline and guideline.get("limit"):
+            thresholds = _CHALLENGE_THRESHOLDS.get(param_key)
+            if guideline and guideline.get("limit") and thresholds:
                 limit = guideline["limit"]
                 multiple = val / limit if limit else 0
-                if multiple > 10:
+                mod_thresh, high_thresh = thresholds
+                if multiple > high_thresh:
                     st.markdown(
                         f'<span style="font-size:0.75rem;color:#e74c3c">'
-                        f'⚠ High treatment load ({multiple:.0f}× treated water target of {limit} {param_meta["unit"]})</span>',
+                        f'⚠ High treatment load ({val:.1f} {param_meta["unit"]} — {multiple:.0f}× treated water target)</span>',
                         unsafe_allow_html=True
                     )
-                elif multiple > 3:
+                elif multiple > mod_thresh:
                     st.markdown(
                         f'<span style="font-size:0.75rem;color:#f39c12">'
-                        f'⚡ Moderate treatment load ({multiple:.1f}× treated water target of {limit} {param_meta["unit"]})</span>',
+                        f'⚡ Moderate treatment load ({val:.1f} {param_meta["unit"]} — {multiple:.0f}× treated water target)</span>',
                         unsafe_allow_html=True
                     )
 
@@ -207,18 +217,27 @@ def render():
 
     # Treatment drivers — which raw water parameters require significant removal
     # ADWG limits apply to TREATED water at the tap, not raw water.
-    # This panel shows parameters that will drive treatment train selection.
+    # Only flag parameters that are genuinely above typical raw water ranges.
+    _DRIVER_THRESHOLDS = {
+        "turbidity_ntu":  20,   # >20 NTU is a treatment driver
+        "iron_mg_l":      5,    # >1.5 mg/L requires specific Fe removal
+        "manganese_mg_l": 3,    # >0.3 mg/L requires Mn-specific treatment
+        "colour_hu":      3,    # >45 HU is a significant colour load
+        "tds_mg_l":       1.5,  # >900 mg/L approaching membrane territory
+        "hardness_mg_l":  2,    # >400 mg/L warrants softening consideration
+    }
     treatment_drivers = []
     for param_key, meta in SOURCE_WATER_QUALITY_PARAMS.items():
         guideline = ADWG_GUIDELINES.get(param_key)
-        if guideline and guideline.get("limit"):
+        min_multiple = _DRIVER_THRESHOLDS.get(param_key)
+        if guideline and guideline.get("limit") and min_multiple:
             val = source_water.get(param_key, meta["default"])
             limit = guideline["limit"]
             multiple = val / limit if limit else 0
-            if multiple > 1:
+            if multiple > min_multiple:
                 treatment_drivers.append(
                     f"{meta['label']}: {val:.2f} {meta['unit']} "
-                    f"({multiple:.1f}× treated water target of {limit} {meta['unit']})"
+                    f"({multiple:.0f}× treated water target of {limit} {meta['unit']})"
                 )
 
     with col_c3:
