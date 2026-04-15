@@ -76,6 +76,13 @@ def screen_technology_feasibility(plant_type: str, flow_ML_d: float, source_wate
             flags.append("AOP most beneficial for elevated TOC or refractory micropollutants")
         if tech_key == "ozonation" and toc < 2:
             flags.append("Ozonation most effective with moderate-to-high TOC for DBP control")
+        if tech_key == "pre_filter_chlorination" and "bac" in selected_technologies:
+            flags.append(
+                "⚠ Pre-filter chlorination is incompatible with biological activated carbon (BAC). "
+                "Free Cl₂ at the filter inlet inhibits the biofilm essential for biological treatment. "
+                "Use ozonation or UV/AOP for taste & odour control instead, "
+                "or apply Cl₂ post-BAC."
+            )
         if tech_key == "bac" and "ozonation" not in selected_technologies:
             flags.append("BAC typically follows ozonation; consider including ozonation in train")
         if tech_key == "slow_sand_filtration" and turbidity > 10:
@@ -117,6 +124,15 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
         "bac": {"toc_mg_l": 0.40, "colour_hu": 0.30},
         "gac": {"toc_mg_l": 0.50, "colour_hu": 0.50},
         "aop": {"toc_mg_l": 0.60, "colour_hu": 0.60},
+        "pre_filter_chlorination": {
+            # Free Cl₂ dosed ahead of filters oxidises residual Mn²⁺ → MnO₂(s)
+            # MnO₂ is then captured in the filter bed
+            # Effective for residual Mn after KMnO₄ pre-ox or where pH is already elevated
+            # Engineering basis: ~60-75% of residual Mn removed per filter pass with Cl₂ pre-dosing
+            # Risk: chlorine ahead of filters can limit BAC performance — not used with biofiltration
+            "manganese_mg_l": 0.65,
+            "iron_mg_l": 0.60,
+        },
         "chlorination": {},  # disinfection, not removal
         "chloramination": {},
         "uv_disinfection": {},
@@ -165,6 +181,46 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
         fe_rem = iron_removal.get(tech_key, 0)
         if fe_rem:
             predicted["iron_mg_l"] = predicted.get("iron_mg_l", 0.1) * (1 - fe_rem)
+
+    # ── Context-dependent Mn removal adjustments ─────────────────────────────
+    # Applied after the main loop to avoid double-counting.
+    # These pathways only add credit when specific conditions co-exist in the train.
+
+    mn_current = predicted.get("manganese_mg_l", 0)
+
+    # 1. High-pH lime softening co-benefit:
+    #    At pH >9.5 (typical lime softening pH), Mn²⁺ precipitates as Mn(OH)₂
+    #    and oxidises to MnO₂ — significant additional Mn removal beyond the
+    #    standard softening credit already applied in the main loop.
+    #    This is a co-benefit of softening, NOT a primary Mn removal strategy.
+    #    Credit applies only when lime softening is already in the train AND
+    #    hardness is elevated (pH will reach >9.5 during softening).
+    hardness = source_water.get("hardness_mg_l", 0)
+    if ("chemical_softening" in selected_technologies and
+            hardness > 150 and mn_current > 0):
+        # Additional 30% Mn removal as high-pH co-benefit
+        # (on top of the 85% already credited to chemical_softening in the main loop)
+        # Rationale: Mn(OH)₂ precipitation at pH >9.5 removes Mn not oxidised by KMnO₄
+        # Combined with KMnO₄ + softening + RGF: ~97-98% total Mn removal achievable
+        pH_mn_boost = 0.30
+        predicted["manganese_mg_l"] = mn_current * (1 - pH_mn_boost)
+        mn_current = predicted["manganese_mg_l"]
+
+    # 2. Pre-filter chlorination Mn oxidation:
+    #    "pre_filter_chlorination" is a technique (not a separate unit process) where
+    #    free Cl₂ is dosed at the filter inlet to oxidise residual Mn²⁺ → MnO₂(s).
+    #    The efficacy is already counted if pre_filter_chlorination is in the train.
+    #    Additional note: incompatible with BAC/biofiltration downstream.
+    if "pre_filter_chlorination" in selected_technologies:
+        # Check incompatibility — warn if BAC is also selected
+        if "bac" in selected_technologies:
+            # BAC depends on biological activity — pre-filter Cl₂ inhibits biofilm
+            # This is flagged in feasibility screen, removal credit still applied
+            # but at reduced efficacy
+            predicted["manganese_mg_l"] = mn_current * (1 - 0.30)  # reduced credit
+        # (full credit already applied in main loop via removal_efficacy)
+
+    # ── End Mn adjustments ────────────────────────────────────────────────────
 
     # Disinfection: UV and Cl effectively remove microbial risk (track as qualitative)
     disinfection_technologies = [t for t in selected_technologies if t in ["chlorination", "chloramination", "uv_disinfection"]]
@@ -273,6 +329,7 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
         "chloramination": ["naocl", "ammonia"],
         "uv_disinfection": [],
         "sludge_thickening": ["polymer"],
+        "pre_filter_chlorination": ["naocl"],  # free Cl₂ at filter inlet
         "kmno4_pre_oxidation": ["kmno4"],
         "polydadmac": ["polydadmac"],
         "actiflo_carb": ["ferric_chloride", "polymer"],  # PAC handled separately (bulk powder)
@@ -312,6 +369,12 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
 
                 # Lime dose scales with hardness — higher hardness needs more lime
                 hardness = source_water.get("hardness_mg_l", 150)
+                # Pre-filter chlorination: small Cl₂ dose at filter inlet for Mn oxidation
+                # Typical: 0.5–1.5 mg/L free Cl₂ — enough to oxidise residual Mn without
+                # breaking through filter or creating excess disinfection by-products
+                if chem_key == "naocl" and tech == "pre_filter_chlorination":
+                    dose_typical = 1.0  # mg/L free Cl₂ equivalent at filter inlet
+
                 # KMnO₄ dose based on manganese: stoichiometric + 30% excess
                 mn = source_water.get("manganese_mg_l", 0.05)
                 if chem_key == "kmno4":

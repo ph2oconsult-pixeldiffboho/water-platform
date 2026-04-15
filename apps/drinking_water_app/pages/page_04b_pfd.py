@@ -48,6 +48,7 @@ CHEM_INJECTION_MAP = {
     "chloramination":           ["naocl", "ammonia"],
     "actiflo_carb":             ["ferric_chloride", "alum", "polymer"],
     "chemical_softening":       ["lime", "soda_ash"],
+    "pre_filter_chlorination":  ["naocl"],
     "kmno4_pre_oxidation":      ["kmno4"],
     "polydadmac":               ["polydadmac"],
 }
@@ -68,6 +69,7 @@ SHORT_LABELS = {
     "uv_disinfection": "UV", "chlorination": "Cl₂", "chloramination": "NH₂Cl",
     "actiflo_carb": "Actiflo\nCarb",
     "chemical_softening": "Lime\nSoftening", "sludge_thickening": "Sludge\nThickener",
+    "pre_filter_chlorination": "Pre-Filt\nCl₂",
     "kmno4_pre_oxidation": "KMnO₄\nPre-Ox", "polydadmac": "pDADMAC",
     "brine_management": "Brine\nMgmt",
 }
@@ -517,6 +519,21 @@ def render():
             })
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # Inject pre_filter_chlorination before RGF when Mn is elevated
+    # and neither KMnO₄ alone nor softening is achieving spec
+    _mn_after_kmno4 = (_mn * (1 - 0.88)) if "kmno4_pre_oxidation" in sel_train else _mn
+    _pfc_required = (_mn > 0.1 and _mn_after_kmno4 > 0.03 and
+                     "pre_filter_chlorination" not in sel_train and
+                     "bac" not in sel_train)  # not compatible with BAC
+    if _pfc_required:
+        sel_train = list(sel_train)
+        # Insert before rapid_gravity_filtration
+        _rgf_idx = next(
+            (i for i, t in enumerate(sel_train) if t == "rapid_gravity_filtration"),
+            len(sel_train)
+        )
+        sel_train.insert(_rgf_idx, "pre_filter_chlorination")
 
     # ── Softening Analysis tab ───────────────────────────────────────────────
     sw_pfd     = st.session_state.get("source_water", {})

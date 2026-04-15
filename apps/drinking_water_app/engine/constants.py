@@ -135,6 +135,20 @@ TECHNOLOGIES = {
         "description": "Non-chemical pathogen inactivation; protozoa and virus control",
     },
     # Residuals
+    "pre_filter_chlorination": {
+        "label": "Pre-Filter Chlorination (Mn oxidation)",
+        "category": "Pre-Oxidation",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "Free chlorine dosed ahead of rapid gravity filters to oxidise residual "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s), captured in the filter bed. "
+            "Used when KMnO\u2084 pre-oxidation alone is insufficient for high Mn sources, "
+            "or as a primary Mn removal strategy in groundwater treatment. "
+            "Dose: 0.5\u20132.0 mg/L free Cl\u2082 at filter inlet. "
+            "Incompatible with biological activated carbon (BAC) downstream \u2014 "
+            "free Cl\u2082 inhibits the biofilm responsible for biological treatment."
+        ),
+    },
     "kmno4_pre_oxidation": {
         "label": "KMnO₄ Pre-Oxidation",
         "category": "Pre-Oxidation",
@@ -455,6 +469,21 @@ CAPEX_REFERENCE_AUD_ML_d = {
     "sludge_thickening": {"low": 100_000, "typical": 300_000, "high": 700_000},
     "actiflo_carb": {"low": 500_000, "typical": 1_100_000, "high": 2_200_000},
     "chemical_softening": {"low": 400_000, "typical": 900_000, "high": 1_800_000},
+    "pre_filter_chlorination": {
+        "label": "Pre-Filter Chlorination (Mn oxidation)",
+        "category": "Pre-Oxidation",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "Free chlorine dosed ahead of rapid gravity filters to oxidise residual "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s), captured in the filter bed. "
+            "Used when KMnO\u2084 pre-oxidation alone is insufficient for high Mn sources, "
+            "or as a primary Mn removal strategy in groundwater treatment. "
+            "Dose: 0.5\u20132.0 mg/L free Cl\u2082 at filter inlet. "
+            "Incompatible with biological activated carbon (BAC) downstream \u2014 "
+            "free Cl\u2082 inhibits the biofilm responsible for biological treatment."
+        ),
+    },
+    "pre_filter_chlorination": {"low": 5_000, "typical": 20_000, "high": 50_000},
     "kmno4_pre_oxidation": {"low": 20_000, "typical": 60_000, "high": 150_000},
     "polydadmac": {"low": 0, "typical": 0, "high": 0},
     "brine_management": {"low": 200_000, "typical": 600_000, "high": 1_500_000},
@@ -480,6 +509,21 @@ TECHNOLOGY_RISK = {
     "chloramination": {"implementation": "Low", "operational": "Medium", "regulatory": "Medium"},
     "uv_disinfection": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
     "brine_management": {"implementation": "High", "operational": "High", "regulatory": "High"},
+    "pre_filter_chlorination": {
+        "label": "Pre-Filter Chlorination (Mn oxidation)",
+        "category": "Pre-Oxidation",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "Free chlorine dosed ahead of rapid gravity filters to oxidise residual "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s), captured in the filter bed. "
+            "Used when KMnO\u2084 pre-oxidation alone is insufficient for high Mn sources, "
+            "or as a primary Mn removal strategy in groundwater treatment. "
+            "Dose: 0.5\u20132.0 mg/L free Cl\u2082 at filter inlet. "
+            "Incompatible with biological activated carbon (BAC) downstream \u2014 "
+            "free Cl\u2082 inhibits the biofilm responsible for biological treatment."
+        ),
+    },
+    "pre_filter_chlorination": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
     "kmno4_pre_oxidation": {"implementation": "Low", "operational": "Medium", "regulatory": "Low"},
     "polydadmac": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
 }
