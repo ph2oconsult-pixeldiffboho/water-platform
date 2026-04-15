@@ -32,6 +32,12 @@ LRV_BARRIER_CREDITS = {
         "bacteria":  (0.5, 1.0, "Indicative. Requires effective coagulation upstream.", "indicative"),
         "virus":     (0.0, 0.5, "Limited virus settling. Viruses are colloidal.", "indicative"),
     },
+
+    "chemical_softening": {
+        "protozoa":  (1.0, 2.0, "High pH during lime softening inactivates protozoa; co-precipitation adds physical removal.", "indicative"),
+        "bacteria":  (1.5, 3.0, "pH >10 during lime softening lethal to most bacteria. Credit conditional on achieving target pH.", "validated"),
+        "virus":     (1.0, 2.5, "Lime at pH >11 provides meaningful virus inactivation. pH-dependent — credit requires pH verification.", "indicative"),
+    },
     "daf": {
         "protozoa":  (1.5, 2.0, "DAF effective for Cryptosporidium when well-coagulated. "
                                  "Validated at 1.5–2.0 log in Australian DAF studies (WRc, AWWARF).", "validated"),
@@ -369,7 +375,7 @@ ARCHETYPE_DEFAULT_BARRIERS = {
           "chlorination", "uv_disinfection"],
     "E": ["coagulation_flocculation", "sedimentation", "rapid_gravity_filtration",
           "chlorination", "uv_disinfection"],
-    "F": ["coagulation_flocculation", "sedimentation", "rapid_gravity_filtration",
+    "F": ["coagulation_flocculation", "chemical_softening", "rapid_gravity_filtration",
           "uv_disinfection", "chlorination"],
     "G": ["coagulation_flocculation", "sedimentation", "rapid_gravity_filtration",
           "ozonation", "chlorination", "uv_disinfection"],

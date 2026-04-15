@@ -28,8 +28,8 @@ def render():
         "📊 Understanding Results",
         "⚡ AquaPoint Intelligence",
         "🧠 Decision Intelligence",
-        "🔬 Microbial Barriers",
-        "☣️ PFAS, Arsenic & Residuals",
+        "🔬 Engineering Notes",
+        "📐 Engineering Notes II",
     ])
 
     # ══ TAB 1 — GETTING STARTED ════════════════════════════════════════════════

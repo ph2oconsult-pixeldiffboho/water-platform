@@ -70,7 +70,7 @@ def _reasoning_inputs(plant_type: str, sw: dict) -> SourceWaterInputs:
 def _kv(label, value, colour="#e8f4fd"):
     return (
         f'<div style="display:flex;justify-content:space-between;padding:0.3rem 0;'
-        f'border-bottom:1px solid #1e2d3d;font-size:0.83rem">'
+        f'border-bottom:1px solid #e2e8f0;font-size:0.83rem">'
         f'<span style="color:#8899aa">{label}</span>'
         f'<span style="color:{colour};font-weight:600">{value}</span></div>'
     )
@@ -78,7 +78,7 @@ def _kv(label, value, colour="#e8f4fd"):
 
 def _section_card(title, html_body, border="#2a3a52"):
     return f"""
-        <div style="background:#1a2332;border:1px solid {border};border-radius:8px;
+        <div style="background:#f0f4f8;border:1px solid {border};border-radius:8px;
                     padding:0.8rem 1rem;margin-bottom:0.7rem">
             <div style="font-size:0.72rem;color:#8899aa;text-transform:uppercase;
                         letter-spacing:0.05em;margin-bottom:0.5rem">{title}</div>
@@ -91,10 +91,10 @@ def _section_card(title, html_body, border="#2a3a52"):
 def render():
     st.markdown("""
         <div style="margin-bottom:1.2rem">
-            <h2 style="color:#e8f4fd;font-size:1.4rem;font-weight:600;margin-bottom:0.2rem">
+            <h2 style="color:#1a1a2e;font-size:1.4rem;font-weight:600;margin-bottom:0.2rem">
                 Analysis Results
             </h2>
-            <p style="color:#8899aa;font-size:0.87rem;margin:0">
+            <p style="color:#555;font-size:0.87rem;margin:0">
                 Comprehensive treatment train evaluation across all analysis layers.
             </p>
         </div>
@@ -146,7 +146,7 @@ def render():
         rc = "#2ecc71" if r_result.preferred_archetype_key in ["B","C","D"] else "#4a9eff"
         st.markdown(f"""
             <div style="background:#0a1d2e;border-left:3px solid #4a9eff;padding:0.65rem 1rem;
-                        border-radius:0 6px 6px 0;margin:0.5rem 0;font-size:0.83rem;color:#89b4e8">
+                        border-radius:0 6px 6px 0;margin:0.5rem 0;font-size:0.83rem;color:#1a56a0">
                 <span style="color:#4a9eff;font-weight:600">Philosophy: </span>
                 {r_result.preferred_archetype_label} — {r_result.preferred_archetype_rationale}
             </div>
@@ -158,8 +158,8 @@ def render():
     # Train display
     train_labels = [TECHNOLOGIES.get(t, {}).get("label", t) for t in selected_technologies]
     st.markdown(f"""
-        <div style="background:#0d1e30;border:1px solid #4a9eff;border-radius:8px;
-                    padding:0.6rem 1rem;font-size:0.83rem;color:#89b4e8;margin:0.5rem 0 1rem 0">
+        <div style="background:#eff6ff;border:1px solid #4a9eff;border-radius:8px;
+                    padding:0.6rem 1rem;font-size:0.83rem;color:#1a56a0;margin:0.5rem 0 1rem 0">
             <span style="color:#4a9eff;font-weight:600">Train: </span>
             {" → ".join(train_labels)}
         </div>
@@ -199,11 +199,11 @@ def render():
                     <div style="margin-bottom:0.6rem">
                         <div style="display:flex;justify-content:space-between;
                                     font-size:0.8rem;margin-bottom:0.2rem">
-                            <span style="color:#c8ddf0">{lbl}</span>
+                            <span style="color:#334155">{lbl}</span>
                             <span style="color:{c};font-weight:600">{s:.0f}/100</span>
                             <span style="color:#8899aa">weight {w:.0%}</span>
                         </div>
-                        <div style="background:#1a2332;border-radius:4px;height:10px">
+                        <div style="background:#f0f4f8;border-radius:4px;height:10px">
                             <div style="width:{bar_pct}%;background:{c};
                                         height:100%;border-radius:4px"></div>
                         </div>
@@ -219,8 +219,8 @@ def render():
                     t1 = "PASS" if s.tier1_pass else "FAIL"
                     t1c = "#2ecc71" if s.tier1_pass else "#e74c3c"
                     st.markdown(f"""
-                        <div style="background:#1a2332;border-radius:8px;padding:0.6rem;
-                                    text-align:center;border:1px solid #2a3a52">
+                        <div style="background:#f0f4f8;border-radius:8px;padding:0.6rem;
+                                    text-align:center;border:1px solid #e2e8f0">
                             <div style="font-size:0.7rem;color:#8899aa">{s.archetype_key}. {s.archetype_label[:18]}</div>
                             <div style="font-size:1.4rem;font-weight:700;color:{c}">{s.overall_score:.1f}</div>
                             <div style="font-size:0.65rem;color:{t1c}">{t1}</div>
@@ -252,7 +252,7 @@ def render():
                 pred = cdata["predicted"]
                 lim  = cdata["guideline"]
                 ok   = cdata["compliant"]
-                row[0].markdown(f"<span style='font-size:0.82rem;color:#e8f4fd'>{param_labels.get(param, param)}</span>", unsafe_allow_html=True)
+                row[0].markdown(f"<span style='font-size:0.82rem;color:#1a1a2e'>{param_labels.get(param, param)}</span>", unsafe_allow_html=True)
                 row[1].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{raw}</span>", unsafe_allow_html=True)
                 row[2].markdown(f"<span style='font-size:0.82rem;color:{'#2ecc71' if ok else '#e74c3c'}'>{pred}</span>", unsafe_allow_html=True)
                 row[3].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{lim}</span>", unsafe_allow_html=True)
@@ -312,10 +312,10 @@ def render():
             hi  = bench_d.get("high", 0)
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;padding:0.3rem 0;'
-                f'border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                f'<span style="color:#c8ddf0">{lbl}</span>'
+                f'border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                f'<span style="color:#334155">{lbl}</span>'
                 f'<span style="color:#8899aa">{lo}–{hi} kWh/ML</span>'
-                f'<span style="color:#e8f4fd;font-weight:600">{typ} kWh/ML typical</span>'
+                f'<span style="color:#1a1a2e;font-weight:600">{typ} kWh/ML typical</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -335,10 +335,10 @@ def render():
                 hdr[i].markdown(f"<span style='font-size:0.7rem;color:#8899aa'>{lbl}</span>", unsafe_allow_html=True)
             for ck, cd in chemicals.items():
                 row = st.columns([2, 2, 2, 2])
-                row[0].markdown(f"<span style='font-size:0.82rem;color:#e8f4fd'>{cd['label']}</span>", unsafe_allow_html=True)
+                row[0].markdown(f"<span style='font-size:0.82rem;color:#1a1a2e'>{cd['label']}</span>", unsafe_allow_html=True)
                 row[1].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{cd['dose_mg_L']:.1f}</span>", unsafe_allow_html=True)
                 row[2].markdown(f"<span style='font-size:0.82rem;color:#8899aa'>{cd['annual_kg']/1000:.1f}</span>", unsafe_allow_html=True)
-                row[3].markdown(f"<span style='font-size:0.82rem;color:#e8f4fd'>{format_currency(cd['annual_cost_AUD'])}</span>", unsafe_allow_html=True)
+                row[3].markdown(f"<span style='font-size:0.82rem;color:#1a1a2e'>{format_currency(cd['annual_cost_AUD'])}</span>", unsafe_allow_html=True)
         else:
             info_box("No chemical consumption data — check technology selection includes coagulation or disinfection.")
 
@@ -368,11 +368,11 @@ def render():
             pct = typ / max(total_typ, 1) * 100
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                f'padding:0.3rem 0;border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                f'<span style="color:#c8ddf0;min-width:200px">{lbl}</span>'
-                f'<div style="flex:1;margin:0 1rem;background:#1a2332;border-radius:3px;height:8px">'
+                f'padding:0.3rem 0;border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                f'<span style="color:#334155;min-width:200px">{lbl}</span>'
+                f'<div style="flex:1;margin:0 1rem;background:#f0f4f8;border-radius:3px;height:8px">'
                 f'<div style="width:{pct:.0f}%;background:#4a9eff;height:100%;border-radius:3px"></div></div>'
-                f'<span style="color:#e8f4fd;font-weight:600;min-width:80px;text-align:right">'
+                f'<span style="color:#1a1a2e;font-weight:600;min-width:80px;text-align:right">'
                 f'{format_currency(typ)}</span></div>',
                 unsafe_allow_html=True,
             )
@@ -409,7 +409,7 @@ def render():
         capex_frac = lc2.get("capex_fraction_pct", 0)
         opex_frac  = lc2.get("opex_fraction_pct", 0)
         st.markdown(f"""
-            <div style="background:#1a2332;border-radius:8px;padding:0.8rem;margin:0.5rem 0">
+            <div style="background:#f0f4f8;border-radius:8px;padding:0.8rem;margin:0.5rem 0">
                 <div style="display:flex;height:20px;border-radius:4px;overflow:hidden;margin-bottom:0.4rem">
                     <div style="width:{capex_frac:.0f}%;background:#4a9eff"></div>
                     <div style="width:{opex_frac:.0f}%;background:#2ecc71"></div>
@@ -447,8 +447,8 @@ def render():
         for tech, trisk in rk.get("technology_risks", {}).items():
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                f'padding:0.3rem 0;border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                f'<span style="color:#c8ddf0;min-width:220px">{trisk["label"]}</span>'
+                f'padding:0.3rem 0;border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                f'<span style="color:#334155;min-width:220px">{trisk["label"]}</span>'
                 f'<span style="margin:0 0.5rem">{risk_badge(trisk["implementation"])}</span>'
                 f'<span style="margin:0 0.5rem">{risk_badge(trisk["operational"])}</span>'
                 f'<span>{risk_badge(trisk["regulatory"])}</span></div>',
@@ -473,8 +473,8 @@ def render():
                     c    = "#2ecc71" if ok else "#e74c3c"
                     st.markdown(
                         f'<div style="display:flex;justify-content:space-between;padding:0.3rem 0;'
-                        f'border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
-                        f'<span style="color:#e8f4fd">{pathogen.title()}</span>'
+                        f'border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
+                        f'<span style="color:#1a1a2e">{pathogen.title()}</span>'
                         f'<span style="color:#8899aa">Required: {req:.1f} log</span>'
                         f'<span style="color:{c};font-weight:600">Credited: {hi:.1f} log</span>'
                         f'</div>',
@@ -540,7 +540,7 @@ def render():
                 icon = "✓" if ok else "✗"
                 st.markdown(
                     f'<div style="display:flex;justify-content:space-between;'
-                    f'padding:0.3rem 0;border-bottom:1px solid #1e2d3d;font-size:0.82rem">'
+                    f'padding:0.3rem 0;border-bottom:1px solid #e2e8f0;font-size:0.82rem">'
                     f'<span style="color:{col}">{icon} {c["parameter"]}</span>'
                     f'<span style="color:#8899aa">{c["predicted"]} {c["unit"]}</span>'
                     f'<span style="color:#8899aa">ADWG: {c["guideline"]} {c["unit"]}</span>'
@@ -626,9 +626,6 @@ def render():
         if st.button("↺ Re-run Analysis with Updated Settings", type="primary"):
             st.rerun()
 
-    # ── Decision Intelligence Layer ────────────────────────────────────────────
-    _render_aquapoint_dil(ci, r_result)
-
     # ── Navigation ────────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
     left, right = st.columns(2)
@@ -640,166 +637,3 @@ def render():
         if st.button("Export Report →", type="primary", use_container_width=True):
             st.session_state["current_page"] = "report"
             st.rerun()
-
-
-def _render_aquapoint_dil(ci: dict, r_result) -> None:
-    """Render the AquaPoint Decision Intelligence Layer expander."""
-    try:
-        if r_result is None:
-            return
-
-        from ..engine.reasoning.classifier import SourceWaterInputs
-        from ..engine.dil_aquapoint import build_aquapoint_dil
-
-        # Reconstruct SourceWaterInputs from calc inputs
-        inputs = _reasoning_inputs(ci["plant_type"], ci["source_water"])
-        di = build_aquapoint_dil(inputs, r_result)
-
-        _ri = {"Ready to Proceed": "✅", "Proceed with Conditions": "⚠️", "Not Decision-Ready": "🔴"}
-        _ci = {"Low": "🟢", "Medium": "🟡", "High": "🔴"}
-        _vi = {"High": "🔴", "Moderate": "🟡", "Low": "🟢"}
-        _fi = {"High": "🟢", "Acceptable": "🟡", "Low": "🔴", "Very Low": "🔴"}
-
-        r_icon = _ri.get(di.readiness.status, "⚪")
-        c_icon = _ci.get(di.criticality.level, "⚪")
-
-        with st.expander(
-            f"🧠 Decision Intelligence — {r_icon} {di.readiness.status} "
-            f"| Criticality: {c_icon} {di.criticality.level}",
-            expanded=False,
-        ):
-            st.markdown("#### Decision Context")
-            st.markdown(di.decision_context)
-
-            tabs = st.tabs([
-                "⚖️ Criticality",
-                "📊 Data Confidence",
-                "💡 Value of Information",
-                "🤝 Risk Ownership",
-                "🎯 Decision Boundary",
-                "✅ Decision Readiness",
-            ])
-
-            with tabs[0]:
-                st.markdown("#### Decision Criticality")
-                st.metric("Criticality", f"{c_icon} {di.criticality.level}")
-                st.markdown("---")
-                for label, text in [
-                    ("Compliance",    di.criticality.compliance_consequence),
-                    ("Service",       di.criticality.service_consequence),
-                    ("Financial",     di.criticality.financial_consequence),
-                    ("Reputational",  di.criticality.reputational_consequence),
-                    ("Asset (WoL)",   di.criticality.asset_consequence),
-                    ("Reversibility", di.criticality.reversibility),
-                    ("Regulatory",    di.criticality.regulatory_exposure),
-                ]:
-                    st.markdown(f"**{label}:** {text}")
-                st.info(di.criticality.classification_rationale)
-
-            with tabs[1]:
-                st.markdown("#### Data Confidence Assessment")
-                if di.data_confidence.high_volume_low_confidence:
-                    st.warning(
-                        "⚠️ **High-volume, low-confidence data:** "
-                        + "; ".join(di.data_confidence.high_volume_low_confidence)
-                        + ". More data of the same type will not resolve this."
-                    )
-                for d in di.data_confidence.dimensions:
-                    icon = _fi.get(d.confidence, "⚪")
-                    with st.expander(f"{icon} **{d.variable}** — {d.confidence} confidence", expanded=False):
-                        col1, col2 = st.columns([1, 2])
-                        with col1:
-                            st.caption(f"**Data volume:** {d.volume.title()}")
-                        with col2:
-                            st.caption(f"**Issue:** {d.issue}")
-                        st.caption(f"**Decision implication:** {d.implication}")
-                st.markdown("---")
-                st.info(di.data_confidence.summary)
-                if di.data_confidence.critical_gaps:
-                    st.warning("**Critical gaps:** " + " · ".join(di.data_confidence.critical_gaps))
-
-            with tabs[2]:
-                st.markdown("#### Value of Information")
-                st.caption("For each uncertainty, whether more data would change the decision. Low VOI = proceed. High VOI = investigate first.")
-                for d in di.voi.dimensions:
-                    icon = _vi.get(d.voi_classification, "⚪")
-                    with st.expander(
-                        f"{icon} **{d.uncertainty}** — {d.voi_classification} VOI",
-                        expanded=(d.voi_classification == "High"),
-                    ):
-                        col1, col2, col3 = st.columns(3)
-                        col1.caption(f"Changes **archetype selection**: {'Yes ⚠️' if d.changes_archetype_selection else 'No'}")
-                        col2.caption(f"Changes **LRV adequacy**: {'Yes ⚠️' if d.changes_lrv_adequacy else 'No'}")
-                        col3.caption(f"Changes **sizing**: {'Yes' if d.changes_sizing else 'No'}")
-                        col1.caption(f"Changes **residuals class**: {'Yes ⚠️' if d.changes_residuals_classification else 'No'}")
-                        col2.caption(f"Changes **lifecycle cost**: {'Yes' if d.changes_lifecycle_cost else 'No'}")
-                        col3.caption(f"Changes **risk materially**: {'Yes ⚠️' if d.changes_risk_materially else 'No'}")
-                        st.markdown(f"**Rationale:** {d.rationale}")
-                st.markdown("---")
-                if di.voi.high_voi_items:
-                    st.warning(f"**High VOI:** {'; '.join(di.voi.high_voi_items)}. Resolve before treatment selection is finalised.")
-                if di.voi.low_voi_items:
-                    st.success(f"**Low VOI — proceed without:** {'; '.join(di.voi.low_voi_items)}.")
-                st.info(di.voi.investigation_recommendation)
-
-            with tabs[3]:
-                st.markdown("#### Risk Ownership Mapping")
-                st.caption("No delivery model removes the utility's duty of care for public health protection.")
-                for d in di.risk_ownership.dimensions:
-                    with st.expander(f"**{d.risk_category}** — Primary owner: {d.primary_owner}", expanded=False):
-                        if d.shared_with:
-                            st.caption(f"**Shared with:** {', '.join(d.shared_with)}")
-                        st.markdown(f"**Utility's irreducible exposure:** {d.utility_exposure}")
-                        st.caption(f"*{d.note}*")
-                st.markdown("---")
-                st.error(f"⚠️ **Accountability:** {di.risk_ownership.utility_accountability_statement}")
-                st.warning(f"**Residual risk:** {di.risk_ownership.residual_risk_statement}")
-
-            with tabs[4]:
-                st.markdown("#### Decision Boundary")
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.markdown("**Acceptable performance range**")
-                    for item in di.decision_boundary.acceptable_performance_range:
-                        st.markdown(f"• {item}")
-                    st.markdown("**Acceptable uncertainty**")
-                    for item in di.decision_boundary.acceptable_uncertainty:
-                        st.markdown(f"• {item}")
-                    st.markdown(f"**Resilience margin:** {di.decision_boundary.resilience_margin}")
-                with col_b:
-                    st.markdown("**Monitoring requirements**")
-                    for item in di.decision_boundary.monitoring_requirements:
-                        st.markdown(f"• {item}")
-                    st.markdown("**Intervention triggers**")
-                    for item in di.decision_boundary.intervention_triggers:
-                        st.markdown(f"🔔 {item}")
-                st.markdown("---")
-                st.markdown("**Critical assumptions**")
-                for item in di.decision_boundary.critical_assumptions:
-                    st.markdown(f"⚡ {item}")
-                st.info(f"**Fallback position:** {di.decision_boundary.fallback_position}")
-
-            with tabs[5]:
-                st.markdown("#### Decision Readiness")
-                status = di.readiness.status
-                if status == "Ready to Proceed":
-                    st.success(f"✅ **{status}**")
-                elif status == "Proceed with Conditions":
-                    st.warning(f"⚠️ **{status}**")
-                else:
-                    st.error(f"🔴 **{status}**")
-                st.markdown(f"**Basis:** {di.readiness.basis}")
-                if di.readiness.conditions:
-                    st.markdown("**Conditions:**")
-                    for c in di.readiness.conditions:
-                        st.markdown(f"• {c}")
-                if di.readiness.critical_assumption_at_risk:
-                    st.error(f"⚡ **Critical assumption at risk:** {di.readiness.critical_assumption_at_risk}")
-                st.markdown("---")
-                st.markdown(f"**Strategic implication:** {di.readiness.strategic_implication}")
-
-            st.markdown("---")
-            st.caption(f"*{di.closing_statement}*")
-
-    except Exception as e:
-        st.warning(f"Decision Intelligence Layer unavailable: {e}")

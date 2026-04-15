@@ -74,19 +74,27 @@ PAGES = {
 def render_sidebar():
     """Render the AquaPoint sidebar with navigation — light theme matching WaterPoint."""
     with st.sidebar:
-        # App header
-        st.markdown("""
-            <div style="text-align:center;padding:0.8rem 0 0.6rem 0">
-                <div style="font-size:2.4rem">💧</div>
-                <div style="font-size:1.4rem;font-weight:700;color:#1a1a2e;margin-top:0.1rem">AquaPoint</div>
-                <div style="font-size:0.7rem;color:#888;letter-spacing:0.08em;margin-top:0.2rem;text-transform:uppercase">Drinking Water Treatment</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-
+        # Platform Home button — returns to main platform launcher
         if st.button("← Platform Home", use_container_width=True):
             st.session_state["active_module"] = None
             st.rerun()
+
+        st.divider()
+
+        # App header
+        st.markdown(f"""
+            <div style="text-align:center;padding:0.5rem 0 1rem 0">
+                <div style="font-size:1.6rem;font-weight:800;color:#1a56a0;letter-spacing:-0.03em">
+                    💧 {APP_NAME}
+                </div>
+                <div style="font-size:0.72rem;color:#666;margin-top:0.2rem;letter-spacing:0.05em">
+                    DRINKING WATER TREATMENT
+                </div>
+                <div style="font-size:0.65rem;color:#999;margin-top:0.1rem">
+                    {APP_VERSION} | ph2o Consulting
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
 

@@ -101,6 +101,7 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
         "chloramination": {},
         "uv_disinfection": {},
         "sludge_thickening": {},
+        "chemical_softening": {"hardness_mg_l": 0.75, "tds_mg_l": 0.20, "iron_mg_l": 0.85, "manganese_mg_l": 0.85, "toc_mg_l": 0.15},
         "brine_management": {},
     }
 
@@ -181,6 +182,7 @@ def calculate_energy(plant_type: str, flow_ML_d: float, selected_technologies: l
         "chloramination": {"low": 2, "typical": 5, "high": 10},
         "uv_disinfection": {"low": 10, "typical": 25, "high": 60},
         "sludge_thickening": {"low": 5, "typical": 15, "high": 40},
+        "chemical_softening": {"low": 20, "typical": 40, "high": 70},
         "brine_management": {"low": 30, "typical": 80, "high": 200},
     }
 
@@ -229,6 +231,7 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
         "chloramination": ["naocl", "ammonia"],
         "uv_disinfection": [],
         "sludge_thickening": ["polymer"],
+        "chemical_softening": ["lime", "soda_ash"],
         "brine_management": [],
     }
 
@@ -249,6 +252,18 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
                     dose_typical = min(chem["high"], dose_typical * 1.3)
                 if chem_key == "alum" and toc > 8:
                     dose_typical = min(chem["high"], dose_typical * 1.2)
+
+                # Lime dose scales with hardness — higher hardness needs more lime
+                hardness = source_water.get("hardness_mg_l", 150)
+                if chem_key == "lime":
+                    # Approximate: 1 mg/L Ca hardness needs ~1.35 mg/L lime
+                    # Softening target ~80 mg/L CaCO3; dose ≈ (hardness - 80) * 1.35
+                    target_removal = max(0, hardness - 80)
+                    dose_typical = min(chem["high"], max(chem["low"], target_removal * 1.35))
+                if chem_key == "soda_ash":
+                    # Soda ash for Mg and CO3 hardness — roughly 0.8x lime dose
+                    target_removal = max(0, hardness - 80)
+                    dose_typical = min(chem["high"], max(chem["low"], target_removal * 0.5))
 
                 annual_kg = dose_typical * annual_ML  # mg/L × ML/yr = kg/yr (1 mg/L × 1 ML = 1 kg)
                 annual_cost = annual_kg * chem["unit_cost_AUD_kg"]

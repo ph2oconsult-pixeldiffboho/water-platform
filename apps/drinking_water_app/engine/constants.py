@@ -141,6 +141,12 @@ TECHNOLOGIES = {
         "applicable_plants": ["conventional", "membrane"],
         "description": "Gravity or mechanical concentration of filter backwash and clarifier sludge",
     },
+    "chemical_softening": {
+        "label": "Chemical Softening (Lime / Soda Ash)",
+        "category": "Softening",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": "Precipitation softening using hydrated lime and/or soda ash to reduce hardness, TDS, and co-precipitate iron, manganese, and some NOM",
+    },
     "brine_management": {
         "label": "Brine / Concentrate Management",
         "category": "Residuals",
@@ -264,7 +270,8 @@ CHEMICAL_DOSES_mg_L = {
     "alum": {"label": "Alum (Al₂(SO₄)₃)", "low": 5, "typical": 25, "high": 80, "unit_cost_AUD_kg": 0.35},
     "ferric_chloride": {"label": "Ferric Chloride", "low": 5, "typical": 20, "high": 60, "unit_cost_AUD_kg": 0.50},
     "polymer": {"label": "Polymer (flocculant)", "low": 0.1, "typical": 0.5, "high": 2.0, "unit_cost_AUD_kg": 3.50},
-    "lime": {"label": "Hydrated Lime", "low": 5, "typical": 15, "high": 50, "unit_cost_AUD_kg": 0.20},
+    "lime": {"label": "Hydrated Lime (Ca(OH)₂)", "low": 50, "typical": 150, "high": 400, "unit_cost_AUD_kg": 0.20},
+    "soda_ash": {"label": "Soda Ash (Na₂CO₃)", "low": 20, "typical": 80, "high": 200, "unit_cost_AUD_kg": 0.45},
     "chlorine": {"label": "Chlorine (as Cl₂)", "low": 0.5, "typical": 2.0, "high": 8.0, "unit_cost_AUD_kg": 0.60},
     "naocl": {"label": "Sodium Hypochlorite", "low": 0.5, "typical": 2.0, "high": 8.0, "unit_cost_AUD_kg": 0.45},
     "ammonia": {"label": "Ammonia (for chloramination)", "low": 0.2, "typical": 0.5, "high": 1.5, "unit_cost_AUD_kg": 0.50},
@@ -294,6 +301,7 @@ CAPEX_REFERENCE_AUD_ML_d = {
     "chloramination": {"low": 80_000, "typical": 200_000, "high": 450_000},
     "uv_disinfection": {"low": 100_000, "typical": 300_000, "high": 700_000},
     "sludge_thickening": {"low": 100_000, "typical": 300_000, "high": 700_000},
+    "chemical_softening": {"low": 400_000, "typical": 900_000, "high": 1_800_000},
     "brine_management": {"low": 200_000, "typical": 600_000, "high": 1_500_000},
 }
 
@@ -316,6 +324,7 @@ TECHNOLOGY_RISK = {
     "chloramination": {"implementation": "Low", "operational": "Medium", "regulatory": "Medium"},
     "uv_disinfection": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
     "sludge_thickening": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
+    "chemical_softening": {"implementation": "Medium", "operational": "High", "regulatory": "Low"},
     "brine_management": {"implementation": "High", "operational": "High", "regulatory": "High"},
 }
 

@@ -11,7 +11,7 @@ from ..engine.reasoning.archetypes import ARCHETYPES
 from ..ui_helpers import section_header, warning_box, info_box, error_box
 
 CATEGORY_ORDER = [
-    "Pretreatment", "Primary Treatment", "Filtration",
+    "Pretreatment", "Primary Treatment", "Softening", "Filtration",
     "Membrane", "Advanced Treatment", "Disinfection", "Residuals",
 ]
 
@@ -26,8 +26,8 @@ ARCHETYPE_TECH_HINTS = {
           "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],
     "E": ["screening", "coagulation_flocculation", "sedimentation",
           "rapid_gravity_filtration", "bac", "uv_disinfection", "chlorination", "sludge_thickening"],
-    "F": ["coagulation_flocculation", "sedimentation",
-          "rapid_gravity_filtration", "chlorination", "sludge_thickening"],
+    "F": ["coagulation_flocculation", "chemical_softening", "sedimentation",
+          "rapid_gravity_filtration", "uv_disinfection", "chlorination", "sludge_thickening"],
     "G": ["screening", "coagulation_flocculation", "sedimentation",
           "rapid_gravity_filtration", "ozonation", "bac",
           "uv_disinfection", "chlorination", "sludge_thickening"],
