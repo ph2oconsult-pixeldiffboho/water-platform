@@ -11,7 +11,7 @@ from ..engine.reasoning.archetypes import ARCHETYPES
 from ..ui_helpers import section_header, warning_box, info_box, error_box
 
 CATEGORY_ORDER = [
-    "Pretreatment", "Primary Treatment", "Softening", "Filtration",
+    "Pretreatment", "Pre-Oxidation", "Primary Treatment", "Softening", "Filtration",
     "Membrane", "Advanced Treatment", "Disinfection", "Residuals",
 ]
 
@@ -59,6 +59,8 @@ def _get_hint(plant_type: str, source_water: dict):
             toc_p95_mg_l=float(sw.get("toc_mg_l", 5)) * 1.5,
             colour_median_hu=float(sw.get("colour_hu", 10)),
             hardness_median_mg_l=float(sw.get("hardness_mg_l", 150)),
+            hardness_p95_mg_l=float(sw.get("hardness_p95_mg_l", -1.0)),
+            alkalinity_p95_mg_l=float(sw.get("alkalinity_p95_mg_l", -1.0)),
             iron_median_mg_l=float(sw.get("iron_mg_l", 0.1)),
             manganese_median_mg_l=float(sw.get("manganese_mg_l", 0.02)),
             tds_median_mg_l=float(sw.get("tds_mg_l", 300)),

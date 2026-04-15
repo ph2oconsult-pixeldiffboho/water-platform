@@ -233,6 +233,21 @@ def render():
     with tabs[1]:
         tp = results.get("treatment_performance", {})
         section_header("Predicted Treated Water Quality vs ADWG", "💧")
+        # CCPP banner at top of water quality tab
+        _ccpp_data = results.get("treatment_performance", {}).get("ccpp")
+        if _ccpp_data:
+            _ccpp_val = _ccpp_data["ccpp_mg_l"]
+            _ccpp_interp = _ccpp_data["interpretation"]
+            _ccpp_ok = _ccpp_data["compliant"]
+            _ccpp_colour = "#2ecc71" if _ccpp_ok else "#e74c3c" if _ccpp_val > 5 or _ccpp_val < -10 else "#f39c12"
+            st.markdown(
+                f'<div style="background:{_ccpp_colour}22;border-left:4px solid {_ccpp_colour};"'
+                f'     padding="0.6rem 1rem;margin-bottom:1rem;border-radius:4px">'
+                f'<b>CCPP: {_ccpp_val:+.1f} mg/L CaCO\u2083</b> \u2014 {_ccpp_interp} '
+                f'(target: \u22125 to 0 mg/L) {"\u2713" if _ccpp_ok else "\u2717"}</div>',
+                unsafe_allow_html=True
+            )
+
 
         comp = tp.get("compliance", {})
         if comp:

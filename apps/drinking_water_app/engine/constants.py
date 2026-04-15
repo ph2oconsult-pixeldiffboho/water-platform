@@ -135,6 +135,19 @@ TECHNOLOGIES = {
         "description": "Non-chemical pathogen inactivation; protozoa and virus control",
     },
     # Residuals
+    "greensand_filtration": {
+        "label": "Greensand Filtration (Mn/Fe removal)",
+        "category": "Filtration",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "MnO\u2082-coated greensand or anthracite media for catalytic oxidation of "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s). Requires either KMnO\u2084 feed for continuous "
+            "media regeneration, or pre-chlorination to maintain oxidation capacity. "
+            "Achieves 90\u201395% Mn removal. Preferred for high-Mn groundwater and "
+            "surface waters where standard RGF is insufficient. "
+            "Incompatible with biological treatment downstream."
+        ),
+    },
     "pre_filter_chlorination": {
         "label": "Pre-Filter Chlorination (Mn oxidation)",
         "category": "Pre-Oxidation",
@@ -232,7 +245,7 @@ SOURCE_WATER_QUALITY_PARAMS = {
         "high_threshold": 2000,
     },
     "hardness_mg_l": {
-        "label": "Total Hardness (mg/L as CaCO₃)",
+        "label": "Total Hardness — Median (mg/L as CaCO\u2083)",
         "unit": "mg/L CaCO₃",
         "typical_range": (10, 800),
         "default": 150,
@@ -469,6 +482,19 @@ CAPEX_REFERENCE_AUD_ML_d = {
     "sludge_thickening": {"low": 100_000, "typical": 300_000, "high": 700_000},
     "actiflo_carb": {"low": 500_000, "typical": 1_100_000, "high": 2_200_000},
     "chemical_softening": {"low": 400_000, "typical": 900_000, "high": 1_800_000},
+    "greensand_filtration": {
+        "label": "Greensand Filtration (Mn/Fe removal)",
+        "category": "Filtration",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "MnO\u2082-coated greensand or anthracite media for catalytic oxidation of "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s). Requires either KMnO\u2084 feed for continuous "
+            "media regeneration, or pre-chlorination to maintain oxidation capacity. "
+            "Achieves 90\u201395% Mn removal. Preferred for high-Mn groundwater and "
+            "surface waters where standard RGF is insufficient. "
+            "Incompatible with biological treatment downstream."
+        ),
+    },
     "pre_filter_chlorination": {
         "label": "Pre-Filter Chlorination (Mn oxidation)",
         "category": "Pre-Oxidation",
@@ -483,6 +509,20 @@ CAPEX_REFERENCE_AUD_ML_d = {
             "free Cl\u2082 inhibits the biofilm responsible for biological treatment."
         ),
     },
+    "greensand_filtration": {
+        "label": "Greensand Filtration (Mn/Fe removal)",
+        "category": "Filtration",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "MnO\u2082-coated greensand or anthracite media for catalytic oxidation of "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s). Requires either KMnO\u2084 feed for continuous "
+            "media regeneration, or pre-chlorination to maintain oxidation capacity. "
+            "Achieves 90\u201395% Mn removal. Preferred for high-Mn groundwater and "
+            "surface waters where standard RGF is insufficient. "
+            "Incompatible with biological treatment downstream."
+        ),
+    },
+    "greensand_filtration": {"low": 150_000, "typical": 350_000, "high": 700_000},
     "pre_filter_chlorination": {"low": 5_000, "typical": 20_000, "high": 50_000},
     "kmno4_pre_oxidation": {"low": 20_000, "typical": 60_000, "high": 150_000},
     "polydadmac": {"low": 0, "typical": 0, "high": 0},
@@ -509,6 +549,19 @@ TECHNOLOGY_RISK = {
     "chloramination": {"implementation": "Low", "operational": "Medium", "regulatory": "Medium"},
     "uv_disinfection": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
     "brine_management": {"implementation": "High", "operational": "High", "regulatory": "High"},
+    "greensand_filtration": {
+        "label": "Greensand Filtration (Mn/Fe removal)",
+        "category": "Filtration",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "MnO\u2082-coated greensand or anthracite media for catalytic oxidation of "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s). Requires either KMnO\u2084 feed for continuous "
+            "media regeneration, or pre-chlorination to maintain oxidation capacity. "
+            "Achieves 90\u201395% Mn removal. Preferred for high-Mn groundwater and "
+            "surface waters where standard RGF is insufficient. "
+            "Incompatible with biological treatment downstream."
+        ),
+    },
     "pre_filter_chlorination": {
         "label": "Pre-Filter Chlorination (Mn oxidation)",
         "category": "Pre-Oxidation",
@@ -523,6 +576,20 @@ TECHNOLOGY_RISK = {
             "free Cl\u2082 inhibits the biofilm responsible for biological treatment."
         ),
     },
+    "greensand_filtration": {
+        "label": "Greensand Filtration (Mn/Fe removal)",
+        "category": "Filtration",
+        "applicable_plants": ["conventional", "groundwater"],
+        "description": (
+            "MnO\u2082-coated greensand or anthracite media for catalytic oxidation of "
+            "dissolved Mn\u00b2\u207a \u2192 MnO\u2082(s). Requires either KMnO\u2084 feed for continuous "
+            "media regeneration, or pre-chlorination to maintain oxidation capacity. "
+            "Achieves 90\u201395% Mn removal. Preferred for high-Mn groundwater and "
+            "surface waters where standard RGF is insufficient. "
+            "Incompatible with biological treatment downstream."
+        ),
+    },
+    "greensand_filtration": {"implementation": "Low", "operational": "Medium", "regulatory": "Low"},
     "pre_filter_chlorination": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},
     "kmno4_pre_oxidation": {"implementation": "Low", "operational": "Medium", "regulatory": "Low"},
     "polydadmac": {"implementation": "Low", "operational": "Low", "regulatory": "Low"},

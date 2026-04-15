@@ -149,7 +149,42 @@ def render():
 
     st.session_state["source_water"] = source_water
 
+    # ── Adverse / P95 Hardness + Alkalinity (optional) ───────────────────────────
+    with st.expander("Adverse / P95 water quality (optional — improves softening analysis)", expanded=False):
+        st.markdown(
+            "<div style='font-size:0.82rem;color:#555;margin-bottom:0.5rem'>"
+            "Enter P95 or adverse design hardness and alkalinity if known. Used to trigger "
+            "softening analysis and size the softening stage correctly. If not entered, "
+            "median × 1.5 is used as a proxy."
+            "</div>",
+            unsafe_allow_html=True
+        )
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            h_p95 = st.number_input(
+                "Hardness P95 / Adverse (mg/L as CaCO\u2083)",
+                min_value=0.0, max_value=2000.0,
+                value=float(source_water.get("hardness_p95_mg_l", -1) if source_water.get("hardness_p95_mg_l", -1) > 0 else 0.0),
+                step=10.0, format="%.0f",
+                key="sw_hardness_p95",
+                help="P95 or adverse design hardness. Leave 0 if not measured."
+            )
+            source_water["hardness_p95_mg_l"] = h_p95 if h_p95 > 0 else -1.0
+            st.caption(f"Proxy if not entered: {source_water.get('hardness_mg_l',150)*1.5:.0f} mg/L (median × 1.5)")
+        with col_p2:
+            a_p95 = st.number_input(
+                "Alkalinity P95 / Adverse (mg/L as CaCO\u2083)",
+                min_value=0.0, max_value=2000.0,
+                value=float(source_water.get("alkalinity_p95_mg_l", -1) if source_water.get("alkalinity_p95_mg_l", -1) > 0 else 0.0),
+                step=10.0, format="%.0f",
+                key="sw_alkalinity_p95",
+                help="P95 or adverse design alkalinity. Leave 0 if not measured."
+            )
+            source_water["alkalinity_p95_mg_l"] = a_p95 if a_p95 > 0 else -1.0
+    st.session_state["source_water"] = source_water
+
     # ── Source Water Summary & Risk Flags ─────────────────────────────────────────
+
     st.markdown("<br>", unsafe_allow_html=True)
     section_header("Water Quality Assessment", "📊")
 

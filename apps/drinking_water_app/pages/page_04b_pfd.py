@@ -274,7 +274,9 @@ def _build_reasoning_inputs():
         pfas_detected       = sw.get("pfas_detected", False),
         pfas_concentration_ng_l = sw.get("pfas_concentration_ng_l", 0.0),
         hardness_median_mg_l    = sw.get("hardness_mg_l", 100.0),
+        hardness_p95_mg_l       = sw.get("hardness_p95_mg_l", -1.0),
         alkalinity_median_mg_l  = sw.get("alkalinity_mg_l", 60.0),
+        alkalinity_p95_mg_l     = sw.get("alkalinity_p95_mg_l", -1.0),
         iron_median_mg_l    = sw.get("iron_mg_l", 0.1),
         manganese_median_mg_l   = sw.get("manganese_mg_l", 0.02),
         arsenic_ug_l        = sw.get("arsenic_ug_l", 0.0),
@@ -398,7 +400,9 @@ def render():
 
     # Inject chemical_softening into train when hardness is elevated
     # Position: after primary clarification (DAF/sedimentation), before filtration
-    _sw_hard = float(source_water.get('hardness_mg_l', 0))
+    _sw_hard_med = float(source_water.get('hardness_mg_l', 0))
+    _sw_hard_p95 = float(source_water.get('hardness_p95_mg_l', -1))
+    _sw_hard = _sw_hard_p95 if _sw_hard_p95 > 0 else _sw_hard_med
     _softening_required = _sw_hard > 200 and 'chemical_softening' not in sel_train
     if _softening_required:
         _clarif_techs = ('daf', 'sedimentation', 'coagulation_flocculation')

@@ -70,7 +70,10 @@ class SourceWaterInputs:
 
     # Inorganics
     hardness_median_mg_l: float = 150.0
+    hardness_p95_mg_l: float = -1.0          # -1 = not measured (use median × 1.5 as proxy)
     alkalinity_median_mg_l: float = 80.0
+    alkalinity_p95_mg_l: float = -1.0         # -1 = not measured
+
     iron_median_mg_l: float = 0.1
     manganese_median_mg_l: float = 0.02
     arsenic_ug_l: float = 0.0
@@ -204,13 +207,20 @@ def _score_constraints(inputs: SourceWaterInputs) -> dict:
 
     # Hardness
     hard = 0
-    if inputs.hardness_median_mg_l > 400: hard += 7
-    elif inputs.hardness_median_mg_l > 300: hard += 5
-    elif inputs.hardness_median_mg_l > 250: hard += 3
-    elif inputs.hardness_median_mg_l > 150: hard += 1
+    # Use P95 hardness for scoring if available — adverse conditions drive treatment need
+    _hardness_design = (inputs.hardness_p95_mg_l
+                        if inputs.hardness_p95_mg_l > 0
+                        else inputs.hardness_median_mg_l * 1.5)
+    if _hardness_design > 400: hard += 7
+    elif _hardness_design > 300: hard += 5
+    elif _hardness_design > 250: hard += 3
+    elif _hardness_design > 150: hard += 1
     # Groundwater and blended sources: hardness is a more significant treatment driver
     # than for surface water where turbidity/NOM dominate
-    if inputs.source_type in ["groundwater", "blended"] and inputs.hardness_median_mg_l > 200:
+    _hard_adverse = (inputs.hardness_p95_mg_l
+                     if inputs.hardness_p95_mg_l > 0
+                     else inputs.hardness_median_mg_l)
+    if _hard_adverse > 200:
         hard += 2
     scores["hardness"] = min(hard, 10)
 

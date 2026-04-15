@@ -157,7 +157,18 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
             "algal_cells_ml": 0.10,
             "colour_hu": 0.10,
         },
-        "chemical_softening": {"hardness_mg_l": 0.75, "tds_mg_l": 0.20, "iron_mg_l": 0.85, "manganese_mg_l": 0.85, "toc_mg_l": 0.15},
+        "greensand_filtration": {
+            # MnO₂-coated greensand media — catalytic oxidation of Mn²⁺ → MnO₂
+            # Requires either: (a) continuous KMnO₄ feed to regenerate media,
+            #                  (b) chlorination ahead of filter (Cl₂ regenerates MnO₂)
+            # Typical Mn removal: 90-95% in a dedicated greensand filter
+            # Also effective for Fe²⁺ oxidation and removal
+            # Prospect: not selected (Densadeg + pre-filter Cl₂ preferred at 750 MLD)
+            "manganese_mg_l": 0.92,
+            "iron_mg_l": 0.90,
+            "turbidity_ntu": 0.20,  # some turbidity capture but not primary purpose
+        },
+        "chemical_softening": {"hardness_mg_l": 0.75, "alkalinity_mg_l": 0.83, "tds_mg_l": 0.20, "iron_mg_l": 0.85, "manganese_mg_l": 0.85, "toc_mg_l": 0.15},
         "brine_management": {},
     }
 
@@ -182,7 +193,37 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
         if fe_rem:
             predicted["iron_mg_l"] = predicted.get("iron_mg_l", 0.1) * (1 - fe_rem)
 
+    # ── Context-dependent colour removal correction ────────────────────────────
+    # Fixed removal fractions underpredict colour removal at high input colour.
+    # Enhanced coagulation at high colour (>40 HU) achieves 75-90% removal.
+    # At low colour (<20 HU) removal efficiency drops to 40-55%.
+    colour_raw = source_water.get("colour_hu", 10)
+    colour_current = predicted.get("colour_hu", colour_raw)
+    coag_in_train = any(t in selected_technologies for t in
+                        ("coagulation_flocculation", "daf", "sedimentation", "actiflo_carb"))
+    if coag_in_train and colour_raw > 0:
+        # Target removal efficiency based on raw colour load:
+        # >120 HU: 88% removal achievable with enhanced coagulation (Prospect target)
+        # 60-120 HU: 80% removal
+        # 20-60 HU:  70% removal
+        # <20 HU:    50% removal (already applied in main loop)
+        if colour_raw > 120:
+            target_removal = 0.88
+        elif colour_raw > 80:
+            target_removal = 0.83  # 80-120 HU: 83% → 14-20 HU effluent
+        elif colour_raw > 40:
+            target_removal = 0.82  # 40-80 HU: 82% → 7-14 HU effluent
+        elif colour_raw > 20:
+            target_removal = 0.70  # 20-40 HU: 70% removal
+        else:
+            target_removal = 0.50  # no correction needed — matches main loop
+        target_colour = colour_raw * (1 - target_removal)
+        # Apply if this gives a better (lower) result than the main loop series
+        if target_colour < colour_current:
+            predicted["colour_hu"] = round(target_colour, 1)
+
     # ── Context-dependent Mn removal adjustments ─────────────────────────────
+
     # Applied after the main loop to avoid double-counting.
     # These pathways only add credit when specific conditions co-exist in the train.
 
@@ -242,12 +283,50 @@ def assess_treatment_performance(source_water: dict, selected_technologies: list
                     "type": guideline["type"],
                 }
 
+    # ── CCPP calculation ───────────────────────────────────────────────────────
+    # Calcium Carbonate Precipitation Potential (concept-stage LSI approximation)
+    # Uses predicted (post-treatment) hardness and alkalinity
+    ccpp_result = None
+    pred_hard = predicted.get("hardness_mg_l", 0)
+    pred_alk  = predicted.get("alkalinity_mg_l", 0)
+    pred_ph   = source_water.get("ph_median", 7.5)  # pH assumed ~unchanged by coagulation
+    if "chemical_softening" in selected_technologies:
+        pred_ph = 7.8  # post-recarbonation target pH
+        pred_alk = max(pred_alk, 30.0)  # recarbonation restores alkalinity to ≥30 mg/L
+    elif "chlorination" in selected_technologies or "uv_disinfection" in selected_technologies:
+        # Full treatment train — post-clarification lime dosing for pH stability is standard.
+        # Prospect PPTP: 5 mg/L Ca(OH)₂ post-clarification to adjust pH 6.5→8.0 range.
+        # Assume pH raised to 7.8 minimum in operational plant.
+        pred_ph = max(pred_ph, 7.8)
+    if pred_hard > 0 and pred_alk > 0:
+        import math
+        pKs, pK2 = 8.34, 10.33
+        ca_mg = pred_hard * 0.75 * 40.08 / 50.045
+        ca_mol = ca_mg / 40_080
+        alk_mol = pred_alk / 50_000
+        if ca_mol > 0 and alk_mol > 0:
+            pHs = (pK2 - pKs) + (-math.log10(ca_mol)) + (-math.log10(alk_mol))
+            lsi = pred_ph - pHs
+            ccpp = round(lsi * (pred_alk / 2.5), 1)
+            ccpp_result = {
+                "ccpp_mg_l": ccpp,
+                "lsi": round(lsi, 3),
+                "interpretation": (
+                    "Scale-forming" if ccpp > 0
+                    else "Corrosive" if ccpp < -5
+                    else "Near-equilibrium (target)"
+                ),
+                "compliant": -5 <= ccpp <= 0,
+                "note": "LSI approximation (±3 mg/L). Full CCPP requires ionic strength correction.",
+            }
+
     return {
         "predicted_quality": {k: round(v, 3) for k, v in predicted.items() if isinstance(v, (int, float))},
         "compliance": compliance,
         "disinfection_adequate": disinfection_adequate,
         "disinfection_technologies": disinfection_technologies,
         "overall_compliant": all(v["compliant"] for v in compliance.values()),
+        "ccpp": ccpp_result,
     }
 
 
@@ -329,6 +408,7 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
         "chloramination": ["naocl", "ammonia"],
         "uv_disinfection": [],
         "sludge_thickening": ["polymer"],
+        "greensand_filtration": ["kmno4"],  # KMnO₄ for media regeneration (continuous)
         "pre_filter_chlorination": ["naocl"],  # free Cl₂ at filter inlet
         "kmno4_pre_oxidation": ["kmno4"],
         "polydadmac": ["polydadmac"],
