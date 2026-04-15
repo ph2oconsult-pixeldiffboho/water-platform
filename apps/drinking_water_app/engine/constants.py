@@ -267,19 +267,115 @@ ELECTRICITY_COST_AUD_kWh = 0.12  # default; user-configurable
 
 # ─── Chemical Dosing Reference Ranges ────────────────────────────────────────────
 CHEMICAL_DOSES_mg_L = {
-    "alum": {"label": "Alum (Al₂(SO₄)₃)", "low": 5, "typical": 25, "high": 80, "unit_cost_AUD_kg": 0.35},
-    "ferric_chloride": {"label": "Ferric Chloride", "low": 5, "typical": 20, "high": 60, "unit_cost_AUD_kg": 0.50},
-    "polymer": {"label": "Polymer (flocculant)", "low": 0.1, "typical": 0.5, "high": 2.0, "unit_cost_AUD_kg": 3.50},
-    "lime": {"label": "Hydrated Lime (Ca(OH)₂)", "low": 50, "typical": 150, "high": 400, "unit_cost_AUD_kg": 0.20},
-    "soda_ash": {"label": "Soda Ash (Na₂CO₃)", "low": 20, "typical": 80, "high": 200, "unit_cost_AUD_kg": 0.45},
-    "chlorine": {"label": "Chlorine (as Cl₂)", "low": 0.5, "typical": 2.0, "high": 8.0, "unit_cost_AUD_kg": 0.60},
-    "naocl": {"label": "Sodium Hypochlorite", "low": 0.5, "typical": 2.0, "high": 8.0, "unit_cost_AUD_kg": 0.45},
-    "ammonia": {"label": "Ammonia (for chloramination)", "low": 0.2, "typical": 0.5, "high": 1.5, "unit_cost_AUD_kg": 0.50},
-    "caustic_soda": {"label": "Caustic Soda (NaOH)", "low": 1, "typical": 5, "high": 20, "unit_cost_AUD_kg": 0.55},
-    "co2": {"label": "Carbon Dioxide (pH correction)", "low": 1, "typical": 5, "high": 20, "unit_cost_AUD_kg": 0.25},
-    "h2o2": {"label": "Hydrogen Peroxide (AOP)", "low": 1, "typical": 5, "high": 15, "unit_cost_AUD_kg": 0.80},
-    "antiscalant": {"label": "Antiscalant (RO)", "low": 1, "typical": 3, "high": 8, "unit_cost_AUD_kg": 4.00},
-    "acid": {"label": "Sulfuric / Hydrochloric Acid (RO pretreat)", "low": 1, "typical": 4, "high": 12, "unit_cost_AUD_kg": 0.30},
+    # dose ranges: mg/L as pure/active product applied to water
+    # unit_cost_AUD_kg: cost per kg of COMMERCIAL PRODUCT (as supplied, not pure)
+    # concentration_pct: active ingredient % by weight in commercial product
+    # density_t_m3: density of commercial product (t/m³)
+    # unit_cost_AUD_kg_pure: derived cost per kg of pure active ingredient
+    "alum": {
+        "label": "Alum (Al₂(SO₄)₃)",
+        "low": 5, "typical": 25, "high": 80,
+        "concentration_pct": 49,        # ~49% Al₂(SO₄)₃ solution (8.5% Al₂O₃ equiv)
+        "density_t_m3": 1.33,           # liquid alum at 49%
+        "unit_cost_AUD_kg": 0.18,       # per kg commercial product (liquid)
+        "unit_cost_AUD_kg_pure": 0.37,  # per kg pure Al₂(SO₄)₃ (= 0.18/0.49)
+    },
+    "ferric_chloride": {
+        "label": "Ferric Chloride (FeCl₃)",
+        "low": 5, "typical": 20, "high": 60,
+        "concentration_pct": 42,        # 42% FeCl₃ solution — Prospect doc, industry standard
+        "density_t_m3": 1.49,           # density at 42% — matches Prospect doc exactly
+        "unit_cost_AUD_kg": 0.21,       # per kg commercial product (42% solution)
+        "unit_cost_AUD_kg_pure": 0.50,  # per kg pure FeCl₃ (= 0.21/0.42)
+    },
+    "polymer": {
+        "label": "Polymer (flocculant — LT25 equivalent)",
+        "low": 0.1, "typical": 0.5, "high": 2.0,
+        "concentration_pct": 100,       # supplied as dry powder or neat liquid
+        "density_t_m3": 0.75,
+        "unit_cost_AUD_kg": 3.50,
+        "unit_cost_AUD_kg_pure": 3.50,
+    },
+    "lime": {
+        "label": "Hydrated Lime (Ca(OH)₂)",
+        "low": 50, "typical": 150, "high": 400,
+        "concentration_pct": 95,        # dry hydrated lime — 95% purity typical
+        "density_t_m3": 0.50,           # bulk density (dry powder)
+        "unit_cost_AUD_kg": 0.19,       # per kg commercial product
+        "unit_cost_AUD_kg_pure": 0.20,  # per kg pure Ca(OH)₂
+    },
+    "soda_ash": {
+        "label": "Soda Ash (Na₂CO₃)",
+        "low": 20, "typical": 80, "high": 200,
+        "concentration_pct": 99,        # dry soda ash — effectively pure
+        "density_t_m3": 1.0,            # bulk density
+        "unit_cost_AUD_kg": 0.45,
+        "unit_cost_AUD_kg_pure": 0.45,
+    },
+    "chlorine": {
+        "label": "Chlorine (as Cl₂)",
+        "low": 0.5, "typical": 2.0, "high": 8.0,
+        "concentration_pct": 100,       # pure Cl₂ gas (cylinders/tankers)
+        "density_t_m3": 1.56,           # liquid Cl₂
+        "unit_cost_AUD_kg": 0.60,
+        "unit_cost_AUD_kg_pure": 0.60,
+    },
+    "naocl": {
+        "label": "Sodium Hypochlorite (12.5% solution)",
+        "low": 0.5, "typical": 2.0, "high": 8.0,
+        "concentration_pct": 12.5,      # 12.5% available chlorine — standard commercial grade
+        "density_t_m3": 1.21,           # at 12.5%
+        "unit_cost_AUD_kg": 0.056,      # per kg commercial product
+        "unit_cost_AUD_kg_pure": 0.45,  # per kg available chlorine (= 0.056/0.125)
+    },
+    "ammonia": {
+        "label": "Ammonia (for chloramination)",
+        "low": 0.2, "typical": 0.5, "high": 1.5,
+        "concentration_pct": 29,        # aqueous ammonia 29%
+        "density_t_m3": 0.90,
+        "unit_cost_AUD_kg": 0.145,      # per kg commercial product
+        "unit_cost_AUD_kg_pure": 0.50,
+    },
+    "caustic_soda": {
+        "label": "Caustic Soda (NaOH — 32% solution)",
+        "low": 1, "typical": 5, "high": 20,
+        "concentration_pct": 32,        # 32% NaOH solution — standard delivery grade
+        "density_t_m3": 1.34,           # at 32%
+        "unit_cost_AUD_kg": 0.176,      # per kg commercial product
+        "unit_cost_AUD_kg_pure": 0.55,
+    },
+    "co2": {
+        "label": "Carbon Dioxide (pH correction)",
+        "low": 1, "typical": 5, "high": 20,
+        "concentration_pct": 100,       # pure CO₂ (liquid bulk or cylinder)
+        "density_t_m3": 1.18,           # liquid CO₂
+        "unit_cost_AUD_kg": 0.25,
+        "unit_cost_AUD_kg_pure": 0.25,
+    },
+    "h2o2": {
+        "label": "Hydrogen Peroxide (50% solution — AOP)",
+        "low": 1, "typical": 5, "high": 15,
+        "concentration_pct": 50,        # 50% H₂O₂ — standard AOP grade
+        "density_t_m3": 1.20,           # at 50%
+        "unit_cost_AUD_kg": 0.40,       # per kg commercial product
+        "unit_cost_AUD_kg_pure": 0.80,
+    },
+    "antiscalant": {
+        "label": "Antiscalant (RO)",
+        "low": 1, "typical": 3, "high": 8,
+        "concentration_pct": 100,       # neat liquid product
+        "density_t_m3": 1.10,
+        "unit_cost_AUD_kg": 4.00,
+        "unit_cost_AUD_kg_pure": 4.00,
+    },
+    "acid": {
+        "label": "Sulfuric Acid (98% — RO pretreat)",
+        "low": 1, "typical": 4, "high": 12,
+        "concentration_pct": 98,        # concentrated H₂SO₄
+        "density_t_m3": 1.84,
+        "unit_cost_AUD_kg": 0.29,
+        "unit_cost_AUD_kg_pure": 0.30,
+    },
 }
 
 # ─── CAPEX Reference (AUD/ML/d capacity) ─────────────────────────────────────────

@@ -279,14 +279,31 @@ def calculate_chemical_use(flow_ML_d: float, selected_technologies: list,
                     dose_typical = min(chem["high"], max(chem["low"], target_removal * 0.5))
 
                 annual_kg = dose_typical * annual_ML  # mg/L × ML/yr = kg/yr (1 mg/L × 1 ML = 1 kg)
-                annual_cost = annual_kg * chem["unit_cost_AUD_kg"]
+
+                # Cost on pure-product basis for consistent comparison
+                unit_cost_pure = chem.get("unit_cost_AUD_kg_pure", chem["unit_cost_AUD_kg"])
+                annual_cost = annual_kg * unit_cost_pure
+
+                # Commercial product volumes (for storage/delivery sizing)
+                conc_pct = chem.get("concentration_pct", 100)
+                density = chem.get("density_t_m3", 1.0)
+                annual_kg_commercial = annual_kg / (conc_pct / 100)
+                annual_m3_commercial = annual_kg_commercial / (density * 1000)
+                daily_m3_commercial  = annual_m3_commercial / 365
 
                 chemicals_used[chem_key] = {
                     "label": chem["label"],
                     "dose_mg_L": round(dose_typical, 2),
-                    "annual_kg": round(annual_kg, 0),
+                    "annual_kg_pure": round(annual_kg, 0),
+                    "annual_kg": round(annual_kg, 0),           # kept for backward compat
                     "annual_cost_AUD": round(annual_cost, 0),
+                    "unit_cost_AUD_kg_pure": round(unit_cost_pure, 3),
                     "unit_cost_AUD_kg": chem["unit_cost_AUD_kg"],
+                    "concentration_pct": conc_pct,
+                    "density_t_m3": density,
+                    "annual_kg_commercial": round(annual_kg_commercial, 0),
+                    "annual_m3_commercial": round(annual_m3_commercial, 1),
+                    "daily_m3_commercial": round(daily_m3_commercial, 2),
                 }
 
     total_chemical_cost = sum(v["annual_cost_AUD"] for v in chemicals_used.values())
