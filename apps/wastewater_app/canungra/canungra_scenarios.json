@@ -1,0 +1,704 @@
+{
+  "metadata": {
+    "plant": "Canungra STP",
+    "analysis": "5-stage Bardenpho intensification EP capacity assessment",
+    "source_report": "Tyr Group Biological Treatment Process Design Report Rev B, Jan 2012",
+    "licensed_design_EP": 1500,
+    "licence_limits": {
+      "TN_mgL_median_50": 5,
+      "TN_mgL_80ile": 10,
+      "TN_mgL_max": 15,
+      "TN_mass_kg_per_year": 607,
+      "TP_mgL_median_50": 1,
+      "TP_mgL_80ile": 2,
+      "TP_mgL_max": 3,
+      "TP_mass_kg_per_year": 122,
+      "NH3_mgL_80ile": 2,
+      "NH3_mgL_max": 4,
+      "BOD5_mgL_80ile": 15,
+      "BOD5_mgL_max": 20,
+      "TSS_mgL_80ile": 23,
+      "TSS_mgL_max": 30
+    },
+    "critical_constraint": "TN = 5 mg/L median is HARD LIMIT (non-negotiable)",
+    "critical_note_for_claude": "Canungra is 5-STAGE BARDENPHO not MLE. Two distinct denit zones. Use full mass balance across both anoxic zones, not MLE effluent formulas.",
+    "critical_constraint_v2": "Membrane tank volume is SET by membrane area \u00d7 packing density requirements at the target EP. Cannot arbitrarily shrink membrane tank to free volume for biology without proving membrane area still meets hydraulic demand.",
+    "template_version": "Rev 20 (April 2026)",
+    "variants_documented": 5,
+    "preferred_concepts": [
+      "S2_C3_series_parallel",
+      "S2_E_aerobic_shifted"
+    ],
+    "preferred_concept_notes": "Two preferred concepts sit alongside each other pending Phase 2 verification. S2-C3 has conservative post-anoxic sizing (142 kL effective). S2-E has simpler process flow with flow balancing (requires RFC-12). Choice between them depends on RFC-04 (S2-C3 hydraulics) and RFC-12 (S2-E flow balancing)."
+  },
+  "influent_design": {
+    "ADWF_L_per_EP_per_day": 200,
+    "AAL": {
+      "COD_mgL": 701,
+      "BOD5_mgL": 285,
+      "TKN_mgL": 62,
+      "TP_mgL": 10.5,
+      "ISS_mgL": 50
+    },
+    "MML": {
+      "COD_mgL": 876,
+      "BOD5_mgL": 356,
+      "TKN_mgL": 71,
+      "TP_mgL": 12.1,
+      "ISS_mgL": 50
+    },
+    "fractionation": {
+      "Fus": 0.032,
+      "Fup": 0.23,
+      "Fbs": 0.187,
+      "Fxsp": 0.83,
+      "Fna": 0.69,
+      "Fac": 0.244,
+      "rDON_mgL": 1.2
+    },
+    "peaking_factors": {
+      "PDWF_to_ADWF": 2.2,
+      "minDWF_to_ADWF": 0.33,
+      "PWWF_to_ADWF": 10.0,
+      "bypass_threshold_xADWF": 3.0
+    }
+  },
+  "temperature_scenarios": {
+    "winter_min": 17,
+    "mean": 23,
+    "summer_max": 28,
+    "cold_snap_extreme": 14
+  },
+  "scenarios": {
+    "S0_rev_b_baseline": {
+      "description": "Rev B as designed and constructed",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 38.0,
+        "MBR_tanks": 118
+      },
+      "ifas": {
+        "enabled": false,
+        "fill_fraction": 0,
+        "SSA_m2_per_m3": 0,
+        "biofilm_nit_flux_20C_gN_m2_d": 0
+      },
+      "membrane": {
+        "type": "kubota_flat_sheet",
+        "installed_area_m2": 1280,
+        "MLSS_floor_mgL": 7500,
+        "net_flux_design_m3_m2_d": 0.5,
+        "scour_type": "continuous",
+        "scour_air_Nm3_per_h": 480,
+        "MLSS_ceiling_mgL": 12000
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 14,
+        "A_recycle_control": "fixed_absolute_flow",
+        "S_recycle_x_ADWF": 6,
+        "S_recycle_control": "flow_paced_to_influent",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_influent"
+      },
+      "operating": {
+        "design_SRT_days": 34,
+        "initial_SRT_days": 57,
+        "design_MLSS_bio_mgL": 7100,
+        "design_MLSS_MBR_mgL": 8675,
+        "VSS_per_EP_gEPd_AAL": 43,
+        "VSS_per_EP_gEPd_MML": 53.5,
+        "aerobic_DO_setpoint_mgL": 2.0,
+        "NH3_eff_target_mgL": 0.5,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "chemicals": {
+        "carbon_source": "liquid_sugar_67pct_ww",
+        "sugar_Ld_avg_AAL": 39,
+        "sugar_Ld_peak_MML": 94,
+        "alum_Ld_avg": 38,
+        "alum_Ld_peak": 137,
+        "NaOH_Ld_avg": 69,
+        "NaOH_Ld_peak": 187
+      },
+      "intensification_moves": [],
+      "as_built_note": "Two 59 kL MBR tanks per civil drawing 8720Y-050. Combined 118 kL (Rev B stated 130 kL includes plenum/piping)."
+    },
+    "S1A_controls_only": {
+      "description": "S1A \u2014 Controls and operational upgrades only. Flow-paced all three recycles, instrumentation audit, SRT/DO optimisation. No IFAS carriers. No civil work.",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 38.0,
+        "MBR_tanks": 118.0
+      },
+      "ifas": {
+        "enabled": false,
+        "fill_fraction": 0,
+        "SSA_m2_per_m3": 0,
+        "biofilm_nit_flux_20C_gN_m2_d": 0
+      },
+      "membrane": {
+        "type": "kubota_flat_sheet",
+        "installed_area_m2": 1280,
+        "MLSS_floor_mgL": 7500,
+        "net_flux_design_m3_m2_d": 0.5,
+        "MLSS_ceiling_mgL": 12000
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 14,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 6,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "de_aeration",
+        "_note": "Rev B ratios retained; only control mode changes to flow-paced"
+      },
+      "operating": {
+        "design_SRT_days": 30,
+        "design_MLSS_bio_mgL": 6800,
+        "VSS_per_EP_gEPd_AAL": 46,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "capex_estimate_AUD": {
+        "instrumentation_audit_and_install": 60000,
+        "A_recycle_VSD_upgrade": 45000,
+        "S_recycle_VSD_upgrade": 25000,
+        "R_recycle_VSD_upgrade": 15000,
+        "control_system_SCADA_logic": 40000,
+        "commissioning_operator_training": 30000,
+        "engineering_contingency_30pct": 64500,
+        "total": 279500
+      }
+    },
+    "S1B_controls_plus_ifas": {
+      "description": "S1B \u2014 S1A plus IFAS carriers in aerobic zone (conditional: requires nitrification audit showing IFAS headroom adds value).",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 38.0,
+        "MBR_tanks": 118.0
+      },
+      "ifas": {
+        "enabled": true,
+        "fill_fraction": 0.4,
+        "SSA_m2_per_m3": 800,
+        "carrier_volume_m3": 46.8,
+        "biofilm_SA_m2": 37440,
+        "biofilm_nit_flux_20C_gN_m2_d": 0.9,
+        "biofilm_nit_flux_17C_gN_m2_d": 0.7
+      },
+      "membrane": {
+        "type": "kubota_flat_sheet",
+        "installed_area_m2": 1280,
+        "MLSS_floor_mgL": 7500,
+        "net_flux_design_m3_m2_d": 0.5,
+        "MLSS_ceiling_mgL": 12000
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 14,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 6,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "de_aeration",
+        "_note": "Rev B ratios retained; only control mode changes to flow-paced"
+      },
+      "operating": {
+        "design_SRT_days": 30,
+        "design_MLSS_bio_mgL": 6800,
+        "VSS_per_EP_gEPd_AAL": 46,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "intensification_moves": [
+        "IFAS_carriers_aerobic",
+        "flow_paced_A_recycle"
+      ],
+      "capex_estimate_AUD": {
+        "S1A_controls_work_included": 279500,
+        "IFAS_carriers_K5_40pct_fill": 164500,
+        "retention_screens": 85000,
+        "aeration_grid_modification": 25000,
+        "installation": 40000,
+        "engineering_contingency_30pct": 178350,
+        "total": 772850
+      }
+    },
+    "S2_A_combined": {
+      "description": "S2-A: Remove internal MBR wall to create combined 156 kL post-anoxic (38 existing + 118 former MBR bay). HF MBR in new ~20 kL tank. Single MeOH dosing point. Optimised recycles (A=10x, S=5x, R=1x from post-anoxic).",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 156.0,
+        "MBR_tanks": 20.0
+      },
+      "ifas": {
+        "enabled": true,
+        "fill_fraction": 0.4,
+        "SSA_m2_per_m3": 800,
+        "biofilm_nit_flux_20C_gN_m2_d": 0.9
+      },
+      "membrane": {
+        "type": "hollow_fibre_new_tank",
+        "installed_area_m2": 1500,
+        "MLSS_floor_mgL": 5000,
+        "MLSS_ceiling_mgL": 10000,
+        "net_flux_design_m3_m2_d": 1.0,
+        "packing_density_m2_per_m3": 90,
+        "tank_volume_kL": 20,
+        "design_note": "New HF MBR tank ~20 kL. Supports up to ~5000 EP hydraulically."
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 10,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 5,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "post_anoxic_outlet",
+        "_design_basis": "A=10x reduced from Rev B 14x (saves ~28% pumping, costs ~2.5% capacity). S=5x reduced from 6x (better HF MLSS match, 17% pump saving). R-recycle redirected to post-anoxic outlet for near-zero NO3 in anaerobic zone (improves bio-P, reduces alum)."
+      },
+      "operating": {
+        "design_SRT_days": 25,
+        "design_MLSS_bio_mgL": 6500,
+        "VSS_per_EP_gEPd_AAL": 48,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "intensification_moves": [
+        "IFAS_carriers_aerobic",
+        "repack_kubota_modern",
+        "enlarge_post_anoxic_52kL",
+        "flow_paced_A_recycle"
+      ],
+      "capex_estimate_AUD": {
+        "IFAS_aerobic_retrofit": 314500,
+        "HF_MBR_equipment_new": 700000,
+        "HF_MBR_new_tank_civil": 250000,
+        "remove_internal_MBR_wall": 60000,
+        "convert_MBR_bay_to_postanox": 120000,
+        "kubota_decommission_disposal": 40000,
+        "hazardous_MeOH_storage": 180000,
+        "installation": 100000,
+        "engineering_contingency_30pct": 641850,
+        "total": 2781350,
+        "A_recycle_pumps_upsized": 90000,
+        "S_recycle_pumps_upsized": 60000,
+        "R_recycle_repiping_to_postanox": 25000,
+        "HF_MBR_interconnect_electrical": 200000
+      },
+      "feasibility_EP_ceiling": 4300,
+      "as_built_advantage": "Tank 2 already exists with bottom slope, inlet/outlet, freeboard. Civil work = baffle wall, mixer install, pipe rework. NOT a new tank construction."
+    },
+    "S2_B_parallel": {
+      "description": "S2-B: Parallel post-anoxic 38+59+59 kL with wall retained. Flow distribution chamber splits flow 24:38:38. Three MeOH dosing points proportional to flow. Biologically equivalent to S2-A, adds +AUD 263k for wall retention + flow split.",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 156.0,
+        "MBR_tanks": 20.0
+      },
+      "ifas": {
+        "enabled": true,
+        "fill_fraction": 0.4,
+        "SSA_m2_per_m3": 800,
+        "biofilm_nit_flux_20C_gN_m2_d": 0.9
+      },
+      "membrane": {
+        "type": "hollow_fibre_new_tank",
+        "installed_area_m2": 1500,
+        "MLSS_floor_mgL": 5000,
+        "MLSS_ceiling_mgL": 10000,
+        "net_flux_design_m3_m2_d": 1.0,
+        "packing_density_m2_per_m3": 90,
+        "tank_volume_kL": 20,
+        "design_note": "New HF MBR tank ~20 kL. Supports up to ~5000 EP hydraulically."
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 10,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 5,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "post_anoxic_outlet",
+        "_design_basis": "A=10x reduced from Rev B 14x (saves ~28% pumping, costs ~2.5% capacity). S=5x reduced from 6x (better HF MLSS match, 17% pump saving). R-recycle redirected to post-anoxic outlet for near-zero NO3 in anaerobic zone (improves bio-P, reduces alum)."
+      },
+      "operating": {
+        "design_SRT_days": 25,
+        "design_MLSS_bio_mgL": 6500,
+        "VSS_per_EP_gEPd_AAL": 48,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "intensification_moves": [
+        "IFAS_carriers_aerobic",
+        "repack_kubota_modern",
+        "enlarge_post_anoxic_52kL",
+        "flow_paced_A_recycle"
+      ],
+      "capex_estimate_AUD": {
+        "IFAS_aerobic_retrofit": 314500,
+        "HF_MBR_equipment_new": 700000,
+        "HF_MBR_new_tank_civil": 250000,
+        "remove_internal_MBR_wall": 60000,
+        "convert_MBR_bay_to_postanox": 120000,
+        "kubota_decommission_disposal": 40000,
+        "hazardous_MeOH_storage": 180000,
+        "installation": 100000,
+        "engineering_contingency_30pct": 641850,
+        "total": 2781350,
+        "A_recycle_pumps_upsized": 90000,
+        "S_recycle_pumps_upsized": 60000,
+        "R_recycle_repiping_to_postanox": 25000,
+        "HF_MBR_interconnect_electrical": 200000
+      },
+      "feasibility_EP_ceiling": 4300,
+      "as_built_advantage": "Tank 2 already exists with bottom slope, inlet/outlet, freeboard. Civil work = baffle wall, mixer install, pipe rework. NOT a new tank construction.",
+      "note": "Same total post-anoxic volume (156 kL) as S2-A, so same biology. Parallel hydraulic config."
+    },
+    "S2_C3_series_parallel": {
+      "description": "S2-C3: RECOMMENDED. Series 38 kL endogenous pre-stage then 50:50 split to parallel 59+59 kL cells with MeOH dosing. No MeOH at 38 kL. Two dosing points (50:50 symmetric). No wall removal. Effective post-anox ~142 kL.",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 142,
+        "MBR_tanks": 20.0
+      },
+      "ifas": {
+        "enabled": true,
+        "fill_fraction": 0.4,
+        "SSA_m2_per_m3": 800,
+        "biofilm_nit_flux_20C_gN_m2_d": 0.9
+      },
+      "membrane": {
+        "type": "hollow_fibre_new_tank",
+        "installed_area_m2": 1500,
+        "MLSS_floor_mgL": 5000,
+        "MLSS_ceiling_mgL": 10000,
+        "net_flux_design_m3_m2_d": 1.0,
+        "packing_density_m2_per_m3": 90,
+        "tank_volume_kL": 20,
+        "design_note": "New HF MBR tank ~20 kL. Supports up to ~5000 EP hydraulically."
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 10,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 5,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "post_anoxic_outlet",
+        "_design_basis": "A=10x reduced from Rev B 14x (saves ~28% pumping, costs ~2.5% capacity). S=5x reduced from 6x (better HF MLSS match, 17% pump saving). R-recycle redirected to post-anoxic outlet for near-zero NO3 in anaerobic zone (improves bio-P, reduces alum)."
+      },
+      "operating": {
+        "design_SRT_days": 25,
+        "design_MLSS_bio_mgL": 6500,
+        "VSS_per_EP_gEPd_AAL": 48,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "intensification_moves": [
+        "IFAS_carriers_aerobic",
+        "repack_kubota_modern",
+        "enlarge_post_anoxic_52kL",
+        "flow_paced_A_recycle"
+      ],
+      "capex_estimate_AUD": {
+        "IFAS_aerobic_retrofit": 314500,
+        "HF_MBR_equipment_new": 700000,
+        "HF_MBR_new_tank_civil": 250000,
+        "remove_internal_MBR_wall": 60000,
+        "convert_MBR_bay_to_postanox": 120000,
+        "kubota_decommission_disposal": 40000,
+        "hazardous_MeOH_storage": 180000,
+        "installation": 100000,
+        "engineering_contingency_30pct": 641850,
+        "total": 2781350,
+        "A_recycle_pumps_upsized": 90000,
+        "S_recycle_pumps_upsized": 60000,
+        "R_recycle_repiping_to_postanox": 25000,
+        "HF_MBR_interconnect_electrical": 200000
+      },
+      "feasibility_EP_ceiling": 4300,
+      "as_built_advantage": "Tank 2 already exists with bottom slope, inlet/outlet, freeboard. Civil work = baffle wall, mixer install, pipe rework. NOT a new tank construction.",
+      "note": "RECOMMENDED S2 variant. Effective 142 kL captures endogenous value of 38 kL chamber without MeOH there."
+    },
+    "S2_D_parallel_only": {
+      "description": "S2-D: Parallel-only 59+59 kL cells with 38 kL chamber decommissioned (repurposed). Two MeOH dosing points (50:50 symmetric). Lowest cost S2 variant. 118 kL total post-anoxic.",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 118,
+        "MBR_tanks": 20.0
+      },
+      "ifas": {
+        "enabled": true,
+        "fill_fraction": 0.4,
+        "SSA_m2_per_m3": 800,
+        "biofilm_nit_flux_20C_gN_m2_d": 0.9
+      },
+      "membrane": {
+        "type": "hollow_fibre_new_tank",
+        "installed_area_m2": 1500,
+        "MLSS_floor_mgL": 5000,
+        "MLSS_ceiling_mgL": 10000,
+        "net_flux_design_m3_m2_d": 1.0,
+        "packing_density_m2_per_m3": 90,
+        "tank_volume_kL": 20,
+        "design_note": "New HF MBR tank ~20 kL. Supports up to ~5000 EP hydraulically."
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 10,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 5,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "post_anoxic_outlet",
+        "_design_basis": "A=10x reduced from Rev B 14x (saves ~28% pumping, costs ~2.5% capacity). S=5x reduced from 6x (better HF MLSS match, 17% pump saving). R-recycle redirected to post-anoxic outlet for near-zero NO3 in anaerobic zone (improves bio-P, reduces alum)."
+      },
+      "operating": {
+        "design_SRT_days": 25,
+        "design_MLSS_bio_mgL": 6500,
+        "VSS_per_EP_gEPd_AAL": 48,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "intensification_moves": [
+        "IFAS_carriers_aerobic",
+        "repack_kubota_modern",
+        "enlarge_post_anoxic_52kL",
+        "flow_paced_A_recycle"
+      ],
+      "capex_estimate_AUD": {
+        "IFAS_aerobic_retrofit": 314500,
+        "HF_MBR_equipment_new": 700000,
+        "HF_MBR_new_tank_civil": 250000,
+        "remove_internal_MBR_wall": 60000,
+        "convert_MBR_bay_to_postanox": 120000,
+        "kubota_decommission_disposal": 40000,
+        "hazardous_MeOH_storage": 180000,
+        "installation": 100000,
+        "engineering_contingency_30pct": 641850,
+        "total": 2781350,
+        "A_recycle_pumps_upsized": 90000,
+        "S_recycle_pumps_upsized": 60000,
+        "R_recycle_repiping_to_postanox": 25000,
+        "HF_MBR_interconnect_electrical": 200000
+      },
+      "feasibility_EP_ceiling": 4300,
+      "as_built_advantage": "Tank 2 already exists with bottom slope, inlet/outlet, freeboard. Civil work = baffle wall, mixer install, pipe rework. NOT a new tank construction.",
+      "note": "Lowest-cost S2 variant. 38 kL chamber decommissioned for other use."
+    },
+    "S2_E_aerobic_shifted": {
+      "description": "S2-E: Aerobic-shifted with flow balancing. Existing 38 kL post-anoxic CONVERTED to aerobic (aerobic = 117 + 38 = 155 kL, +32%). Former MBR bay (2x59 kL = 118 kL) becomes single post-anoxic zone. New MBR structure incorporates flow balancing (~10 kL balance + ~20 kL membrane). Single MeOH dosing point. No wall removal required.",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 155,
+        "de_aeration": 21.8,
+        "post_anoxic": 118,
+        "MBR_tanks": 20.0
+      },
+      "ifas": {
+        "enabled": true,
+        "fill_fraction": 0.4,
+        "SSA_m2_per_m3": 800,
+        "biofilm_nit_flux_20C_gN_m2_d": 0.9
+      },
+      "membrane": {
+        "type": "hollow_fibre_new_tank",
+        "installed_area_m2": 1500,
+        "MLSS_floor_mgL": 5000,
+        "MLSS_ceiling_mgL": 10000,
+        "net_flux_design_m3_m2_d": 1.0,
+        "packing_density_m2_per_m3": 90,
+        "tank_volume_kL": 20,
+        "design_note": "New HF MBR tank ~20 kL. Supports up to ~5000 EP hydraulically."
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 10,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 5,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "post_anoxic_outlet",
+        "_design_basis": "A=10x reduced from Rev B 14x (saves ~28% pumping, costs ~2.5% capacity). S=5x reduced from 6x (better HF MLSS match, 17% pump saving). R-recycle redirected to post-anoxic outlet for near-zero NO3 in anaerobic zone (improves bio-P, reduces alum)."
+      },
+      "operating": {
+        "design_SRT_days": 25,
+        "design_MLSS_bio_mgL": 6500,
+        "VSS_per_EP_gEPd_AAL": 48,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "intensification_moves": [
+        "IFAS_carriers_aerobic",
+        "repack_kubota_modern",
+        "enlarge_post_anoxic_52kL",
+        "flow_paced_A_recycle"
+      ],
+      "capex_estimate_AUD": {
+        "IFAS_aerobic_retrofit": 314500,
+        "HF_MBR_equipment_new": 700000,
+        "HF_MBR_new_tank_civil": 250000,
+        "remove_internal_MBR_wall": 60000,
+        "convert_MBR_bay_to_postanox": 120000,
+        "kubota_decommission_disposal": 40000,
+        "hazardous_MeOH_storage": 180000,
+        "installation": 100000,
+        "engineering_contingency_30pct": 641850,
+        "total": 2781350,
+        "A_recycle_pumps_upsized": 90000,
+        "S_recycle_pumps_upsized": 60000,
+        "R_recycle_repiping_to_postanox": 25000,
+        "HF_MBR_interconnect_electrical": 200000
+      },
+      "feasibility_EP_ceiling": 4300,
+      "as_built_advantage": "Tank 2 already exists with bottom slope, inlet/outlet, freeboard. Civil work = baffle wall, mixer install, pipe rework. NOT a new tank construction.",
+      "flow_balancing": {
+        "enabled": true,
+        "balance_volume_m3": 10,
+        "design_retention_hours": 3,
+        "peak_attenuation_factor": 0.79,
+        "note": "Flow balancing attenuates MML peak loading. Capacity uplift from ~4,500 EP (S2-D equivalent, no balance) to ~5,700 EP at 2-4 hour balance retention. Requires RFC-12 dynamic simulation to confirm."
+      },
+      "note": "Fifth S2 variant added Rev 20. Flow balancing is load-bearing for capacity recovery: without balance tank, capacity = S2-D (4,500 EP). RFC-12 dynamic simulation required before capital commitment."
+    },
+    "S2_ifas_plus_postanox": {
+      "description": "S2-A: Remove internal MBR wall to create combined 156 kL post-anoxic (38 existing + 118 former MBR bay). HF MBR in new ~20 kL tank. Single MeOH dosing point. Optimised recycles (A=10x, S=5x, R=1x from post-anoxic).",
+      "zone_volumes_kL": {
+        "anaerobic": 68.8,
+        "primary_anoxic": 120,
+        "aerobic": 117,
+        "de_aeration": 21.8,
+        "post_anoxic": 156.0,
+        "MBR_tanks": 20.0
+      },
+      "ifas": {
+        "enabled": true,
+        "fill_fraction": 0.4,
+        "SSA_m2_per_m3": 800,
+        "biofilm_nit_flux_20C_gN_m2_d": 0.9
+      },
+      "membrane": {
+        "type": "hollow_fibre_new_tank",
+        "installed_area_m2": 1500,
+        "MLSS_floor_mgL": 5000,
+        "MLSS_ceiling_mgL": 10000,
+        "net_flux_design_m3_m2_d": 1.0,
+        "packing_density_m2_per_m3": 90,
+        "tank_volume_kL": 20,
+        "design_note": "New HF MBR tank ~20 kL. Supports up to ~5000 EP hydraulically."
+      },
+      "recycles": {
+        "A_recycle_x_ADWF": 10,
+        "A_recycle_control": "flow_paced_to_instantaneous",
+        "S_recycle_x_ADWF": 5,
+        "S_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_x_influent": 1,
+        "R_recycle_control": "flow_paced_to_instantaneous",
+        "R_recycle_source": "post_anoxic_outlet",
+        "_design_basis": "A=10x reduced from Rev B 14x (saves ~28% pumping, costs ~2.5% capacity). S=5x reduced from 6x (better HF MLSS match, 17% pump saving). R-recycle redirected to post-anoxic outlet for near-zero NO3 in anaerobic zone (improves bio-P, reduces alum)."
+      },
+      "operating": {
+        "design_SRT_days": 25,
+        "design_MLSS_bio_mgL": 6500,
+        "VSS_per_EP_gEPd_AAL": 48,
+        "PAO_frac_RBCOD_uptake": 0.4
+      },
+      "intensification_moves": [
+        "IFAS_carriers_aerobic",
+        "repack_kubota_modern",
+        "enlarge_post_anoxic_52kL",
+        "flow_paced_A_recycle"
+      ],
+      "capex_estimate_AUD": {
+        "IFAS_aerobic_retrofit": 314500,
+        "HF_MBR_equipment_new": 700000,
+        "HF_MBR_new_tank_civil": 250000,
+        "remove_internal_MBR_wall": 60000,
+        "convert_MBR_bay_to_postanox": 120000,
+        "kubota_decommission_disposal": 40000,
+        "hazardous_MeOH_storage": 180000,
+        "installation": 100000,
+        "engineering_contingency_30pct": 641850,
+        "total": 2781350,
+        "A_recycle_pumps_upsized": 90000,
+        "S_recycle_pumps_upsized": 60000,
+        "R_recycle_repiping_to_postanox": 25000,
+        "HF_MBR_interconnect_electrical": 200000
+      },
+      "feasibility_EP_ceiling": 4300,
+      "as_built_advantage": "Tank 2 already exists with bottom slope, inlet/outlet, freeboard. Civil work = baffle wall, mixer install, pipe rework. NOT a new tank construction."
+    }
+  },
+  "kinetic_parameters": {
+    "_provenance": "Confirmed SE QLD values per ph2o Consulting (P. Hillis, April 2026). Tyr Group Rev B BioWin used defaults with one explicit Kn change. Values below reflect SE QLD calibration.",
+    "_calibration_status": "VALIDATED for Rev B baseline at 1500 EP: TN ~ 1.85-3.5 mg/L vs Rev B BioWin band 2.5-4.0 (slightly optimistic at low end but inside band)",
+    "K2_primary_anoxic_20C_gN_gVSS_d": 0.11,
+    "K2_endogenous_postanox_20C_gN_gVSS_d": 0.05,
+    "K2_MeOH_acclimated_20C_gN_gVSS_d": 0.12,
+    "theta_K2": 1.08,
+    "theta_endogenous": 1.1,
+    "mu_nit_max_20C_per_day": 0.9,
+    "Kn_mgN_L": 0.3,
+    "_Kn_note": "Rev B explicit deviation from BioWin default of 0.7 mgN/L",
+    "theta_nitrification": 1.1,
+    "Y_AOB_g_VSS_per_g_NH3N": 0.15,
+    "b_AOB_20C_per_day": 0.05,
+    "MeOH_per_NO3N_stoichiometry_g_g": 3.5,
+    "sugar_per_NO3N_stoichiometry_g_g": 4.9,
+    "COD_per_N_denit_carbonaceous": 7.0,
+    "alpha_factor_IFAS_aerobic": 0.55,
+    "SBCOD_hydrolysis_boost_factor": 1.2,
+    "_se_qld_calibration": [
+      "K2 primary anoxic (RBCOD): 0.10-0.12 gN/gVSS/d at 20\u00b0C \u2014 confirmed for SE QLD biomass",
+      "K3 endogenous post-anox: 0.05 gN/gVSS/d at 20\u00b0C \u2014 standard endogenous rate",
+      "K3 MeOH-acclimated: 0.10-0.15 gN/gVSS/d at 20\u00b0C \u2014 typical for acclimated methylotrophs"
+    ],
+    "_remaining_uncertainty": "With SE QLD K2/K3 applied, dominant remaining uncertainty is K2_MeOH_acclimated (0.10-0.15 range). SBCOD_hydrolysis_boost (1.0-1.4) is second-order. Bench test on Canungra biomass would tighten K2_MeOH."
+  },
+  "DIL_framework_inputs": {
+    "notes": "Maps this analysis to WaterPoint 9-part Decision Intelligence Layer",
+    "decision_question": "Should Canungra STP be intensified to 3000+ EP using IFAS + enlarged post-anoxic + HF MBR, or should an expansion/greenfield be planned?",
+    "scenarios_to_compare": [
+      "S0_rev_b_baseline",
+      "S1_ifas_only",
+      "S2_ifas_plus_postanox",
+      "S3_ifas_postanox_hf_mbr"
+    ],
+    "key_uncertainties": [
+      "K2_primary_20C (range 0.050-0.090)",
+      "IFAS biofilm nitrification flux at 17C (range 0.4-0.9 gN/m2/d)",
+      "Post-anoxic endogenous rate at 17C (range 0.012-0.028 gN/gVSS/d)",
+      "SBCOD hydrolysis boost (range 1.0-1.4)",
+      "Future EP growth rate (range 1500-4000 by 2040)"
+    ],
+    "binding_constraints_per_scenario": "To be populated from simulation outputs"
+  },
+  "licence_interpretation": {
+    "default": "B",
+    "description": {
+      "A": "607 kg TN/yr hard cap regardless of EP (conservative interpretation)",
+      "B": "607 kg/yr scales with design EP: limit = 607 * (EP / 1500) kg/yr"
+    },
+    "design_basis_ep_rev_b": 1500,
+    "design_basis_concentration_mgL": 5.0,
+    "wet_weather_allowance": 1.1,
+    "formula": "mass_limit = concentration * flow * 365 * wet_weather_allowance"
+  }
+}

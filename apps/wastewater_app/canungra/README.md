@@ -1,169 +1,163 @@
-# Water Utility Planning Platform
+# Canungra STP Intensification — WaterPoint Scenario Package
 
-Capital planning decision support platform for water utilities and consultants.
-Produces concept-level options studies aligned with how utilities make investment decisions.
+**Version:** Rev 20 (April 2026)
+**Location:** `apps/wastewater_app/canungra/`
 
-## What it does
+## What's in this package
 
-Given wastewater treatment options and site conditions, the platform:
+```
+canungra/
+├── canungra_diurnal_profile.json    # Rev B Figure 3.1 profile (30-min resolution)
+├── canungra_scenarios.json           # 8 scenarios: S0, S1A, S1B, S2-A/B/C3/D/E
+├── canungra_runner.py                # Bardenpho solver with dual-interpretation licence
+├── canungra_streamlit.py             # WaterPoint-compatible UI module
+├── tests/
+│   └── test_calibration.py           # 14 tests: calibration + S2 variants + S2-E
+└── README.md                         # This file
+```
 
-1. **Calculates** engineering performance — energy, sludge, effluent quality, carbon
-2. **Costs** each option — CAPEX, OPEX, lifecycle cost, $/kL treated
-3. **Ranks** options using a strict compliance → cost → risk hierarchy
-4. **Identifies** non-viable options with engineering reasons
-5. **Generates** alternative pathways (e.g. BNR + thermal management instead of MABR)
-6. **Frames** the decision for executives: two options, what you get, what you accept
-7. **Produces** a full options study report in Word format
+## Capacity ladder (Rev 20, Interpretation B strategic planning basis)
 
-Current scope: wastewater treatment (activated sludge domain).
-Stubs ready for drinking water, PRW, and biosolids.
+| Scenario | Max EP | Capex (AUD) | Binding constraint |
+|---|---|---|---|
+| S0 Rev B baseline | 1,500 | — | Current licence |
+| S1A Controls only | 1,900 | ~280k | Peak TN (MML) |
+| S1B S1A + IFAS | 2,100 | ~900k | Peak TN (MML) |
+| S2-D Parallel-only (118 kL) | 4,500 | ~3.30M | Peak TN (MML) ~14.6 mg/L |
+| **S2-C3 ★ Series-parallel (eff 142 kL)** | **5,500** | **~3.56M** | **Peak TN (MML) ~14.9 mg/L** |
+| S2-A/B Full 156 kL | 6,000 | 3.36M / 3.62M | Peak TN (MML) ~14.7 mg/L |
+| **S2-E ★ Aerobic-shifted (NEW Rev 20)** | **5,500–6,000** | **~3.5–3.8M** | **Peak TN; depends on RFC-12 flow balancing** |
 
----
+**Interpretation B** is tested as the strategic planning basis (see Section 2.3 of the report). Under **Interpretation A** (hard 607 kg/yr cap), S2 reverts to 4,000 EP maximum. See `canungra_runner.py::LicenceLimits` for implementation of the `get_mass_limit(EP)` toggle.
 
-## Quick Start
+## The five S2 configuration variants
+
+All five share the same upstream and downstream architecture. They differ in how the MBR bay and existing post-anoxic tank are reconfigured, how flow is distributed, and whether flow balancing is incorporated.
+
+- **S2-A** Combined post-anoxic (wall removed): 156 kL, single MeOH dose, needs RFC-05 structural review
+- **S2-B** Parallel 38+59+59: 156 kL total, 3-point proportional MeOH, wall retained
+- **S2-C3 ★** Series-parallel: 38 kL endo pre-stage, 2 parallel 59 kL cells with MeOH (eff 142 kL)
+- **S2-D** Parallel-only: 38 kL decommissioned, two 59 kL cells only (118 kL)
+- **S2-E ★** Aerobic-shifted with flow balancing: existing 38 kL post-anoxic CONVERTED to aerobic (155 kL aerobic), former MBR bay becomes post-anoxic (118 kL), new MBR structure with integrated flow balancing
+
+**Two preferred concepts** sit alongside each other for Phase 2 pre-feasibility development:
+- **S2-C3** — conservative post-anoxic sizing, simpler dosing
+- **S2-E** — simpler process flow, no wall removal, flow balancing adds operational robustness
+
+Choice between them depends on RFC-04 (S2-C3 hydraulics) and RFC-12 (S2-E flow balancing dynamic simulation).
+
+## Decision tree for S2 variant selection
+
+| Growth horizon | Wall removal? | Preferred concept |
+|---|---|---|
+| ≤ 4,000 EP | Either | S2-D (lowest cost) |
+| **4,000 – 5,500 EP** | **Either** | **S2-C3 ★ or S2-E ★ (parallel preferred concepts)** |
+| 5,500 – 6,000 EP | No | S2-E ★ (flow balancing) or S2-B (parallel) |
+| 5,500 – 6,000 EP | Yes | S2-A (combined) or S2-E |
+| > 6,000 EP | Either | S2 exceeded — external post-anoxic or new aerobic |
+
+## Licence interpretation (Rev 16+ key concept)
+
+The 607 kg TN/yr annual mass limit is a derived quantity from Rev B Table 2.1 fn 1:
+
+```
+Annual Mass Load = Median Concentration × ADWF × 365 × 1.10 (wet weather)
+At 1,500 EP: 5 mg/L × 300 kL/d × 365 × 1.10 = 603 kg/yr → rounded to 607
+```
+
+Two interpretations apply at re-licensing:
+
+- **Interpretation A (hard cap):** 607 kg/yr fixed regardless of EP (conservative)
+- **Interpretation B (scales, Rev 18+ strategic planning basis):** Mass limit re-scales with design EP via the Rev B formula. At 5,500 EP → 2,226 kg/yr cap.
+
+Use `LicenceLimits(interpretation='A')` or `'B'`. Default is `'B'`.
+`get_mass_limit(EP)` returns the applicable limit for the design population.
+
+**RFC-10 is the Stage 0 gateway** — regulator consultation should precede any capital commitment or organisational commitment to S2 as a 5,500+ EP strategy. Rev 18 reframed this from "one of many verification items" to "the gateway question that determines whether the strategic narrative is defensible at all".
+
+## Environmental context (Rev 17 Section 5.4)
+
+| Scenario | EP | TN discharge (kg/yr) | × vs baseline |
+|---|---|---|---|
+| S0 Rev B | 1,500 | 578 | 1.00× |
+| S1A | 1,900 | 587 | 1.02× |
+| S1B | 2,100 | 583 | 1.01× |
+| S2-D | 4,500 | 744 | 1.29× |
+| **S2-C3 ★** | **5,500** | **1,171** | **2.03×** |
+| S2-A/B | 6,000 | 1,338 | 2.31× |
+
+S1A/S1B achieve higher EP with essentially flat total discharge (improved concentration offsets increased flow). S2 variants double or triple total annual TN discharge to the receiving waterway.
+
+**Treatment efficiency actually improves:** 91% TN removal at S0 → 95% at S2-C3. Higher total discharge reflects serving more people, not degraded treatment.
+
+The receiving water assessment and regulator engagement are **QUU's workstream** (Rev 19 clarification). Our engineering role is to quantify and minimise within process constraints; we do not make environmental judgements on the utility's behalf.
+
+## Calibrated kinetics (SE QLD subtropical, 17°C winter)
+
+| Parameter | 20°C value | Source |
+|---|---|---|
+| K2 primary anoxic (RBCOD-driven) | 0.11 gN/gVSS/d | SE QLD confirmed |
+| K3 endogenous post-anoxic | 0.05 gN/gVSS/d | Standard |
+| K3 MeOH-acclimated | 0.12 gN/gVSS/d | Baseline (RFC-01 to verify on Canungra biomass) |
+| θ for denitrification | 1.08 | Standard |
+| θ for endogenous | 1.10 | Standard |
+| Kn ammonia half-sat | 0.3 mgN/L | Rev B explicit |
+| IFAS biofilm nit flux (17°C) | 0.7 g NH4-N/m²·d base | 0.5–1.1 envelope tested (Section 3.6) |
+
+## Running the tests
 
 ```bash
-pip install -r requirements.txt
-streamlit run apps/wastewater_app/app.py
-
-python3 run_tests.py           # full test suite
-python3 run_tests.py --fast    # skip benchmarks
-python3 run_tests.py --benchmark  # benchmark suite only
+cd ~/wp_new
+python3 apps/wastewater_app/canungra/tests/test_calibration.py
 ```
 
----
+All **14 tests** should pass:
+- 7 calibration tests (Rev B BioWIN baseline validation)
+- 3 S2 variant regression tests (S2-A/B biology, S2-C3 effective volume, S2-D reduced capacity)
+- 2 interpretation toggle tests (A vs B divergence at high EP, convergence at 1,500 EP)
+- **2 S2-E tests (NEW Rev 20)** — volume reallocation, and variant comparison (S2-D >> S2-E ≈ S2-A at 5,500 EP)
 
-## Platform Structure
+## Phase 2 verification workstream
 
-```
-water_platform/
-├── core/                       # Domain-agnostic shared engines
-│   ├── costing/                # CostingEngine: CAPEX, OPEX, LCC, $/kL
-│   ├── carbon/                 # CarbonEngine: Scope 1/2/3, N2O, avoided
-│   ├── risk/                   # RiskEngine: 5x5 matrix, category scores
-│   ├── validation/             # ValidationEngine: hook system
-│   ├── reporting/              # ReportEngine: structured report objects
-│   ├── assumptions/            # AssumptionsManager: YAML defaults per domain
-│   └── project/                # ProjectModel, ScenarioManager
-│
-├── domains/wastewater/         # Wastewater engineering science
-│   ├── technologies/           # BNR, MBR, AGS, MABR+BNR, IFAS/MBBR, ...
-│   ├── domain_interface.py     # Orchestrates run_scenario()
-│   ├── decision_engine.py      # Capital planning decision logic
-│   ├── technology_fit.py       # Green/amber/red fit ratings
-│   └── risk_items.py           # Scenario-sensitive risk items
-│
-├── apps/wastewater_app/pages/  # 11-page Streamlit application
-│   ├── page_01-04              # Setup, inputs, selection, results
-│   ├── page_05                 # Multi-scenario comparison
-│   ├── page_06                 # Report download
-│   ├── page_09-10              # Assumptions viewer, sensitivity analysis
-│   └── page_11_decision.py     # Decision Framework
-│
-├── tests/
-│   ├── benchmark/              # 8-scenario regression suite (282 checks)
-│   ├── core/                   # Engine unit tests
-│   ├── domains/wastewater/     # Engineering + decision engine tests
-│   ├── integration/            # Full pipeline integration
-│   └── test_release_readiness.py
-│
-└── docs/benchmark_scenarios.md
-```
+The following RFCs may need to close before S2 capital commitment (scope depends on preferred concept):
 
----
+| RFC | Scope | Cost (AUD) | Timeline | Applies to |
+|---|---|---|---|---|
+| RFC-01 | K3 methanol-acclimated denit bench testing | 15–25k | 8–12 weeks | All S2 |
+| RFC-02 | Aeration capacity and alpha-factor (for S1B IFAS) | 20–40k | 6–8 weeks | S1B only |
+| RFC-03 | HF MBR vendor specifications and footprint | 10–20k | 4–6 weeks | All S2 |
+| RFC-04 | Post-anoxic hydraulics and mixing (dye tests) | 15–30k | 6–10 weeks | S2-A/B/C3 |
+| RFC-05 | MBR internal wall structural review | 30–50k | 4–6 weeks | **S2-A only** |
+| RFC-06 | Phosphorus compliance at intensified loading | 20–40k | 6–8 weeks | All S2 |
+| RFC-07 | Solids handling capacity at 4,500–6,000 EP | 25–50k | 6–10 weeks | All S2 |
+| RFC-08 | Influent alkalinity confirmation + NaOH dosing | 10–20k | 4–6 weeks | All S2 |
+| RFC-09 | Carrier retention and MBR protection (S1B) | 15–30k | 6–8 weeks | S1B only |
+| **RFC-10** | **Licence mass load basis — Stage 0 gateway** | **5–15k** | **4–8 weeks** | **ALL scenarios (gateway)** |
+| **RFC-12** | **Flow balancing dynamic simulation** | **20–35k** | **4–6 weeks** | **S2-E only (conditional)** |
 
-## Decision Engine
+Note: RFC-11 (receiving water assessment) was removed in Rev 19 — it sits with QUU's environmental workstream, not ours.
 
-`domains/wastewater/decision_engine.py`
+## Change log
 
-### Selection hierarchy (strictly enforced)
+| Rev | Date | Change |
+|---|---|---|
+| Rev 4 | April 2026 | Original Assessment (red-team flagged overclaiming) |
+| Rev 5-8 | April 2026 | Repositioned as Concept Study, alkalinity F8 elevated, IFAS repositioned |
+| Rev 9 | April 2026 | K3 MeOH sensitivity extended to 0.05–0.15 gN/gVSS/d |
+| Rev 10 | April 2026 | 5 charts added for tipping points |
+| Rev 11 | April 2026 | S2 resolved into 4 variants (A/B/C3/D), 7 PFDs, decision tree |
+| Rev 12 | April 2026 | PFDs redrawn in Rev B Tyr Group visual style |
+| Rev 13 | April 2026 | IFAS nitrification flux sensitivity 0.5–1.1 g NH4-N/m²·d at 17°C |
+| Rev 14 | April 2026 | PFD recycle lines redrawn as orthogonal piping |
+| Rev 15 | April 2026 | Mass load dual-interpretation Section 2.3 + RFC-10 added |
+| Rev 16 | April 2026 | Interpretation B tested as strategic planning basis |
+| Rev 17 | April 2026 | Section 5.4 discharge load environmental context |
+| Rev 18 | April 2026 | Red-team response: framing recalibrated, S2-C3 "preferred concept" not "recommended", RFC-10 as Stage 0 gateway |
+| Rev 19 | April 2026 | Environmental scope clarified — RFC-11 removed (QUU workstream) |
+| **Rev 20** | **April 2026** | **S2-E aerobic-shifted variant added, RFC-12 (flow balancing simulation)** |
 
-```
-1. COMPLIANCE   mandatory — non-compliant options excluded first
-2. COST         lowest LCC among compliant options wins
-3. RISK         tiebreaker only — never overrides cost
-```
+## Bundle history
 
-If only one option is compliant, it is recommended regardless of cost or risk.
-Compliance is non-negotiable.
-
-### Key outputs
-
-| Field | Description |
-|-------|-------------|
-| `selection_basis` | Why chosen: "Sole compliant" / "Lowest LCC" / "All fail — reference only" |
-| `non_viable` | Options that fail compliance with reasons |
-| `regulatory_note` | Explains why low regulatory confidence does not block recommendation |
-| `alternative_pathways` | Engineered interventions to make non-viable options viable |
-| `client_framing` | Two-option executive framing: what you get / risks you accept |
-| `confidence` | High / Moderate / Low with drivers and caveats |
-| `profiles` | Delivery model, constructability, staging, ops complexity, failure modes, regulatory |
-
-### Example: S2 Cold Climate Nitrification (12C)
-
-```
-Selection basis: Sole compliant option — compliance constraint forces selection
-Recommended: MABR + BNR
-Non-viable: BNR (NH4=6.0 > target 3.0), AGS (NH4=4.5, TP=1.5), IFAS (TN=14.4)
-
-Alternative pathway: BNR + thermal management (>=15C) + supplemental carbon
-  LCC: $1,324k/yr vs MABR $1,815k/yr  — $491k/yr cheaper
-  CAPEX increment: +$0.8M
-  Procurement: D&C viable
-  Regulatory: High confidence
-
-Recommendation confidence: Moderate
-  Caveat: Alternative pathway available and cheaper — evaluate before committing to MABR
-```
-
----
-
-## Test Suite
-
-| File | Tests | Covers |
-|------|-------|--------|
-| `test_costing_engine.py` | 12 | CAPEX/OPEX/LCC |
-| `test_carbon_engine.py` | 7 | Scope 1/2/3 |
-| `test_engineering_calculations.py` | 30 | O2 demand, SRT, sludge |
-| `test_bnr_mbr.py` | 16 | BNR + MBR technology |
-| `test_decision_engine.py` | 65 | Hierarchy, new fields, consistency |
-| `test_wastewater_full_run.py` | 8 | Full pipeline |
-| `run_benchmarks.py` | 282 | 8 scenarios x 17 metrics + 8 decision-tension checks |
-| `test_release_readiness.py` | 60 | Release gate |
-
-### Benchmark scenarios
-
-| ID | Scenario | Key constraint |
-|----|----------|----------------|
-| S1 | Medium municipal BNR baseline | Reference — all compliant |
-| S2 | Cold climate nitrification (12C) | Only MABR achieves NH4<3 |
-| S3 | Tight ammonia compliance (NH4<1) | All achievable at 18C |
-| S4 | Capacity expansion, footprint constrained | AGS footprint 32% less |
-| S5 | Carbon-limited denitrification (COD/TKN=5.3) | All fail TN without carbon |
-| S6 | High electricity ($0.22/kWh) | AGS wins LCC |
-| S7 | High sludge disposal ($450/t DS) | Sludge = 33% of BNR OPEX |
-| S8 | Reuse-ready polishing | MBR TSS<1 essential for RO |
-
----
-
-## Engineering References
-
-Metcalf & Eddy 5th Ed | WEF Cost Estimating Manual 2018 | de Kreuk 2007 |
-GE/Ovivo 2017 | IWA 2022 | IPCC 2019 Tier 1 | AU Water Association benchmarks
-
-All costs AUD 2024. CAPEX ±40% concept estimate.
-Not for procurement, funding approval, or regulatory submission.
-
----
-
-## Version History
-
-| Version | Notes |
-|---------|-------|
-| 1.0 | Initial — shared core + wastewater domain |
-| 1.1 | Engineering remediation (O2, sludge, cold T, N2O) |
-| 1.2 | Benchmark pack, technology fit, sensitivity, report |
-| 1.3 | Stabilisation sprint (costing, schema, datetime) |
-| 1.4 | Benchmark regression framework (282 checks, decision-tension) |
-| 1.5 | Decision engine (delivery, constructability, staging, failure modes) |
-| 1.6 | Decision integrity (compliance hierarchy, alternative pathways, client framing) |
+- `canungra_v4.bundle` — April 2026, prepared but never deployed
+- `canungra_v5.bundle` — April 2026, Rev 17 state, deployed to origin/main
+- `canungra_v6.bundle` — April 2026, **Rev 20 state (this package)**, supersedes v5
