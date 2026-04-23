@@ -1,0 +1,84 @@
+{
+  "template_version": "1.0",
+  "derived_from": "Canungra STP Rev 20 (April 2026)",
+  "maintainer": "ph2o Consulting",
+  "description": "Visual design system for WaterPoint Concept Study reports",
+  
+  "colours": {
+    "primary_blue": "2E75B6",
+    "accent_blue": "1F4E79",
+    "body_text": "1F1F1F",
+    "grey_caption": "595959",
+    "warning_amber": "BF6E00",
+    "warning_bg": "FFF2CC",
+    "info_bg": "DEEBF7",
+    "success_green": "548235",
+    "success_bg": "E2F0D9",
+    "danger_red": "C00000",
+    "danger_bg": "FBE5D6",
+    "neutral_bg": "F2F2F2"
+  },
+  
+  "typography": {
+    "font_family": "DejaVu Sans (PDF rendering); Calibri (Word native)",
+    "body_size_pt": 11,
+    "h1_size_pt": 18,
+    "h2_size_pt": 14,
+    "h3_size_pt": 12,
+    "caption_size_pt": 10,
+    "table_cell_size_pt": 10
+  },
+  
+  "layout": {
+    "default_image_width_inches": 6.5,
+    "default_image_aspect_ratio": 0.6,
+    "bullet_spacing_before_pt": 2,
+    "bullet_spacing_after_pt": 2,
+    "paragraph_spacing_before_pt": 3,
+    "paragraph_spacing_after_pt": 3,
+    "heading_h1_spacing_before_pt": 20,
+    "heading_h1_spacing_after_pt": 10
+  },
+  
+  "callout_box_styles": {
+    "risk_or_warning": {
+      "background": "warning_bg",
+      "accent_colour": "warning_amber",
+      "use_cases": ["F1, F2... risk items", "Alpha-factor warnings", "Verification required"]
+    },
+    "positive_or_recommended": {
+      "background": "success_bg",
+      "accent_colour": "success_green",
+      "use_cases": ["Preferred concept highlights", "Key findings with high confidence"]
+    },
+    "information": {
+      "background": "info_bg",
+      "accent_colour": "primary_blue",
+      "use_cases": ["Interpretation B framing", "Model limitations", "Context notes"]
+    },
+    "critical_or_danger": {
+      "background": "danger_bg",
+      "accent_colour": "danger_red",
+      "use_cases": ["Stage 0 gateway items", "Capital commitment warnings", "Critical open questions"]
+    }
+  },
+  
+  "pfd_visual_conventions": {
+    "anaerobic_zone_fill": "solid_brown_#A8674A",
+    "anoxic_zone_fill": "hatched_brown_#A8674A_with_diagonal_lines",
+    "aerobic_zone_fill": "dotted_brown-orange_#C8956D",
+    "post_anoxic_fill": "hatched_brown_with_diagonal_lines",
+    "offline_or_decommissioned": "grey_#5A5A5A",
+    "new_or_converted_element_border": "red_#C00000_2.5pt",
+    "recycle_line_style": "orthogonal_right-angle (matches Rev B convention)",
+    "dose_point_marker": "green_downward_triangle",
+    "permeate_output_colour": "blue_#1F77B4"
+  },
+  
+  "recycle_colours": {
+    "forward_flow": "7B2D26",
+    "recycle_standard": "444444",
+    "recycle_new_or_modified": "C00000",
+    "permeate": "1F77B4"
+  }
+}
