@@ -308,6 +308,7 @@ elif _active == "wastewater":
         "📄  Report":                  "06_report",
         "🔬  Plant Data & Calibration":"07_calibration",
         "📖  User Manual":             "08_manual",
+        "🏭  Canungra Case Study":     "14_canungra",
     }
 
     current_ww_page = st.session_state.get("page", "01_project_setup")
@@ -357,6 +358,9 @@ elif _active == "wastewater":
     elif page_key == "08_manual":
         from apps.wastewater_app.pages import page_08_manual
         page_08_manual.render()
+    elif page_key == "14_canungra":
+        from apps.wastewater_app.pages import page_14_canungra
+        page_14_canungra.render()
 
     # Sidebar footer
     from apps.ui.session_state import has_project, has_unsaved_changes, get_current_project

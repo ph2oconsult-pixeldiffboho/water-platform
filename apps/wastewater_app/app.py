@@ -46,6 +46,7 @@ PAGES = {
     "🎯 Decision Framework": "11_decision",
     "🏆 Decision Scoring": "12_scoring",
     "⚗️ Nitrogen Selector": "13_nitrogen_selector",
+    "🏭 Canungra Case Study": "14_canungra",
 }
 
 # Use query params for navigation so browser back button works
@@ -118,6 +119,10 @@ elif page_key == "12_scoring":
 elif page_key == "13_nitrogen_selector":
     from apps.wastewater_app.pages import page_13_nitrogen_selector
     page_13_nitrogen_selector.render()
+
+elif page_key == "14_canungra":
+    from apps.wastewater_app.pages import page_14_canungra
+    page_14_canungra.render()
 
 # ── Sidebar footer ─────────────────────────────────────────────────────────
 st.sidebar.divider()
