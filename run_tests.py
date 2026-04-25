@@ -68,6 +68,8 @@ def main():
          "AquaPoint Decision Intelligence Layer (5 tests)", False),
         (ROOT / "tests/test_mabr_decision_layer.py",
          "MABR Decision Layer (6 tests)", False),
+        (ROOT / "tests/test_intensification_factors.py",
+         "Intensification factors — InDENSE 1.3× / IFAS 1.5× (6 tests)", False),
         (ROOT / "tests/test_release_readiness.py",
          "Release readiness gate (60 checks)", False),
     ]

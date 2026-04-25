@@ -231,6 +231,15 @@ def _render_synthesis_layers(result, scenario, project) -> None:
                         st.markdown(stage.engineering_basis[:180])
                     if stage.prerequisite:
                         st.caption(f"⚠️ Prerequisite: {stage.prerequisite}")
+                    if getattr(stage, "intensification_factor", 0.) > 0.:
+                        _icon = "📈"
+                        _tech = stage.technology
+                        _ftype = "Clarifier capacity" if "INDENSE" in _tech or "BIOMAG" in _tech or "MEMDENSE" in _tech else "Nitrification SRT"
+                        st.caption(
+                            f"{_icon} **{_ftype} intensification: "
+                            f"{stage.intensification_factor:.1f}×** vs baseline — "
+                            f"{stage.intensification_basis}"
+                        )
 
             # Credibility notes
             if cred.credibility_notes:

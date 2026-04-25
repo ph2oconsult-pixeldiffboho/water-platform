@@ -181,6 +181,9 @@ class PathwayStage:
     # ── Biological hierarchy traceability (v24Z38) ──────────────────────────
     bio_hierarchy_level:     int = 0   # 0=non-bio, 1=process opt, 2=biofilm, 3=aeration, 4=tertiary
     bio_hierarchy_rationale: str = ""  # why this level was selected
+    # ── Intensification factor (v24Z39) ──────────────────────────────────────
+    intensification_factor:  float = 0.0  # clarifier/SRT capacity multiplier vs baseline (0.0 = N/A)
+    intensification_basis:   str   = ""   # calibration source and what the factor represents
 
 
 @dataclass
@@ -451,6 +454,7 @@ def _make_stage(
     purpose: str, basis: str,
     addresses: List[str], prereq: str = "",
     bio_level: int = 0, bio_rationale: str = "",
+    intens_factor: float = 0.0, intens_basis: str = "",
 ) -> PathwayStage:
     return PathwayStage(
         stage_number    = num,
@@ -466,6 +470,8 @@ def _make_stage(
         complexity      = _COMPLEXITY.get(tech, "Medium"),
         bio_hierarchy_level     = bio_level,
         bio_hierarchy_rationale = bio_rationale,
+        intensification_factor  = intens_factor,
+        intensification_basis   = intens_basis,
     )
 
 
@@ -489,12 +495,14 @@ def _build_pathway_stages(
 
     def emit(tech: str, mech: str, purpose: str, basis: str,
              addresses: List[str], prereq: str = "",
-             bio_level: int = 0, bio_rationale: str = "") -> None:
+             bio_level: int = 0, bio_rationale: str = "",
+             intens_factor: float = 0.0, intens_basis: str = "") -> None:
         if tech in used: return
         used.add(tech)
         stages.append(_make_stage(
             stage_n[0], tech, mech, purpose, basis, addresses, prereq,
-            bio_level=bio_level, bio_rationale=bio_rationale))
+            bio_level=bio_level, bio_rationale=bio_rationale,
+            intens_factor=intens_factor, intens_basis=intens_basis))
         stage_n[0] += 1
 
     # ── Stage 1: Hydraulic stabilisation ──────────────────────────────────────
@@ -532,7 +540,9 @@ def _build_pathway_stages(
                 "densifying the retained sludge and recovering SOR headroom. "
                 "Effective where SVI > 120 mL/g or clarifier SOR is persistently exceeded "
                 "under average flow. Commissioned after CoMag establishes storm protection.",
-                [CT_HYDRAULIC, CT_SETTLING])
+                [CT_HYDRAULIC, CT_SETTLING],
+                intens_factor=1.3,
+                intens_basis="inDENSE intensification factor 1.3× — conservative estimate of clarifier hydraulic capacity gain from SVI reduction (published range 1.2–1.5×; Mangere WWTP: 1.1 → 1.5 m³/s per reactor without new tankage). SVI typically reduces from >150 to 50–80 mL/g at full biomass selection establishment (4–8 weeks). EBPR benefit: PAO enrichment in hydrocyclone underflow selectively retains phosphorus-accumulating organisms, reducing chemical P dosing demand. Prerequisite: upstream anaerobic selector zone required for reliable granulation and sustained PAO enrichment.")
 
         elif _steady_state:
             # Rule 2: steady-state clarifier limitation, no dominant storm risk
@@ -545,7 +555,9 @@ def _build_pathway_stages(
                 "average or high-dry-weather flow. SVI reduction of 20–40% is typical. "
                 "Where MABR is also selected, inDENSE complements the increased biomass "
                 "concentration by improving retention of the denser carrier-associated fraction.",
-                [CT_HYDRAULIC, CT_SETTLING])
+                [CT_HYDRAULIC, CT_SETTLING],
+                intens_factor=1.3,
+                intens_basis="inDENSE intensification factor 1.3× — conservative estimate of clarifier hydraulic capacity gain from SVI reduction (published range 1.2–1.5×; Mangere WWTP: 1.1 → 1.5 m³/s per reactor without new tankage). SVI typically reduces from >150 to 50–80 mL/g at full biomass selection establishment (4–8 weeks). EBPR benefit: PAO enrichment in hydrocyclone underflow selectively retains phosphorus-accumulating organisms, reducing chemical P dosing demand. Prerequisite: upstream anaerobic selector zone required for reliable granulation and sustained PAO enrichment.")
 
         elif _peak_driven:
             # Rule 3: peak-driven — CoMag or EQ basin
@@ -649,7 +661,9 @@ def _build_pathway_stages(
                     "SOR headroom recovers without clarifier expansion. "
                     "Where SRT is simultaneously limiting, a biofilm retention stage (IFAS/Hybas) "
                     "follows as Stage 2 to address nitrification capacity.",
-                    [CT_SETTLING])
+                    [CT_SETTLING],
+                    intens_factor=1.3,
+                    intens_basis="inDENSE intensification factor 1.3× — conservative estimate of clarifier hydraulic capacity gain from SVI reduction (published range 1.2–1.5×; Mangere WWTP: 1.1 → 1.5 m³/s per reactor without new tankage). SVI typically reduces from >150 to 50–80 mL/g at full biomass selection establishment (4–8 weeks). EBPR benefit: PAO enrichment in hydrocyclone underflow selectively retains phosphorus-accumulating organisms, reducing chemical P dosing demand. Prerequisite: upstream anaerobic selector zone required for reliable granulation and sustained PAO enrichment.")
         else:
             emit(TI_INDENSE, MECH_BIOMASS_SEL,
                 "inDENSE gravimetric selection removes light and filamentous biomass, "
@@ -657,7 +671,9 @@ def _build_pathway_stages(
                 "inDENSE selectively wastes the low-density fraction of mixed liquor. "
                 "The retained sludge is denser, settles faster, and occupies less clarifier volume. "
                 "SOR headroom recovers without clarifier expansion.",
-                [CT_SETTLING])
+                [CT_SETTLING],
+                intens_factor=1.3,
+                intens_basis="inDENSE intensification factor 1.3× — conservative estimate of clarifier hydraulic capacity gain from SVI reduction (published range 1.2–1.5×; Mangere WWTP: 1.1 → 1.5 m³/s per reactor without new tankage). SVI typically reduces from >150 to 50–80 mL/g at full biomass selection establishment (4–8 weeks). EBPR benefit: PAO enrichment in hydrocyclone underflow selectively retains phosphorus-accumulating organisms, reducing chemical P dosing demand. Prerequisite: upstream anaerobic selector zone required for reliable granulation and sustained PAO enrichment.")
 
     # ── Stage 3: Nitrification unlock — biological hierarchy Levels 2 and 3 ──────
     # Level 2 (biomass retention): use when SRT is the bottleneck and aeration has headroom
@@ -721,7 +737,9 @@ def _build_pathway_stages(
                         f"MABR whole-plant value test: not preferred. Reason: {_mabr_not_preferred_reason} "
                         "IFAS delivers equivalent nitrification SRT decoupling with lower auxiliary "
                         "system burden. MABR is preserved as an alternative pathway."
-                    ))
+                    ),
+                    intens_factor=1.5,
+                    intens_basis="IFAS intensification factor 1.5× — conservative midpoint of published range (1.3–1.8×, Metcalf & Eddy 6th Ed., WEF MOP 8). Biofilm carries 40–70% of nitrification load at full carrier establishment. Effective nitrification SRT: 1.5× baseline SRT within existing tank volume.")
             else:
                 emit(TI_MABR, MECH_AER_INT,
                     "MABR (OxyFAS) delivers oxygen directly to the biofilm via gas-permeable "
@@ -761,7 +779,9 @@ def _build_pathway_stages(
                     "Hybas is selected at Level 2 (biomass retention) because settling is already "
                     "addressed and SRT is the controlling nitrification constraint. Biofilm "
                     "retention provides the additional effective sludge age without blower expansion."
-                ))
+                ),
+                intens_factor=1.5,
+                intens_basis="IFAS intensification factor 1.5× — conservative midpoint of published range (1.3–1.8×, Metcalf & Eddy 6th Ed.). Hybas carrier geometry provides equivalent biofilm fraction to standard IFAS. Effective nitrification SRT: 1.5× baseline SRT within existing tank volume.")
         else:
             # Level 2: SRT is the bottleneck; aeration has headroom; IFAS is the most direct match
             emit(TI_IFAS, MECH_BIOFILM_RET,
@@ -776,7 +796,9 @@ def _build_pathway_stages(
                     "IFAS is selected at Level 2 (biomass retention) because the nitrification "
                     "constraint is driven by insufficient SRT / effective sludge age, not by oxygen "
                     "delivery limitation. Aeration headroom exists; MABR is not required."
-                ))
+                ),
+                intens_factor=1.5,
+                intens_basis="IFAS intensification factor 1.5× — conservative midpoint of published range (1.3–1.8×, Metcalf & Eddy 6th Ed., WEF MOP 8). Biofilm carries 40–70% of nitrification load at full carrier establishment. Effective nitrification SRT: 1.5× baseline SRT within existing tank volume.")
 
     # ── Stage 4: TN polishing — biological hierarchy Level 1 ─────────────────
     # Level 1: Suspended growth / process optimisation is ALWAYS the first response
