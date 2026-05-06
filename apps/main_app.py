@@ -238,6 +238,7 @@ elif _active == "biosolids":
         "🔥  Drying & Coupling":  "03_drying",
         "🛡️  ITS & PFAS":         "04_pathways",
         "📈  Pyrolysis Envelope": "05_pyrolysis",
+        "🔬 MAD Analyser":        "07_mad",
         "📖  User Manual":          "06_manual",
     }
     if st.session_state.get("_app_context") != "biosolids":
