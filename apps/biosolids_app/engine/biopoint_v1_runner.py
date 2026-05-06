@@ -34,6 +34,8 @@ from engine.its_classification import run_its_classification
 from engine.thermal_biochar import run_thermal_biochar_engine
 from engine.pyrolysis_envelope import run_pyrolysis_envelope
 from engine.pyrolysis_tradeoff import run_trade_off_curve
+from engine.mad import run_mad
+from engine.mad_adapter import build_mad_inputs, inject_mad_result
 from engine.system_transition import run_system_transition_summary
 
 
@@ -444,6 +446,23 @@ def run_biopoint_v1(inputs: BioPointV1Inputs) -> dict:
             pfas_present=inputs.feedstock.pfas_present,
         )
         pyr_fs.pyrolysis_tradeoff = pyrolysis_tradeoff_result
+
+
+    # --- MAD ENGINE ---
+    AD_PATHWAY_TYPES = {"AD", "thp_incineration", "incineration"}
+    for fs in flowsheets:
+        if fs.pathway_type not in AD_PATHWAY_TYPES:
+            continue
+        try:
+            mad_inputs = build_mad_inputs(inputs.feedstock, inputs.assets, inputs.strategic)
+            if mad_inputs is None:
+                continue
+            mad_result = run_mad(mad_inputs)
+            inject_mad_result(fs, mad_result, warnings)
+            fs.mad_detail = mad_result
+        except Exception as e:
+            warnings.append(f"MAD engine error on {fs.pathway_type}: {e}")
+            fs.mad_detail = None
 
     # --- VENDOR VALIDATION ---
     vendor_validation = None

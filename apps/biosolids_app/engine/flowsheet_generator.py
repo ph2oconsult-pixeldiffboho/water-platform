@@ -98,6 +98,7 @@ class Flowsheet:
     thermal_biochar: Optional[object] = None       # ThermalBiocharResult
     pyrolysis_envelope: Optional[object] = None    # PyrolysisOperatingEnvelope
     pyrolysis_tradeoff: Optional[object] = None    # TradeOffCurve
+    mad_detail: Optional[object] = None            # MADResult
 
     # Scoring
     score: float = 0.0
