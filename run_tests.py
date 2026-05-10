@@ -73,7 +73,7 @@ def main():
         (ROOT / "tests/test_release_readiness.py",
          "Release readiness gate (60 checks)", False),
         (ROOT / "tests/core/characteriser/run_characteriser_tests.py",
-         "Design envelope engine — Phase 5 (131 tests)", False),
+         "Design envelope engine — Phase 5 (144 tests)", False),
     ]
 
     if args.benchmark:
