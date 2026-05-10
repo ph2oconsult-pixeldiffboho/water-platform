@@ -276,13 +276,17 @@ def _render_result_tab() -> None:
         md_path = Path(result.markdown_path)
         if md_path.exists():
             md_text = md_path.read_text(encoding="utf-8")
-            # Strip the H1 since Streamlit pages have their own title
-            lines = md_text.split("\n")
-            if lines and lines[0].startswith("# "):
-                lines = lines[1:]
-            st.markdown("\n".join(lines), unsafe_allow_html=False)
+            cleaned = _clean_markdown_for_inline(md_text)
+            st.markdown(cleaned, unsafe_allow_html=False)
 
-            # Download button
+            st.caption(
+                "Note — figures referenced in the memo above are rendered "
+                "in the **Charts** tab. They are also embedded by file path "
+                "in the downloaded `envelope.md` (for offline viewing)."
+            )
+
+            # Download button — give the FULL markdown including image refs
+            # and HRs, so an offline reader gets the proper memo structure.
             st.download_button(
                 "📥 Download envelope.md",
                 data=md_text,
@@ -291,6 +295,34 @@ def _render_result_tab() -> None:
             )
         else:
             st.warning(f"Markdown file not found at {md_path}.")
+
+
+def _clean_markdown_for_inline(md_text: str) -> str:
+    """
+    Adapt a memo for inline Streamlit rendering:
+
+      - Drop the H1 (the page already has a title).
+      - Drop image references — st.markdown cannot serve local files, so
+        those render as broken-image icons. The Charts tab shows them
+        properly via st.image. The downloaded .md keeps them.
+      - Drop horizontal-rule lines ('---') that render as visible hairlines
+        but interrupt the visual flow of Streamlit's section spacing.
+    """
+    lines = md_text.split("\n")
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Drop H1
+        if not out and stripped.startswith("# "):
+            continue
+        # Drop image references — they're shown in Charts tab
+        if stripped.startswith("![") and "](" in stripped:
+            continue
+        # Drop horizontal rules
+        if stripped == "---":
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 def _render_charts_tab() -> None:
@@ -433,33 +465,39 @@ def _render_inner() -> None:
     )
     require_project()
 
-    # Try cached cleaned dataframe first; fall back to direct upload
+    # Try to load a cleaned dataframe. None means no data yet — we still
+    # render the page, just with the data-dependent tabs showing prompts
+    # instead of forms. The About tab is always reachable, so a first-time
+    # visitor can read what the page does before being asked to upload.
+    df_envelope = None
     df = _load_dataframe()
-    if df is None:
-        return
+    if df is not None:
+        df_envelope = _adapt_columns(df)
+        # Small summary caption only when data is loaded
+        n_rows = len(df_envelope)
+        if "_date" in df_envelope.columns and df_envelope["_date"].notna().any():
+            date_min = df_envelope["_date"].min().strftime("%Y-%m-%d")
+            date_max = df_envelope["_date"].max().strftime("%Y-%m-%d")
+            st.caption(
+                f"📊 Dataset: **{n_rows} rows**, "
+                f"period **{date_min} → {date_max}**."
+            )
+        else:
+            st.caption(f"📊 Dataset: **{n_rows} rows**.")
 
-    # Adapt columns to envelope-engine conventions
-    df_envelope = _adapt_columns(df)
-
-    # Small summary banner
-    n_rows = len(df_envelope)
-    if "_date" in df_envelope.columns and df_envelope["_date"].notna().any():
-        date_min = df_envelope["_date"].min().strftime("%Y-%m-%d")
-        date_max = df_envelope["_date"].max().strftime("%Y-%m-%d")
-        st.caption(
-            f"📊 Dataset: **{n_rows} rows**, "
-            f"period **{date_min} → {date_max}**."
-        )
-    else:
-        st.caption(f"📊 Dataset: **{n_rows} rows**.")
-
-    # Tabs
+    # Tabs — always render all four. About is reachable without data.
     tab_setup, tab_result, tab_charts, tab_about = st.tabs([
         "🛠️ Setup", "📋 Envelope", "📊 Charts", "ℹ️ About",
     ])
 
     with tab_setup:
-        _render_setup_tab(df_envelope)
+        if df_envelope is not None:
+            _render_setup_tab(df_envelope)
+        else:
+            st.info(
+                "Load a dataset (banner above) to configure and generate an "
+                "envelope. See the **About** tab for what this page does."
+            )
     with tab_result:
         _render_result_tab()
     with tab_charts:

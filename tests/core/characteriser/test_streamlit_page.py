@@ -169,3 +169,66 @@ class TestPipelineEndToEnd:
         assert priority == "diagnostic", (
             f"BNR concern should mark bod_to_tkn diagnostic, got '{priority}'"
         )
+
+
+class TestMarkdownCleaning:
+    """Tests for _clean_markdown_for_inline — the helper that adapts the
+    memo for Streamlit's inline renderer."""
+
+    def test_drops_h1(self):
+        page = _import_page()
+        md = "# Big title\n\nBody paragraph."
+        cleaned = page._clean_markdown_for_inline(md)
+        assert "# Big title" not in cleaned
+        assert "Body paragraph." in cleaned
+
+    def test_keeps_h2_and_below(self):
+        """Only the top-level H1 is dropped; H2 and deeper stay."""
+        page = _import_page()
+        md = "# Top\n\n## Section A\n\n### Subsection\n\nBody."
+        cleaned = page._clean_markdown_for_inline(md)
+        assert "## Section A" in cleaned
+        assert "### Subsection" in cleaned
+
+    def test_drops_image_references(self):
+        """st.markdown can't load local images — strip them."""
+        page = _import_page()
+        md = "Some text.\n\n![Figure 1](figures/fig1.png)\n\nMore text."
+        cleaned = page._clean_markdown_for_inline(md)
+        assert "![Figure 1]" not in cleaned
+        assert "fig1.png" not in cleaned
+        assert "Some text." in cleaned
+        assert "More text." in cleaned
+
+    def test_drops_horizontal_rules(self):
+        page = _import_page()
+        md = "Section one.\n\n---\n\nSection two."
+        cleaned = page._clean_markdown_for_inline(md)
+        assert "\n---\n" not in cleaned
+        assert "Section one." in cleaned
+        assert "Section two." in cleaned
+
+    def test_preserves_lists(self):
+        page = _import_page()
+        md = "Items:\n- one\n- two\n- three"
+        cleaned = page._clean_markdown_for_inline(md)
+        for item in ["- one", "- two", "- three"]:
+            assert item in cleaned
+
+    def test_preserves_tables(self):
+        page = _import_page()
+        md = "| Header | Value |\n|---|---:|\n| Row | 42 |"
+        cleaned = page._clean_markdown_for_inline(md)
+        # The "|---|---:|" alignment row contains '---' but is not a HR
+        # because it's part of a table (more than three dashes, contains |).
+        # Our cleaner only strips standalone '---' lines.
+        assert "| Header | Value |" in cleaned
+        assert "| Row | 42 |" in cleaned
+
+    def test_idempotent(self):
+        """Running twice gives the same result as once."""
+        page = _import_page()
+        md = "# Top\n\n---\n\n## H2\n\n![x](y.png)\n\nBody."
+        once = page._clean_markdown_for_inline(md)
+        twice = page._clean_markdown_for_inline(once)
+        assert once == twice
