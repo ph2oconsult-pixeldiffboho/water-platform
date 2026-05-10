@@ -72,6 +72,8 @@ def main():
          "Intensification factors — InDENSE 1.3× / IFAS 1.5× (6 tests)", False),
         (ROOT / "tests/test_release_readiness.py",
          "Release readiness gate (60 checks)", False),
+        (ROOT / "tests/core/characteriser/run_characteriser_tests.py",
+         "Design envelope engine — Phase 5 (131 tests)", False),
     ]
 
     if args.benchmark:
