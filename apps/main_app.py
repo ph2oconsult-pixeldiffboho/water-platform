@@ -98,107 +98,117 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Header ─────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="platform-header">
-    <h1>💧 Water Utility Planning Platform</h1>
-    <p style="color:#555; font-size:1.1rem;">
-        Integrated concept-stage planning for water utilities and consultants
-    </p>
-</div>
-""", unsafe_allow_html=True)
+# ── Resolve active app ─────────────────────────────────────────────────────
+# Decide which app (if any) is active BEFORE rendering the home content, so
+# we can hide the platform header + module cards once the user has entered
+# a domain. On Platform Home (no active app), the cards are shown so the
+# user can switch between modules. Inside any of the four planners, the
+# Platform Home content is hidden and the planner's own sidebar handles
+# navigation; the "Platform Home" button in each planner's sidebar clears
+# active_app and brings the user back here.
 
-st.divider()
-
-# ── Application cards ──────────────────────────────────────────────────────
-APPS = [
-    {
-        "icon": "🌊",
-        "title": "Wastewater Treatment",
-        "description": (
-            "Activated sludge, BNR, MBR and advanced biological processes. "
-            "Lifecycle costing, carbon analysis, and risk assessment."
-        ),
-        "key": "wastewater",
-        "status": "ready",
-        "status_label": "✓ Available",
-    },
-    {
-        "icon": "🚰",
-        "title": "Drinking Water Treatment",
-        "description": (
-            "Coagulation, DAF, filtration, GAC, UF/NF/RO, AOP and disinfection. "
-            "Catchment to tap planning."
-        ),
-        "key": "drinking_water",
-        "status": "ready",
-        "status_label": "✓ Available",
-    },
-    {
-        "icon": "♻️",
-        "title": "Purified Recycled Water",
-        "description": (
-            "Advanced water treatment trains. LRV calculations, QMRA, "
-            "HACCP/CCP framework and indirect potable reuse planning."
-        ),
-        "key": "prw",
-        "status": "ready",
-        "status_label": "✓ Available",
-    },
-    {
-        "icon": "🌱",
-        "title": "Biosolids & Sludge Management",
-        "description": (
-            "Digestion, dewatering, thermal drying, pyrolysis and land application. "
-            "Mass and energy balance with end-use pathway analysis."
-        ),
-        "key": "biosolids",
-        "status": "ready",
-        "status_label": "✓ Available",
-    },
-]
-
-cols = st.columns(4, gap="large")
-
-for col, app in zip(cols, APPS):
-    with col:
-        badge_class = "badge-ready" if app["status"] == "ready" else "badge-coming"
-        st.markdown(f"""
-        <div class="app-card">
-            <div class="app-icon">{app["icon"]}</div>
-            <div class="app-title">{app["title"]}</div>
-            <div class="app-desc">{app["description"]}</div>
-            <span class="status-badge {badge_class}">{app["status_label"]}</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-
-        if app["status"] == "ready":
-            if st.button(
-                f"Open {app['title'].split()[0]} Planner →",
-                key=f"btn_{app['key']}",
-                type="primary",
-                use_container_width=True,
-            ):
-                st.session_state["launch_app"] = app["key"]
-                st.rerun()
-        else:
-            st.button(
-                "Not yet available",
-                key=f"btn_{app['key']}",
-                disabled=True,
-                use_container_width=True,
-            )
-
-# ── App routing ────────────────────────────────────────────────────────────
-
-# Resolve any pending launch → active transition first
 _pending = st.session_state.pop("launch_app", None)
 if _pending:
     st.session_state["active_app"] = _pending
 
 _active = st.session_state.get("active_app")
+
+# ── Platform Home content (only when no app is active) ─────────────────────
+if _active is None:
+    # Header
+    st.markdown("""
+    <div class="platform-header">
+        <h1>💧 Water Utility Planning Platform</h1>
+        <p style="color:#555; font-size:1.1rem;">
+            Integrated concept-stage planning for water utilities and consultants
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # Application cards
+    APPS = [
+        {
+            "icon": "🌊",
+            "title": "Wastewater Treatment",
+            "description": (
+                "Activated sludge, BNR, MBR and advanced biological processes. "
+                "Lifecycle costing, carbon analysis, and risk assessment."
+            ),
+            "key": "wastewater",
+            "status": "ready",
+            "status_label": "✓ Available",
+        },
+        {
+            "icon": "🚰",
+            "title": "Drinking Water Treatment",
+            "description": (
+                "Coagulation, DAF, filtration, GAC, UF/NF/RO, AOP and disinfection. "
+                "Catchment to tap planning."
+            ),
+            "key": "drinking_water",
+            "status": "ready",
+            "status_label": "✓ Available",
+        },
+        {
+            "icon": "♻️",
+            "title": "Purified Recycled Water",
+            "description": (
+                "Advanced water treatment trains. LRV calculations, QMRA, "
+                "HACCP/CCP framework and indirect potable reuse planning."
+            ),
+            "key": "prw",
+            "status": "ready",
+            "status_label": "✓ Available",
+        },
+        {
+            "icon": "🌱",
+            "title": "Biosolids & Sludge Management",
+            "description": (
+                "Digestion, dewatering, thermal drying, pyrolysis and land application. "
+                "Mass and energy balance with end-use pathway analysis."
+            ),
+            "key": "biosolids",
+            "status": "ready",
+            "status_label": "✓ Available",
+        },
+    ]
+
+    cols = st.columns(4, gap="large")
+
+    for col, app in zip(cols, APPS):
+        with col:
+            badge_class = "badge-ready" if app["status"] == "ready" else "badge-coming"
+            st.markdown(f"""
+            <div class="app-card">
+                <div class="app-icon">{app["icon"]}</div>
+                <div class="app-title">{app["title"]}</div>
+                <div class="app-desc">{app["description"]}</div>
+                <span class="status-badge {badge_class}">{app["status_label"]}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+            if app["status"] == "ready":
+                if st.button(
+                    f"Open {app['title'].split()[0]} Planner →",
+                    key=f"btn_{app['key']}",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    st.session_state["launch_app"] = app["key"]
+                    st.rerun()
+            else:
+                st.button(
+                    "Not yet available",
+                    key=f"btn_{app['key']}",
+                    disabled=True,
+                    use_container_width=True,
+                )
+
+# ── App routing ────────────────────────────────────────────────────────────
 
 if _active == "drinking_water":
     from apps.drinking_water_app.app import run as run_aquapoint
