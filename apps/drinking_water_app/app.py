@@ -81,9 +81,12 @@ PAGES = {
 def render_sidebar():
     """Render the AquaPoint sidebar with navigation — light theme matching WaterPoint."""
     with st.sidebar:
-        # Platform Home button — returns to main platform launcher
-        if st.button("← Platform Home", use_container_width=True):
-            st.session_state["active_module"] = None
+        # Platform Home button — returns to main platform launcher.
+        # Clears the same session-state keys as the other three apps' buttons
+        # so all four behave identically.
+        if st.button("⬅  Platform Home", key="aq_home", use_container_width=True):
+            for _k in ("active_app", "page", "_app_context", "active_module"):
+                st.session_state.pop(_k, None)
             st.rerun()
 
         st.divider()
