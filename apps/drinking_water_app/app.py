@@ -85,9 +85,10 @@ def render_sidebar():
         # Clears the same session-state keys as the other three apps' buttons
         # so all four behave identically.
         if st.button("⬅  Platform Home", key="aq_home", use_container_width=True):
-            for _k in ("active_app", "page", "_app_context", "active_module"):
+            for _k in ("active_app", "page", "_app_context", "active_module", "current_page"):
                 st.session_state.pop(_k, None)
             st.rerun()
+            st.stop()
 
         st.divider()
 
