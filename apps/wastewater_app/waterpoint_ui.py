@@ -50,6 +50,18 @@ def render_waterpoint(scenario, project=None) -> None:
         "and planning priorities. Read-only — does not alter engineering calculations."
     )
 
+    # ── 📋 INPUT VALIDATION (Parts 1–3 of decision framework) ──────────────
+    # Runs before System Stress so the user sees input integrity issues
+    # before any analysis they should not yet trust. Never breaks the page.
+    try:
+        from apps.wastewater_app.input_validation_layer import validate_inputs
+        validation_report = validate_inputs(wp)
+        _render_input_validation_panel(validation_report)
+    except Exception as _iv_e:
+        with st.expander("📋 Input Validation — error loading", expanded=False):
+            st.warning(f"Input validation could not run: {_iv_e}")
+        validation_report = None
+
     # ── A. SYSTEM STRESS ──────────────────────────────────────────────────
     with st.container():
         col_state, col_prox, col_rate, col_conf = st.columns(4)
@@ -190,6 +202,24 @@ def _render_synthesis_layers(result, scenario, project) -> None:
         pathway  = build_upgrade_pathway(result, ctx)
         feas     = assess_feasibility(pathway, ctx)
         cred     = build_credible_output(pathway, feas, ctx)
+
+        # ── Input validation injection ─────────────────────────────────────
+        # Per page_08_manual.py spec: Critical IV flags become credibility
+        # consistency flags; Very Low data confidence demotes ready_for_client.
+        # Validation is re-run here (rather than threaded through from the
+        # render_waterpoint top) to keep this synthesis function self-contained.
+        try:
+            from apps.wastewater_app.input_validation_layer import (
+                validate_inputs, CONF_VERY_LOW,
+            )
+            _iv = validate_inputs(wp)
+            if _iv.consistency_flag_messages:
+                cred.consistency_flags = list(cred.consistency_flags) + _iv.consistency_flag_messages
+            if _iv.data_confidence == CONF_VERY_LOW:
+                cred.ready_for_client = False
+        except Exception:
+            pass  # validation injection must never break the synthesis pipeline
+
         unc      = build_uncertainty_report(pathway, feas, cred, ctx)
         stab     = build_stabilisation_report(pathway, ctx)
         risk     = build_risk_report(pathway, feas, ctx)
@@ -1529,4 +1559,127 @@ def _render_tech_abstraction(ta) -> None:
                 )
             st.markdown("<hr style='margin:4px 0;border-color:#f0f0f0;'>",
                         unsafe_allow_html=True)
+
+
+# ── 📋 INPUT VALIDATION PANEL ─────────────────────────────────────────────────
+#
+# Renders the validation report at the top of WaterPoint Intelligence.
+# Auto-expands when Critical flags are present (per page_08_manual.py spec).
+
+def _render_input_validation_panel(report) -> None:
+    """Render the 📋 Input Validation section.
+
+    `report` is an InputValidationReport from
+    apps.wastewater_app.input_validation_layer. The function is forgiving —
+    a None report or missing fields will not break the page.
+    """
+    import streamlit as st
+
+    if report is None:
+        return
+
+    # Severity / confidence visual maps.
+    conf_icon = {
+        "High":       "🟢",
+        "Acceptable": "🟡",
+        "Low":        "🟠",
+        "Very Low":   "🔴",
+    }.get(getattr(report, "data_confidence", "High"), "⚪")
+
+    safe_icon = "🟢" if getattr(report, "safe_for_analysis", True) else "🔴"
+
+    # Auto-expand whenever any Critical flag is present.
+    expanded = bool(getattr(report, "critical_flags", []))
+
+    header = (
+        f"📋 Input Validation — Confidence {conf_icon} "
+        f"{report.data_confidence} | Safe for analysis {safe_icon}"
+    )
+
+    with st.expander(header, expanded=expanded):
+        # ── Top-line summary ──────────────────────────────────────────────
+        col_c, col_w, col_i = st.columns(3)
+        col_c.metric("🔴 Critical", report.fail_count)
+        col_w.metric("🟡 Warnings", report.warn_count)
+        col_i.metric("ℹ️ Info",      report.info_count)
+
+        if report.confidence_reason:
+            st.caption(f"Confidence basis — {report.confidence_reason}")
+
+        # ── Governing condition (Part 3) ──────────────────────────────────
+        gc = getattr(report, "governing_condition", None)
+        if gc is not None:
+            gc_colour = {
+                "Peak wet weather":                  "#7a0000",
+                "Moderate wet weather / diurnal peak": "#7a3a00",
+                "Seasonal trade waste event":        "#7a6a00",
+                "Dry weather ADWF":                  "#1a7a1a",
+                "Unknown":                           "#555",
+            }.get(gc.condition, "#555")
+            st.markdown(
+                f'<div style="border-left:4px solid {gc_colour};padding:8px 12px;'
+                f'background:#f8f8f8;border-radius:4px;margin:8px 0;">'
+                f'<b>🎯 Governing condition: {gc.condition}</b><br>'
+                f'<span style="color:#444;font-size:0.9rem;">{gc.trigger}</span><br>'
+                f'<span style="color:#666;font-size:0.85rem;">{gc.implication}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ── Flag list (Critical first, then Warning, then Info) ───────────
+        if report.flags:
+            st.markdown("---")
+            for severity, sev_label, sev_colour in [
+                ("Critical", "🔴 CRITICAL — resolve before relying on outputs", "#C0392B"),
+                ("Warning",  "🟡 WARNINGS — investigate before detailed design",  "#E67E22"),
+                ("Info",     "ℹ️ INFO — note and proceed",                        "#2980B9"),
+            ]:
+                group = [f for f in report.flags if f.severity == severity]
+                if not group:
+                    continue
+                st.markdown(f"**{sev_label}**")
+                for flag in group:
+                    bg = "#fafafa"
+                    st.markdown(
+                        f'<div style="border-left:4px solid {sev_colour};'
+                        f'padding:6px 10px;margin:3px 0;background:{bg};font-size:0.9rem;">'
+                        f'<b>[{flag.code}]</b> {flag.message}'
+                        + (f"<br><small style='color:#555'>💡 {flag.recommendation}</small>"
+                           if flag.recommendation else "")
+                        + "</div>",
+                        unsafe_allow_html=True,
+                    )
+                st.markdown("")
+
+        # ── Missing fields ────────────────────────────────────────────────
+        if report.missing_critical or report.missing_optional:
+            st.markdown("---")
+            col_mc, col_mo = st.columns(2)
+            with col_mc:
+                st.markdown("**Missing required fields**")
+                if report.missing_critical:
+                    for f in report.missing_critical:
+                        st.markdown(f"• 🔴 `{f}`")
+                else:
+                    st.caption("None ✓")
+            with col_mo:
+                st.markdown("**Missing optional fields**")
+                if report.missing_optional:
+                    for f in report.missing_optional:
+                        st.markdown(f"• ℹ️ `{f}`")
+                else:
+                    st.caption("None ✓")
+
+        # ── VOI items (Part 2) ────────────────────────────────────────────
+        if report.voi_items:
+            st.markdown("---")
+            st.markdown("**🔍 Value of Information — recommended next investigations**")
+            voi_icon = {"High": "🔴", "Moderate": "🟡", "Low": "🟢"}
+            for item in report.voi_items:
+                icon = voi_icon.get(item.voi_level, "⚪")
+                st.markdown(
+                    f"{icon} **{item.field}** — _{item.voi_level} VOI_  \n"
+                    f"<span style='color:#555;font-size:0.9rem;'>{item.rationale}</span>",
+                    unsafe_allow_html=True,
+                )
 
