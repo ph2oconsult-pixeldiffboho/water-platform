@@ -4,27 +4,32 @@
 >
 > AquaPoint today consumes `SourceWaterInputs` through its Decision Intelligence Layer (`apps/drinking_water_app/engine/dil_aquapoint.py`). It does **not** yet have a characteriser surface wired up.
 >
-> This table specifies how AquaPoint's source-water characterisation should look once the registries refactor described in *HANDOVER_characterisation_rollout.md* (§7 Session 1) lands. It is reconciled against the *existing* wastewater characteriser (`core/characteriser/integrity_checks.py`) so that AquaPoint can drop into the same engine cleanly when the time comes.
+> This table specifies how AquaPoint's source-water characterisation should look once the registries refactor described in *HANDOVER_characterisation_rollout.md* (§7 Session 1) lands. It is reconciled against the *existing* wastewater characteriser (`core/characteriser/integrity_checks.py`, `report.py`, `orchestrator.py`, `envelope_renderer.py`) so that AquaPoint can drop into the same engine cleanly when the time comes.
 >
 > Use this document to: (a) review and resolve the open engineering decisions before code work begins, and (b) check AquaPoint-specific values (parameter bounds, identity rules, classification overlays) for engineering correctness against current ADWG / WHO guidance.
 
 ---
 
-**Status:** v5.2 — five deferred engineering decisions now resolved. Replaces v5.1.
+**Status:** v5.3 — Phase 0 engine-internals sighting complete. Four findings resolved against `report.py`, `orchestrator.py`, and `envelope_renderer.py`. Replaces v5.2.
 **Scope:** Source (raw) water characterisation only. The platform describes what the raw water *is*; it does not compare raw water against treated-water targets or recommend treatment.
 **Format:** Mirrors `apps/wastewater_app/pages/page_08_manual.py` lines 493–537 (column layout still pending sight — see "Pending reconciliation").
-**Architecture:** Seven registries — parameters, integrity_rules, ratio_libraries, event_rules, concerns, caveats, source_water_classification.
+**Architecture:** The registries refactor (per handover §6) introduces **six registries**: parameters, integrity_rules, ratio_libraries, event_rules, concerns, caveats. AquaPoint adds **one more on top** — `source_water_classification` (AV-CLS-XX) — as additive scope. This is explicitly net-new structure for AquaPoint, not part of the handover's wastewater-extraction refactor. See §2.
 
-**WaterPoint convention alignment (confirmed against `core/characteriser/integrity_checks.py`):**
-- Integrity rules use the `INT-NN` family pattern — five families (six with INT-01b), each applied across parameters via parameter-keyed configuration. Module distinction (water-treatment vs wastewater) is handled by the registry namespace, not by rule-ID prefixing.
+**WaterPoint convention alignment (confirmed against `core/characteriser/integrity_checks.py` and `report.py`):**
+- Integrity rules use the `INT-NN` family pattern — five families (six with INT-01b), each applied across parameters via parameter-keyed configuration. Module distinction (water-treatment vs wastewater) is handled by the registry namespace, not by rule-ID prefixing. **Finding 1 confirmed:** `integrity_checks.py` emits `rule_id="INT-01"` through `"INT-05"` (plus `"INT-01b"`) at lines 382, 433, 465, 489, 513, 542. The `CH-XX namespace` comment in `report.py`'s `CharacterisationFlag` dataclass is stale — likely aspirational from an earlier design or referring to a different layer of flagging. v5.3 retains the `INT-NN` convention throughout; the stale comment is a `report.py` maintenance note, not a spec change.
 - Severity constants: `SEV_CRITICAL`, `SEV_WARNING`, `SEV_INFO` imported from `core.characteriser.report`.
-- Flag dataclass `CharacterisationFlag` fields: `rule_id`, `severity`, `parameter`, `pattern`, `message`, `implication`, `recommended_action`, `affected_row_indices` (`list[int]`).
+- Flag dataclass `CharacterisationFlag` fields: `rule_id`, `severity`, `parameter`, `pattern`, `message`, `implication`, `recommended_action`, `affected_row_indices` (`list[int]`). Empty `affected_row_indices` means "not tracked"; it is not the same as "no rows affected" (confirmed by dataclass comment in `report.py`).
 - Multi-parameter rules (INT-05 identity violations) combine names in the `parameter` field as `"{num_param} vs {den_param}"`.
 - INT-02 exemption is by `spec.parameter_type` (only `{"flow", "concentration", "load"}` are checked) plus a single name-substring carve-out (`"rain" in spec.name.lower()`). Other parameters are *not* checked.
 - INT-01b severity scaling: `SEV_WARNING if pct_outside >= 1.0 else SEV_INFO`. Skipped if `typical_range is None` or `len(s) < 30`.
 - INT-05 severity scaling: `SEV_CRITICAL if pct_violated >= 5.0 else SEV_WARNING`. Tolerance defaults to 5% of `den` for analytical noise.
 - INT-05 identity tuples: `(num_param, den_param, label, description)`. Identity: `num ≤ den` per row.
 - INT-04 fires only when isolated NaN (singleton missing values bordered by valid values) make up `>= 50%` of total NaN. Pattern detection: scattered = string coercion likely; clustered = sensor outage.
+
+**Engine architecture (confirmed against `orchestrator.py` and `envelope_renderer.py`):**
+- The `build_design_envelope` orchestrator is pure: it consumes a cleaned dataframe, condition spec, and optionally a `CharacterisationReport` and `EventAnalysis`. **Event detection happens upstream of envelope build**; the envelope's Section 3 filters and presents events the caller has already detected. This has implications for §5 (see banner there).
+- The envelope memo has **six sections** rendered by `envelope_renderer.py`: framing, observed envelope (population), observed events, over-design comparison, integrity, limits. There is no extension point for additional sections; the `render_envelope_markdown` function calls six hardcoded `_render_section_N` helpers in order. Adding a seventh section would require renderer changes; surfacing AV-CLS output within Section 1 requires only a schema field addition to `EnvelopeFraming` and a small block in `_render_section_1`.
+- `KNOWN_CONCERNS` is a module-level dict in `orchestrator.py` (six concerns: `peak_hydraulic`, `bnr_nitrification_stress`, `p_removal_stress`, `septicity`, `biodegradability`, `first_flush_solids`). The handover's `registries/concerns.py` is forward spec for the registries refactor, not a refactor of an existing structure.
 
 **Boundary statement (read first):**
 This is a characterisation tool. Regulations enter the table in **exactly one** way: as source-water *classification overlays* — frameworks that categorise raw water by its observed properties (ADWG Health-Based Targets source-water categories, ADWG Cyanobacteria Alert Levels Framework). They do **not** enter as treated-water target thresholds. Iron, manganese, nitrate, microcystin and similar parameters appear in the dictionary as descriptors of the source; they are not flagged against ADWG health or aesthetic guideline values, because those values are about water leaving a tap.
@@ -93,6 +98,12 @@ UV254 and UVT are mathematically linked by the Beer-Lambert relation: `UVT = 100
 
 **Consequence for §3.4:** ID-02 disposition is now resolved. The check is eliminated by upload constraint; there's no integrity flag to fire because the two values are guaranteed consistent by construction.
 
+### 0.3 Note on `CharacterisationFlag.rule_id` namespace
+
+Phase 0 sighting of `report.py` surfaced a stale comment on the `CharacterisationFlag` dataclass: `rule_id: str # CH-XX namespace (separate from IV-XX)`. This comment does **not** reflect current behaviour. `integrity_checks.py` emits `INT-NN` rule IDs (confirmed: lines 382, 433, 465, 489, 513, 542). v5.3 (and AquaPoint's integrity registry) uses `INT-NN` throughout.
+
+This is flagged as a `report.py` maintenance note for whoever next touches that file: either update the comment to reflect `INT-NN`, or confirm there's a separate `CH-XX` layer of flagging used elsewhere that just doesn't apply to integrity rules. No spec change required for AquaPoint.
+
 ---
 
 ## 1. Parameter Dictionary
@@ -138,7 +149,9 @@ Source water parameters expected in an AquaPoint upload. "Typical observed range
 
 ## 2. Source-Water Classification Registry (AV-CLS-XX)
 
-The seventh registry. Each entry is a classification scheme drawn from an external framework that itself classifies raw water. Each scheme defines categories, the parameter(s) and statistic on which the categorisation is computed, and a "current category" output for the source. The engine reports the resulting category in the envelope memo. **No treatment implications are stated** — only the category and the framework that defines it.
+AquaPoint's seventh registry, **additive to the six** specified in the handover's registries refactor (`parameters`, `integrity_rules`, `ratio_libraries`, `event_rules`, `concerns`, `caveats`). The handover does not specify this registry because it's not present in wastewater; AquaPoint introduces it because raw water classification by external regulatory frameworks is a first-class output for drinking-water source characterisation, with no wastewater analogue.
+
+Each entry is a classification scheme drawn from an external framework that itself classifies raw water. Each scheme defines categories, the parameter(s) and statistic on which the categorisation is computed, and a "current category" output for the source. The engine reports the resulting category in the envelope memo. **No treatment implications are stated** — only the category and the framework that defines it.
 
 | Code | Framework | Parameter(s) | Statistic | Categories (band → label) | Output | Reference |
 |---|---|---|---|---|---|---|
@@ -149,7 +162,61 @@ The seventh registry. Each entry is a classification scheme drawn from an extern
 
 **Adding a new classification:** other source-water classification frameworks (e.g. trophic-state classification, salinity classification for desalination feed) would slot in as AV-CLS-03, AV-CLS-04, … with the same shape. This is why §2 is a registry and not a hard-coded overlay.
 
-**Architectural note for the integrator:** AV-CLS-XX entries are read by the engine's main orchestrator at envelope-build time and surfaced in Section 1 (or wherever the wastewater module places equivalent "source classification" output, if any — see "Pending reconciliation"). They do **not** participate in event detection or integrity checking; they are post-aggregation classification outputs.
+### 2.1 Surfacing in the envelope memo
+
+**Decision (v5.3, Finding 2 resolved):** AV-CLS-XX output surfaces in **Section 1 (Framing)** of the envelope memo, as additional fields on the existing `EnvelopeFraming` dataclass and a small rendering block in `_render_section_1`.
+
+**Architectural rationale.** Phase 0 sighting of `envelope_renderer.py` confirmed wastewater has no existing slot for classification output: `EnvelopeFraming` carries no classification field, and the six `_render_section_N` functions are called by `render_envelope_markdown` in a hardcoded sequence with no extension point. The three options considered:
+
+- **Option A — field on `EnvelopeFraming`, rendered in Section 1.** Smallest footprint. Reads naturally as part of "what is being characterised on what dataset" — the source's framework category sits alongside the dataset framing.
+- **Option B — new `EnvelopeClassificationSection` (Section 7).** Cleanest separation; own header. But promotes one or two short outputs to peer-of-events / peer-of-integrity status, which overweights it.
+- **Option C — separate output artefact alongside `envelope.md`.** Doesn't touch the renderer at all. But splits a logically unified design memo across files, working against the artefact-as-handover-document model.
+
+**Option A selected.** Source classification is framing.
+
+**Schema and renderer additions required (specification, not code change to v5.3):**
+
+*Schema change (`report.py`):*
+
+```python
+@dataclass
+class ClassificationResult:
+    """One AV-CLS-XX output for the source water."""
+    code: str                          # e.g. "AV-CLS-01"
+    framework: str                     # e.g. "ADWG HBT Source-Water Category"
+    category: str                      # e.g. "C3 Poorly protected" | "Indeterminate"
+    statistic_value: Optional[float]   # the P95 / highest-alert / etc that drove the category
+    statistic_label: str               # e.g. "P95 over 24 months"
+    n_samples: int                     # samples behind the statistic
+    window_coverage: str               # "full" | "partial — only N months of data"
+    indeterminate_reason: str = ""     # populated when category == "Indeterminate"
+    triggering_dates: List[str] = field(default_factory=list)  # e.g. AV-CLS-02 alert dates
+```
+
+*Addition to `EnvelopeFraming`:*
+
+```python
+source_classifications: List[ClassificationResult] = field(default_factory=list)
+```
+
+*Renderer addition (block within `_render_section_1`, after `why_framing`):*
+
+If `f.source_classifications` is non-empty, render a sub-block:
+
+> **Source-water classifications (external frameworks):**
+>
+> | Framework | Category | Statistic | Coverage |
+> |---|---|---|---|
+> | ADWG HBT (AV-CLS-01) | C3 Poorly protected | P95 = 42 org/100mL (n=486) | 24 months — full |
+> | ADWG Cyanobacteria Alert Levels (AV-CLS-02) | Alert Level 1 | breached 2024-02-15; 2024-11-03 | 24 months — full |
+>
+> *These are classifications under the named external frameworks, not treated-water compliance assessments. See §2 of the engineering rule table for definitions.*
+
+`Indeterminate` rows are rendered with the `indeterminate_reason` populating the Statistic column.
+
+**Why Section 1, specifically.** Section 1's role is to orient the engineer to what they're looking at: which dataset, which condition, which parameters, why this framing. The source's framework category is the same kind of context — it tells the engineer "this source is in this regulatory bucket" before they read the population stats and event analysis below. Putting it in Section 6 (limits) would understate it; putting it in its own section would overstate it. Section 1, after `why_framing`, is the right home.
+
+**Implementation cost.** Two dataclass additions to `report.py`, one rendering block in `_render_section_1`, plus the orchestrator wiring to compute classifications and populate the field (which is AquaPoint-specific work the registries refactor would have to add anyway). No changes to the other five renderers, no changes to `render_envelope_markdown`'s section list.
 
 ---
 
@@ -328,9 +395,18 @@ Diagnostic ratios derived from raw parameters. Descriptors of source-water *char
 
 ## 5. Event Rules (EV-NN)
 
+> **Scope banner (v5.3).** §5 specifies AquaPoint event rules **and** the engine capabilities those rules require. The Phase 5 wastewater build has `first_flush` rule-coded as the only complete event-detection rule (per HANDOVER §10); the other wastewater event types are referenced in `report.py` comments but not implemented. The `EventAnalysis` dataclass exists in `report.py`, and the envelope's Section 3 consumes event results — but the **event-detection module that *produces* events is largely greenfield**.
+>
+> Two specific engine capabilities §5 assumes are not yet present in the engine and are being specified here for the same code session that builds AquaPoint event rules:
+>
+> 1. **Compound triggers** — e.g. EV-01's "P95 AND rising for ≥ 2 consecutive samples", EV-04's "DOC > P90 AND SUVA > 3". The current `condition_machine` syntax (per `EnvelopeFraming.condition_machine: Dict[str, str]` and the `{"flow_mld": ">P95"}` example in `orchestrator.py`) appears to be single-parameter column→expression. Multi-parameter compound expressions and rate-of-change predicates ("AND rising") are not visible in the schema; the event-detection module will need to support them.
+> 2. **Multi-sample-window triggers** — e.g. "for ≥ 2 consecutive samples", "sustained ≥ 7 days", "sustained ≥ 14 days". These are window predicates, not per-row predicates. Whether they live inside the event-rule grammar or as a separate window-checker on top of per-row predicates is an implementation choice for the engine session.
+>
+> v5.3 is not waiting for these capabilities to exist before specifying the AquaPoint rules; the rules document the requirements. The event-detection module's implementation session will need to read this section as part of its scope.
+
 Each event is a defined window in which the source water exhibits a **distinct character** relative to its own typical envelope. Events are detected from observed data; the engine characterises co-occurring parameters over the window. No treated-water target is involved in event definition.
 
-**[VERIFY: event-rule naming convention.** The integrity rules in WaterPoint are `INT-NN`; by analogy v4 names event rules `EV-NN`. Confirm against the wastewater module's event-detection code once sighted — actual convention may differ.]
+**Event ID convention (v5.3):** event IDs follow the pattern `{event_code}_{start_date}`, e.g. `EV-03_2024-02-15`. This is the join key for `EnvelopeEventSection.repeatability_notes` and the user-visible identifier in Section 3's event-inventory table.
 
 | Code | Event | Trigger | Co-parameters captured | Min duration | Reference |
 |---|---|---|---|---|---|
@@ -348,6 +424,8 @@ Each event is a defined window in which the source water exhibits a **distinct c
 ## 6. Pre-built Concerns → Ratio Priority Map
 
 For each concern, the ordered list of ratios most diagnostic of that source-water character. The engine surfaces these prominently in the envelope memo when the concern is selected.
+
+**Note on registry placement (v5.3).** This concerns→ratio priority map is forward spec for the `registries/concerns.py` module described in HANDOVER §6. It is not a refactor of an existing structure: WaterPoint's `KNOWN_CONCERNS` is a six-entry module-level dict in `orchestrator.py` mapping concern_code → human label, with the ratio-prioritisation logic currently inside `build_design_envelope`. AquaPoint's concerns table below presupposes the registries refactor has extracted the priority map into a dedicated registry indexed by `module="water_treatment"`.
 
 | Concern | Priority 1 | Priority 2 | Priority 3 | Priority 4 |
 |---|---|---|---|---|
@@ -380,47 +458,55 @@ Per-concern caveats appended to Section 6 of the envelope memo. All framed as ev
 1. **HBT category bands (AV-CLS-01):** the four-category structure and the 1 / 20 / 2000 organisms·100mL⁻¹ band boundaries are widely cited but the canonical source is the WSAA HBT Manual (2015 or later edition). [VERIFY against the current WSAA manual or the draft ADWG revision text — these may have shifted since 2015.] Also confirm whether P95 is the canonical statistic (vs P90 or annual mean).
 2. **Cyanobacteria biovolume thresholds (AV-CLS-02):** 0.04 / 0.6 mm³/L cited from the ADWG Cyanobacteria Information Sheet; confirm against the current v3.7 edition. Also confirm whether "max observed in record" is the correct trigger statistic for the platform's purpose, vs e.g. P95 or "any sample in last 12 months."
 3. **WSAA *Source Water Characterisation Guideline* citation (R-11, EV-01):** I cite this as if it exists; the WSAA HBT Manual is real, but a separate "Source Water Characterisation Guideline" needs verification. If it doesn't exist under that title, swap to Crittenden Ch. 3 or a WSAA technical report.
-4. **Site-relative vs absolute event triggers (§5):** ~~EV-01, EV-04, EV-05, EV-06 all use site-relative percentiles. This is the characterisation-pure approach. EV-02 uses a hybrid (site-relative for chl-a, absolute 15,000 cells/mL for total algae). EV-03 is purely absolute (ADWG Alert Levels). Decide whether to push EV-02 fully site-relative too.~~ **Resolved in v5.1:** EV-02 now fully site-relative (3× site median for both chl-a and total algal cells). EV-03 redefined as a per-sample trigger with ADWG thresholds — these are raw-water classification thresholds repurposed as event triggers, not treated-water targets, so the principled exception still applies.
+4. **Site-relative vs absolute event triggers (§5):** ~~EV-01, EV-04, EV-05, EV-06 all use site-relative percentiles…~~ **Resolved in v5.1:** EV-02 now fully site-relative (3× site median for both chl-a and total algal cells). EV-03 redefined as a per-sample trigger with ADWG thresholds — these are raw-water classification thresholds repurposed as event triggers, not treated-water targets, so the principled exception still applies.
 5. **E. coli LoD handling:** the v3 rule on this has been moved out of the integrity registry (see §3.6 item 3) — it belongs at the upload-validation layer rather than in `integrity_checks.py`. Confirm with engineering where this lives.
 6. **Parameter scope:** P-26 (E. coli) is included because it drives AV-CLS-01. If E. coli isn't in the AquaPoint upload schema, AV-CLS-01 returns `Indeterminate` and the parameter is optional rather than required.
-7. ~~**INT-01b severity-scaling threshold (1%):** confirmed by the WaterPoint test (`test_int01b_severity_scales_with_count`). Confirm whether this 1% threshold is hardcoded in `integrity_checks.py` or configurable per parameter.~~ **Resolved in v5:** hardcoded at 1% in `_check_typical_range`. Not per-parameter configurable.
-8. ~~**INT-05 severity-scaling threshold (≥5%):** v4 conjectures Critical at ≥5% based on the v3 wording, but the WaterPoint test only verifies Warning at low violation count. Confirm direction and threshold from the module source.~~ **Resolved in v5:** confirmed `SEV_CRITICAL if pct_violated >= 5.0 else SEV_WARNING` in source.
-9. ~~**Identity-rule ID-03 (TDS/EC window):** unclear whether this fits INT-05's per-row pattern. See §3.4 open question; resolution depends on what WaterPoint's INT-05 actually does internally.~~ **Resolved in v5:** confirmed INT-05 is strictly per-row `num ≤ den`; ID-03 doesn't fit and is flagged for engineering decision (move to ratio library is the recommended path).
+7. ~~**INT-01b severity-scaling threshold (1%):**~~ **Resolved in v5:** hardcoded at 1% in `_check_typical_range`. Not per-parameter configurable.
+8. ~~**INT-05 severity-scaling threshold (≥5%):**~~ **Resolved in v5:** confirmed `SEV_CRITICAL if pct_violated >= 5.0 else SEV_WARNING` in source.
+9. ~~**Identity-rule ID-03 (TDS/EC window):**~~ **Resolved in v5:** confirmed INT-05 is strictly per-row `num ≤ den`; ID-03 doesn't fit and is flagged for engineering decision (move to ratio library is the recommended path).
 10. **Population-level integrity checks:** v3 had several rules that don't fit any inherited family — stuck-sensor, sampling gaps, record duration, censored-data fraction, chl-a vs total algae rank correlation. v4 has flagged these in §3.6 for engineering decision; they may belong in a separate "evidence limits" or "methodological consistency" registry rather than `integrity_checks.py`.
+11. **Event-detection engine capabilities (new in v5.3):** §5's compound triggers (e.g. "P95 AND rising for ≥ 2 consecutive samples", "DOC > P90 AND SUVA > 3") and multi-sample-window triggers ("sustained ≥ 7 days") are engine capabilities not visible in the current schema. The condition_machine syntax appears single-parameter (per `EnvelopeFraming.condition_machine: Dict[str, str]`). The event-detection module's implementation session must address both. Treating §5's rules as the requirements specification for this work.
+12. **`ClassificationResult` dataclass and Section 1 renderer block (new in v5.3):** the schema and renderer additions specified in §2.1 are net-new code for the registries-refactor session (Session 1 per HANDOVER §7) or for the AquaPoint build session (Session 2). Confirm with engineering which session owns this change. The AquaPoint build session is the more natural home, since AV-CLS is AquaPoint-specific scope, but the schema change touches `report.py` which is shared platform code — argument for landing it as part of the registries refactor to keep all `report.py` changes in one PR.
+13. **`report.py` `CharacterisationFlag` namespace comment (new in v5.3):** the dataclass field comment reads `rule_id: str # CH-XX namespace (separate from IV-XX)` but the actual emitted values are `INT-NN`. Either update the comment or document where the `CH-XX` layer lives (if anywhere). Non-blocking for AquaPoint; maintenance note for whoever next touches `report.py`.
 
 ---
 
 ## Pending Reconciliation with WaterPoint Engine
 
-`core/characteriser/integrity_checks.py` is now sighted (resolves most §3-related items). Updated status table:
+Phase 0 sighting of `integrity_checks.py`, `report.py`, `orchestrator.py`, and `envelope_renderer.py` is now complete. (The `phase_5/example_outputs/clean/` directory referenced in v5.2's reconciliation table does not exist in the repo; the renderer is the source of truth for memo structure and was sighted directly.) Updated status table:
 
-| Item | Status | Files to inspect |
+| Item | Status | Files inspected / to inspect |
 |---|---|---|
-| Naming convention | **Resolved for integrity.** `INT-NN` confirmed. Event-rule and classification naming (`EV-NN`, `AV-CLS-NN`) still inferred by analogy. | Event-detection module, `concerns.py` |
+| Naming convention | **Resolved.** `INT-NN` confirmed in `integrity_checks.py` (rule_ids at lines 382, 433, 465, 489, 513, 542). `report.py`'s `CH-XX` comment is stale — noted as Open Item 13. Event-rule and classification naming (`EV-NN`, `AV-CLS-NN`) still inferred by analogy; will firm up when the event-detection module exists. |
 | Severity vocabulary | **Resolved.** `SEV_CRITICAL`, `SEV_WARNING`, `SEV_INFO` imported from `core.characteriser.report`. |
-| Flag dataclass shape | **Resolved.** `CharacterisationFlag` with fields `rule_id`, `severity`, `parameter`, `pattern`, `message`, `implication`, `recommended_action`, `affected_row_indices: list[int]`. |
-| Rule-family structure | **Resolved.** Five families. v5 §3 mirrors. |
+| Flag dataclass shape | **Resolved.** `CharacterisationFlag` with fields `rule_id`, `severity`, `parameter`, `pattern`, `message`, `implication`, `recommended_action`, `affected_row_indices: list[int]`. Empty list means "not tracked"; not the same as "no rows affected" (confirmed by dataclass docstring). |
+| Rule-family structure | **Resolved.** Five families (six with INT-01b). v5 §3 mirrors. |
 | Severity-scaling thresholds | **Resolved.** INT-01b at 1%, INT-05 at 5%, both hardcoded in `integrity_checks.py`. Not per-parameter configurable in the current code. |
-| INT-02 exemption mechanism | **Resolved.** By `parameter_type` filter plus `"rain"` substring carve-out. v5 §3.3 reflects, with engineering decision deferred for AquaPoint's many LoD-zero parameters. |
-| Identity-rule shape | **Resolved.** 4-tuple `(num_param, den_param, label, description)`. Tolerance global default. v5 §3.4 reflects. |
+| INT-02 exemption mechanism | **Resolved.** By `parameter_type` filter plus `"rain"` substring carve-out. v5 §3.3 reflects, with LoD handling resolved at the loader in v5.2 §0.1. |
+| Identity-rule shape | **Resolved.** 4-tuple `(num_param, den_param, label, description)`. Tolerance global default 5%. AquaPoint INT-05 registry is empty (v5.2 §3.4). |
 | Rule-table format (page_08_manual.py) | **Open.** Column layout still needs verification. Lower priority now that registries shape is firm. | `apps/wastewater_app/pages/page_08_manual.py` |
-| Seventh registry shape (AV-CLS) | **Open.** Where does AV-CLS-XX output surface in the memo? | `core/characteriser/orchestrator.py`, `core/characteriser/design_envelope.py`, `core/characteriser/report.py` |
-| Event-rule registry shape | **Open.** Naming (`EV-NN`?), shape, and site-relative percentile support. | `core/characteriser/coincidence.py` (stub per handover §10 — confirmed) plus wherever real event detection lives. |
-| Concerns → ratio priority map | **Open.** Shape that `concerns.py` consumes. | Concerns module (not yet present per `ls core/characteriser/`). |
-| Memo output shape | **Open.** Section structure, chart placement, AV-CLS surfacing. | `core/characteriser/envelope_renderer.py`, `core/characteriser/report.py`, an example output from `phase_5/example_outputs/clean/`. |
+| Seventh registry shape (AV-CLS) | **Resolved (v5.3).** No existing slot in the envelope schema (`EnvelopeFraming` has no classification field; renderer has no extension point for a Section 7). AV-CLS surfacing is additive scope: new `ClassificationResult` dataclass + new `source_classifications` field on `EnvelopeFraming` + new rendering block in `_render_section_1`. See §2.1. | `core/characteriser/report.py`, `core/characteriser/envelope_renderer.py` ✓ |
+| Event-rule registry shape | **Partially resolved.** Events consumed by envelope at `EnvelopeEventSection`; event-detection module is largely greenfield (`first_flush` only per HANDOVER §10). Engine capabilities for compound triggers and multi-sample windows specified in §5 banner as requirements. | Event-detection module (mostly net-new). |
+| Concerns → ratio priority map | **Partial.** `KNOWN_CONCERNS` exists as a module-level dict in `orchestrator.py` (six concerns: `peak_hydraulic`, `bnr_nitrification_stress`, `p_removal_stress`, `septicity`, `biodegradability`, `first_flush_solids`). Priority-map registry per HANDOVER §6 is forward spec. | `core/characteriser/orchestrator.py` ✓ |
+| Memo output shape | **Resolved.** Six sections rendered by hardcoded `_render_section_1..6` in `envelope_renderer.py`. No extension point. Adding a seventh section requires `render_envelope_markdown` changes; surfacing within an existing section requires only schema + that section's renderer block. | `core/characteriser/envelope_renderer.py` ✓ |
 | Population-level checks placement | **Resolved.** Not in `integrity_checks.py`. They live elsewhere (probably the dataset-confidence layer that demotes downstream confidence). v5 §3.6 reflects. |
 
-**Next files to sight, in priority order:**
-1. `core/characteriser/report.py` — confirms `CharacterisationFlag` dataclass details, severity constants, and likely the memo report shape.
-2. `core/characteriser/orchestrator.py` — confirms how the seven registries plug in and where AV-CLS-XX surfaces.
-3. One example output from `phase_5/example_outputs/clean/` — confirms memo structure and AV-CLS placement empirically.
-4. `apps/wastewater_app/pages/page_08_manual.py` lines 493–537 — confirms the table-presentation format for engineering review.
+**Phase 0 sighting complete.** Remaining open items are engineering / domain decisions, not code-discovery gaps.
 
 ---
 
 ## Changelog
 
-**v5.2 (this version):** Resolves the five engineering decisions that v5.1 had deferred. The spec is now ready for implementation — no remaining "engineering decision required" markers on the rule content itself.
+**v5.3 (this version):** Resolves the four Phase 0 findings raised on engine-internals review of v5.2 against `integrity_checks.py`, `report.py`, `orchestrator.py`, and `envelope_renderer.py`. Phase 0 complete.
+
+- **Finding 1 (`rule_id` namespace):** confirmed `INT-NN` is correct via direct grep of `integrity_checks.py` (rule_ids at lines 382, 433, 465, 489, 513, 542). The `CH-XX` comment in `report.py`'s `CharacterisationFlag` dataclass is stale. Added §0.3 documenting the discrepancy as a `report.py` maintenance note. Added Open Item 13. No spec change to AquaPoint.
+- **Finding 2 (AV-CLS surfacing):** resolved as **Option A — field on `EnvelopeFraming`, rendered in Section 1**. Phase 0 sighting of `envelope_renderer.py` confirmed wastewater has no existing slot: no classification field on `EnvelopeFraming`, no extension point in `render_envelope_markdown`'s six-section pipeline. New §2.1 specifies the required schema additions (`ClassificationResult` dataclass, `source_classifications: List[ClassificationResult]` field) and the renderer block within `_render_section_1`. Added Open Item 12 to clarify which code session owns these additions.
+- **Finding 3 (events upstream of envelope build):** confirmed `generate_envelope_artefact` takes `event_analysis` as input — event detection is upstream of envelope build, not part of it. Added scope banner at top of §5 acknowledging event-detection engine is largely greenfield (per HANDOVER §10) and that §5 specifies both AquaPoint event rules *and* engine capabilities (compound triggers, multi-sample windows) those rules require. Added Open Item 11 to track engine-capability scope. Locked event_id pattern as `{event_code}_{start_date}` (e.g. `EV-03_2024-02-15`).
+- **Architecture framing fix:** v5.2 described the architecture as "seven registries"; HANDOVER §6 specifies six. v5.3 clarifies: the registries refactor introduces six (parameters, integrity_rules, ratio_libraries, event_rules, concerns, caveats), and AquaPoint adds `source_water_classification` as **additive scope**, explicitly net-new structure not part of the wastewater-extraction refactor. Updated the top-of-document architecture line and the §2 intro.
+- **Smaller items folded in:** §6 prefaced with note that the concerns priority map is forward spec for `registries/concerns.py` (not a refactor of an existing structure). §5 documents the event_id pattern.
+- **Pending Reconciliation table:** updated to reflect Phase 0 completion. `phase_5/example_outputs/clean/` removed (does not exist in the repo per session note); `envelope_renderer.py` added as inspected. Three "Open" items moved to "Resolved": seventh registry shape, memo output shape, severity vocabulary already had been.
+
+**v5.2:** Resolves the five engineering decisions that v5.1 had deferred. The spec is now ready for implementation — no remaining "engineering decision required" markers on the rule content itself.
 
 - **Decision 1 (§3.3 INT-02 LoD exemption): resolved as loader normalisation (Option C).** Below-LoD values are substituted to `LoD/2` at the loader, before INT-02 runs. New §0.1 documents the upload contract for LoD declarations. INT-02 then fires only on genuine data-error zeros.
 - **Decision 2 (§3.4 ID-02 UVT↔UV254): resolved at the loader (Option C).** Upload accepts one of {UVT, UV254} plus a declared optical path length. The other is derived. New §0.2 documents the upload contract. No integrity flag needed.
