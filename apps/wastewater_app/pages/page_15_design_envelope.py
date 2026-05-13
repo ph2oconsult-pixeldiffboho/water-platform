@@ -523,8 +523,8 @@ def _load_dataframe():
                 "(Upload a different file below to override.)"
             )
             uploaded = st.file_uploader(
-                "Override with a different CSV (optional)",
-                type=["csv"],
+                "Override with a different file (CSV or Excel, optional)",
+                type=["csv", "xlsx", "xls"],
                 key="env_override_uploader",
             )
             if uploaded:
@@ -537,11 +537,11 @@ def _load_dataframe():
         "1. Go to **Plant Data & Calibration**, upload your CSV there, "
         "run the cleaner, and return to this page (recommended — you also "
         "get KPI and benchmarking analysis there), OR\n"
-        "2. Upload a CSV directly here for envelope analysis only."
+        "2. Upload a CSV or Excel file directly here for envelope analysis only."
     )
     uploaded = st.file_uploader(
-        "Upload plant data CSV",
-        type=["csv"],
+        "Upload plant data (CSV or Excel)",
+        type=["csv", "xlsx", "xls"],
         key="env_direct_uploader",
         help=(
             "Columns: timestamp (required), flow_mld, influent_<param>_mg_l "
@@ -555,8 +555,21 @@ def _load_dataframe():
 
 
 def _read_uploaded_csv(uploaded_file):
-    """Try to use the platform's cleaner; on any failure, fall back to a
-    plain pandas read so the page still works."""
+    """Try to use the platform's cleaner for CSV; on any failure, fall back
+    to a plain pandas read. Excel files go straight to pd.read_excel and
+    bypass PlantDataCleaner (which only handles text/CSV input)."""
+    filename = (uploaded_file.name or "").lower()
+    is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
+
+    if is_excel:
+        try:
+            uploaded_file.seek(0)
+            df = pd.read_excel(uploaded_file)
+            return df
+        except Exception as exc:
+            st.error(f"Could not read Excel file: {exc}")
+            return None
+
     try:
         from core.data_ingestion.data_cleaning import PlantDataCleaner
         cleaner = PlantDataCleaner()
@@ -573,7 +586,6 @@ def _read_uploaded_csv(uploaded_file):
             f"PlantDataCleaner failed ({exc}). Falling back to plain CSV read."
         )
 
-    # Plain fallback
     try:
         uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file)
