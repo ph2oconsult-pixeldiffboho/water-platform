@@ -21,3 +21,5 @@ __all__ = [
     "render_scenario_comparison",
     "render_manual",
 ]
+from .page_10_design_envelope import render as render_design_envelope
+from .page_10_design_envelope import render as render_design_envelope

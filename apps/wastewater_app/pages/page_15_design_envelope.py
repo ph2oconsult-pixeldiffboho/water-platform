@@ -555,41 +555,51 @@ def _load_dataframe():
 
 
 def _read_uploaded_csv(uploaded_file):
-    """Try to use the platform's cleaner for CSV; on any failure, fall back
-    to a plain pandas read. Excel files go straight to pd.read_excel and
-    bypass PlantDataCleaner (which only handles text/CSV input)."""
+    """Read the uploaded file (CSV or Excel) through PlantDataCleaner so
+    downstream code receives normalised columns (Date -> _date,
+    Flow_MLD -> flow_mld, etc).
+
+    For Excel uploads, the Excel DataFrame is converted to CSV text in-memory
+    and fed to the cleaner via the same pipeline as direct CSV uploads. This
+    preserves the column normalisation that the charts and envelope code
+    depend on.
+    """
     filename = (uploaded_file.name or "").lower()
     is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
 
-    if is_excel:
-        try:
+    # Step 1: get the data as CSV text, regardless of upload format
+    try:
+        if is_excel:
             uploaded_file.seek(0)
-            df = pd.read_excel(uploaded_file)
-            return df
-        except Exception as exc:
-            st.error(f"Could not read Excel file: {exc}")
-            return None
+            df_excel = pd.read_excel(uploaded_file)
+            text = df_excel.to_csv(index=False)
+        else:
+            text = uploaded_file.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        st.error(f"Could not read uploaded file: {exc}")
+        return None
 
+    # Step 2: run the cleaner on the CSV text (same path for both formats)
     try:
         from core.data_ingestion.data_cleaning import PlantDataCleaner
         cleaner = PlantDataCleaner()
-        text = uploaded_file.read().decode("utf-8", errors="replace")
         result = cleaner.clean(text, target_interval="daily")
         if result.df is not None and len(result.df) > 0:
             return result.df
         st.warning(
-            "PlantDataCleaner produced no rows. Showing raw CSV instead — "
+            "PlantDataCleaner produced no rows. Showing raw data instead — "
             "review the data quality issues on Plant Data & Calibration for diagnostics."
         )
     except Exception as exc:
         st.warning(
-            f"PlantDataCleaner failed ({exc}). Falling back to plain CSV read."
+            f"PlantDataCleaner failed ({exc}). Falling back to plain read."
         )
 
+    # Step 3: plain fallback (unnormalised columns; charts may not render)
     try:
-        uploaded_file.seek(0)
-        df = pd.read_csv(uploaded_file)
+        from io import StringIO
+        df = pd.read_csv(StringIO(text))
         return df
     except Exception as exc:
-        st.error(f"Could not read CSV: {exc}")
+        st.error(f"Could not read file: {exc}")
         return None
