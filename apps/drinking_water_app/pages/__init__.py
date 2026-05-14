@@ -10,16 +10,17 @@ from .page_05_report import render as render_report
 from .page_06_treatment_philosophy import render as render_treatment_philosophy
 from .page_07_scenario_comparison import render as render_scenario_comparison
 from .page_08_manual import render as render_manual
+from .page_10_design_envelope import render as render_design_envelope
 
 __all__ = [
     "render_project_setup",
     "render_source_water",
     "render_technology_selection",
     "render_results",
+    "render_pfd",
     "render_report",
     "render_treatment_philosophy",
     "render_scenario_comparison",
     "render_manual",
+    "render_design_envelope",
 ]
-from .page_10_design_envelope import render as render_design_envelope
-from .page_10_design_envelope import render as render_design_envelope
