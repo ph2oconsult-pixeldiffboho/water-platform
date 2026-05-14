@@ -33,8 +33,15 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from core.characteriser.orchestrator import generate_envelope_artefact
-from apps.drinking_water_app.characteriser_config import AQUAPOINT_CONCERNS
+try:
+    from core.characteriser.orchestrator import generate_envelope_artefact
+    from apps.drinking_water_app.characteriser_config import AQUAPOINT_CONCERNS
+    CHARACTERISER_AVAILABLE = True
+except Exception as _e:
+    CHARACTERISER_AVAILABLE = False
+    _IMPORT_ERROR = str(_e)
+    AQUAPOINT_CONCERNS = {}
+    def generate_envelope_artefact(*a, **kw): pass
 
 
 # ── Session state keys (namespaced "aq_env_") ──────────────────────────────

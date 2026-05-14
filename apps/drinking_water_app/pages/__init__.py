@@ -10,7 +10,13 @@ from .page_05_report import render as render_report
 from .page_06_treatment_philosophy import render as render_treatment_philosophy
 from .page_07_scenario_comparison import render as render_scenario_comparison
 from .page_08_manual import render as render_manual
-from .page_10_design_envelope import render as render_design_envelope
+
+try:
+    from .page_10_design_envelope import render as render_design_envelope
+except Exception:
+    def render_design_envelope():
+        import streamlit as st
+        st.error("Design Envelope page could not be loaded. Check logs for details.")
 
 __all__ = [
     "render_project_setup",
