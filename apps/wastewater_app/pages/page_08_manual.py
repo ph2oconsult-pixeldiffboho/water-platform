@@ -182,7 +182,7 @@ The platform sums CAPEX, OPEX, energy, sludge, and carbon across the sequence.
 **Tabs:**
 - **⚙️ Engineering:** Effluent quality, removal percentages, reactor sizing, energy breakdown, sludge production, per-technology notes and assumptions
 - **💰 Cost:** CAPEX breakdown, annual OPEX, lifecycle cost (NPV over planning horizon)
-- **🌿 Carbon & Energy:** Scope 1 (process N₂O/CH₄), Scope 2 (electricity), total tCO₂e/year, carbon cost
+- **🌿 Carbon & Energy:** Scope 1 (process N₂O/CH₄), Scope 2 (electricity), total tCO₂e/year, carbon cost. Includes a **Scope 1 N₂O accounting methodology** section with a sensitivity expander showing the same plant under three accounting regimes (legacy / IPCC 2019 / measured-high) plus methodology-revision and microbiome-instability exposure metrics. See the *🌿 Scope 1 N₂O Methodology* tab in this manual for the full interpretation guide.
 - **⚠️ Risk:** Risk matrix across technical, regulatory, operational, and implementation dimensions
 
 **Calibration toggle** (appears when plant data has been uploaded on Page 07):
@@ -285,7 +285,7 @@ See the **Digital Twin** tab in this manual for detailed guidance.
                 "best_for": "Low footprint, low sludge, energy optimisation",
                 "key_assumptions": "y_obs 0.22 kgVSS/kgBOD, MLSS 8,000 mg/L, alpha 0.65, SND 60%",
                 "key_outputs": "~35% footprint saving vs CAS, 40% lower sludge than CAS, TN 10 mg/L",
-                "limitations": "Granule stability at T<12°C. ~80 full-scale plants — fewer references than CAS/MBR.",
+                "limitations": "Granule stability at T<12°C. ~80 full-scale plants — fewer references than CAS/MBR. **No Scope 1 GHG advantage:** N₂O emissions 0.54–4.8% of influent TN (Jahn et al. 2019) — higher than conventional BNR. See *🌿 Scope 1 N₂O Methodology* tab.",
                 "energy": "0.25–0.45 kWh/m³",
                 "capex_driver": "SBR tankage (3+ reactors) + blower + decanter control",
             },
@@ -636,14 +636,31 @@ It excludes: staffing, minor maintenance, insurance, rates, and compliance monit
         st.markdown("""
 | Emission type | What it covers | Key uncertainty |
 |---|---|---|
-| **Scope 1 — N₂O** | Biological N₂O from nitrification/denitrification | ±3–5× (IPCC Tier 1 EF range 0.005–0.05 kg N₂O/kg N) |
+| **Scope 1 — N₂O** | Biological N₂O from nitrification/denitrification | ±10× (IPCC Tier 1 EF range 0.005–0.050 kg N₂O/kg N) |
 | **Scope 1 — CH₄** | Fugitive methane from biological reactors and digesters | ±2× depending on cover integrity |
 | **Scope 2** | Grid electricity consumption × grid emission factor | Grid EF varies by state and time |
 | **Carbon cost** | Total tCO₂e/yr × carbon price ($/tCO₂e) | Depends on carbon price assumption |
 
 > **Important:** N₂O is the largest carbon uncertainty in wastewater treatment.
-> The IPCC Tier 1 emission factor (0.016 kg N₂O/kg N removed) carries a range of 0.005–0.05.
+> The IPCC 2019 Refinement Tier 1 emission factor (0.016 kg N₂O/kg N removed)
+> carries a reported range of 0.005–0.050 — a ×10 span across sites.
 > Site-specific N₂O measurement is recommended before detailed carbon accounting.
+
+**Methodology sensitivity view.** Below the carbon summary card, the Carbon &
+Energy tab includes a **Scope 1 N₂O accounting methodology** section. It shows
+the same plant's N₂O number under three accounting regimes: legacy (pre-2019,
+0.35%), current IPCC 2019 Tier 1 (1.6%), and plant-measured high case (3.0%
+— Uster-class microbiome instability). Two derived exposure metrics quantify
+methodology-revision risk (current minus legacy) and microbiome-instability
+risk (measured-high minus current). See the *🌿 Scope 1 N₂O Methodology* tab
+for the full interpretation guide.
+
+**AGS / Nereda caveat.** Aerobic Granular Sludge does **not** confer a Scope 1
+GHG advantage over conventional activated sludge — full-scale measurements
+report N₂O emissions of 0.54–4.8% of influent TN (Jahn et al. 2019),
+materially higher than the IPCC default. When AGS/Nereda appears in the
+recommended stack or alternatives, a credibility-layer flag surfaces this
+caveat at point of recommendation.
 """)
 
         st.markdown("### Risk tab")
@@ -1084,7 +1101,7 @@ Assesses confidence in the data underlying the decision across six variables.
 | Flow variability and peak events | I/I magnitude, frequency, and trajectory |
 | Process performance data | Australian precedent; site-specific confirmation |
 | Pilot data and scale-up | Whether site-specific pilot testing has occurred |
-| N₂O emission factor | On-site monitoring vs IPCC Tier 1 default (±6× range) |
+| N₂O emission factor | On-site monitoring vs IPCC 2019 Tier 1 default (±10× range, 0.005–0.050) |
 | Seasonal and temperature effects | Winter nitrification design temperature |
 
 **Confidence levels:**
@@ -1619,12 +1636,57 @@ This tab documents the platform's accounting choices and the sensitivity views
 it provides.
         """)
 
-        with st.expander("**The IPCC 2019 Refinement and why the platform default moved**", expanded=True):
+        with st.expander("**Where to find this in the app**", expanded=True):
+            st.markdown("""
+The Scope 1 N₂O accounting machinery is surfaced in two places on
+**Page 04 — Results**:
+
+**1. WaterPoint Intelligence carbon panel** *(above the four tabs)*
+
+After running calculations, scroll to the **🌱 Carbon & Uncertainty** expander
+in the WaterPoint Intelligence block at the top of Page 04. This shows the
+*pathway-level* carbon reduction range under the IPCC 2019 EF range
+(0.005–0.050 g N₂O-N/g TN, ×10 span) with traffic-light uncertainty
+dimensions, top sensitivity drivers, and a decision-tension framing for the
+recommended upgrade path.
+
+**2. Scope 1 methodology sensitivity** *(inside the Carbon & Energy tab)*
+
+Below the WaterPoint block, switch to the **🌿 Carbon & Energy** tab — the
+*third* of four tabs (Engineering / Cost / Carbon & Energy / Risk). The tabs
+appear as small labels just above the carbon waterfall area, easy to miss
+the first time. Scroll past the carbon summary card with its waterfall chart
+and the existing N₂O statistical-range expander; immediately below those you
+will find a horizontal divider and the section heading:
+
+> **Scope 1 N₂O accounting methodology**
+
+The expander opens by default and shows three columns of metrics:
+
+- *Legacy default (pre-2019)* — EF = 0.35%, IPCC 2006 basis
+- *Current IPCC 2019 Tier 1* — EF = 1.6%, current platform default
+- *Plant-measured high case* — EF = 3.0%, Uster-class microbiome instability
+
+Plus two derived exposure metrics:
+
+- *Methodology-revision exposure* — what the legacy-basis number understates
+  by, relative to current accounting
+- *Microbiome-instability exposure* — operational tail risk if site-specific
+  N₂O is in the upper measurement range
+
+**The two views are complementary, not redundant.** The WaterPoint panel
+frames N₂O as a *site-to-site variability* envelope within current methodology
+— useful for upgrade-pathway selection. The Carbon & Energy methodology
+section frames it as *methodology-revision and tail risk* — useful for
+strategic exposure framing (net-zero target setting, regulatory contingency).
+            """)
+
+        with st.expander("**The IPCC 2019 Refinement and why the platform default moved**", expanded=False):
             st.markdown("""
 The IPCC 2019 Refinement to the 2006 Guidelines (Vol. 5, Ch. 6, Table 6.8A)
 raised the Tier 1 default N₂O emission factor for wastewater treatment plants
 to **1.6% of influent TN** (reported range 0.5–2.0%; full observation
-range 0.005–0.05). This replaces the earlier IPCC 2006 default of ~0.35%.
+range 0.005–0.050). This replaces the earlier IPCC 2006 default of ~0.35%.
 
 The methodology revision **mechanically increases reported Scope 1 numbers**
 when a reporting framework migrates, even with zero change in plant
@@ -1779,14 +1841,19 @@ N₂O emission factors used in this platform:
 |---|---|---|
 | Conventional BNR / CAS | 0.016 | IPCC 2019 Tier 1 central estimate |
 | MBR | 0.016 | IPCC 2019 Tier 1 |
-| AGS | 0.016 | IPCC 2019 Tier 1 |
+| AGS / Nereda | **0.024** | Jahn et al. 2019 (full-scale, range 0.54–4.8%; granule-core SND + PHB-mediated metabolism) — see *🌿 Scope 1 N₂O Methodology* tab |
 | Sidestream PN/A | 0.04 | Lackner et al. 2014 (elevated due to NO₂ intermediate) |
 | Incineration | 0.50 kg/t DS | IPCC 2019 Refinement Vol.5 |
 
-**Important:** The IPCC Tier 1 range is 0.005–0.05 kg N₂O/kg N — a 10-fold range.
+**Important:** The IPCC 2019 Tier 1 range is 0.005–0.050 kg N₂O/kg N — a 10-fold range.
 N₂O is the dominant carbon uncertainty in wastewater treatment.
 Site-specific measurement (online N₂O analysers, 12-month campaign) is recommended
 before finalising carbon accounts for any detailed assessment.
+
+**Platform-wide headline EF.** `carbon_layer.EF_N2O_DEFAULT` is **0.016** (1.6%
+of influent TN, IPCC 2019 Refinement Tier 1). This is the basis for the
+aggregated platform-level Scope 1 number. Per-technology engines use their
+specific EF above; results aggregate up consistently.
 """)
 
         with st.expander("**CAPEX unit rate basis**"):
