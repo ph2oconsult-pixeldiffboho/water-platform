@@ -16,15 +16,17 @@ Design principles
 -----------------
 - Deterministic inputs → probabilistic communication of outputs
 - Every uncertainty level has a traceable rule (from spec + IPCC literature)
-- Carbon uncertainty uses IPCC 2019 N2O EF range: 0.005–0.032 g N2O-N/g TN removed
+- Carbon uncertainty uses IPCC 2019 N2O EF range: 0.005–0.050 g N2O-N/g TN removed
 - Sensitivity drivers are ranked by impact magnitude, not assumption
 - Decision tension is stated explicitly — always one clear sentence
 - Language: "indicative", "sensitive to", "subject to validation" — never absolute
 
 IPCC references
 ---------------
-N2O EF range: IPCC 2019 Refinement to 2006 Guidelines, Chapter 6
-  EF_effluent = 0.005 (low) – 0.016 (central) – 0.032 (high) g N2O-N / g TN removed
+N2O EF range: IPCC 2019 Refinement to 2006 Guidelines, Chapter 6, Table 6.8A
+  EF_effluent = 0.005 (low) – 0.016 (central) – 0.050 (high) g N2O-N / g TN removed
+  Range spans ×10 across reported sites; uncertainty is irreducible without
+  site-specific measurement.
   GWP100 (AR6) = 273
 
 Main entry point
@@ -58,9 +60,12 @@ UL_HIGH     = "High"
 UL_VERY_HIGH= "Very High"
 
 # ── IPCC N2O EF bounds (g N2O-N per g TN removed) ─────────────────────────────
+# IPCC 2019 Refinement, Table 6.8A — reported range 0.005–0.050, ×10 across sites.
+# The full reported range is structural to the uncertainty story this layer
+# tells; a clipped upper bound understates the methodology revision exposure.
 _EF_LOW     = 0.005   # IPCC 2019, lower bound
 _EF_CENTRAL = 0.016   # IPCC 2019, central estimate (Tier 1 default)
-_EF_HIGH    = 0.032   # IPCC 2019, upper bound
+_EF_HIGH    = 0.050   # IPCC 2019, upper bound (Table 6.8A)
 _N2O_GWP    = 273.0   # IPCC AR6 GWP100
 _N2O_RATIO  = 44.0 / 28.0   # N2O-N to N2O molecular weight ratio
 
@@ -284,12 +289,12 @@ def _assess_dimensions(
         dimension = "Carbon model (N\u2082O)",
         level     = UL_HIGH,
         driver    = ("N\u2082O emission factor is inherently site-specific (IPCC 2019 range: "
-                     "0.5%\u20133.2% of TN removed); influenced by DO control, temperature, "
+                     "0.5%\u20135.0% of TN removed); influenced by DO control, temperature, "
                      "and biological process configuration."),
         impact    = "Total CO\u2082e reduction estimate; carbon credit verification; "
                     "net-zero progress reporting",
         note      = ("N\u2082O emission estimates are indicative only. The IPCC EF range spans "
-                     "6\u00d7 from lower to upper bound. On-site N\u2082O monitoring is essential "
+                     "10\u00d7 from lower to upper bound. On-site N\u2082O monitoring is essential "
                      "to validate model estimates before carbon credits are claimed."),
     ))
 
@@ -430,7 +435,7 @@ def _build_carbon_uncertainty(
         central_reduction_pct = central_b.pct_reduction,
         summary_text        = summary,
         ipcc_ref            = ("IPCC 2019 Refinement to 2006 Guidelines, Vol 5, Chapter 6. "
-                               "EF range 0.005\u20130.032 g N\u2082O-N/g TN removed. "
+                               "EF range 0.005\u20130.050 g N\u2082O-N/g TN removed. "
                                "GWP\u2081\u2080\u2080 = 273 (IPCC AR6)."),
     )
 
@@ -476,7 +481,7 @@ def _build_sensitivity_drivers(
         impact_level = "High",
         affects      = "Total CO\u2082e reduction estimate; carbon credit value; net-zero reporting",
         explanation  = (
-            f"The IPCC EF range spans 6\u00d7 from lower (0.5%) to upper bound (3.2%). "
+            f"The IPCC EF range spans 10\u00d7 from lower (0.5%) to upper bound (5.0%). "
             f"This drives a {round(carbon.low_band.total_delta_t):,}\u2013"
             f"{round(carbon.high_band.total_delta_t):,} t CO\u2082e/year uncertainty band "
             f"on the total carbon reduction (central: {round(carbon.central_band.total_delta_t):,} t). "

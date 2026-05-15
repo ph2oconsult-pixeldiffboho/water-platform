@@ -191,21 +191,38 @@ def _render_scope1_methodology_sensitivity(scenario) -> None:
         build_scope1_scenarios, EF_IPCC_2019, WARNING_COPY,
     )
 
+    # Always render the section heading so the feature is discoverable, even
+    # if the underlying carbon_result has no Scope 1 number to project from.
+    st.markdown("---")
+    st.markdown("##### Scope 1 N₂O accounting methodology")
+
     if scenario is None or not getattr(scenario, "carbon_result", None):
+        st.caption(
+            "Scope 1 methodology sensitivity is unavailable: no carbon result "
+            "is attached to the active scenario. Recompute the scenario "
+            "(Page 03 → Save) and revisit this tab."
+        )
         return
 
     car = scenario.carbon_result
 
-    # Source the central N₂O number. Prefer an explicit n2o_biological_tco2e_yr
-    # if the carbon_result carries one; otherwise estimate from Scope 1
-    # (N₂O dominates Scope 1 for biological N-removal plants — ~90%).
+    # Source the central N₂O number. The platform CarbonResult dataclass does
+    # not currently carry n2o_biological_tco2e_yr (only Scope 1 aggregate),
+    # so we estimate from Scope 1 (N₂O dominates Scope 1 for biological
+    # N-removal plants — ~90%). If a future change adds the field, prefer it.
     n2o_central = getattr(car, "n2o_biological_tco2e_yr", None)
     if n2o_central is None or n2o_central <= 0:
         scope1 = getattr(car, "scope_1_tco2e_yr", 0) or 0
         n2o_central = scope1 * 0.90 if scope1 > 0 else 0.0
 
     if n2o_central <= 0:
-        return  # nothing to project
+        st.caption(
+            "Scope 1 methodology sensitivity is unavailable for this scenario: "
+            "the active carbon result reports a zero Scope 1 number. This "
+            "typically means the technology stack has not produced biological "
+            "treatment emissions (e.g. non-biological pre-treatment only)."
+        )
+        return
 
     report = build_scope1_scenarios(
         n2o_central_tco2e_yr = n2o_central,
@@ -214,7 +231,7 @@ def _render_scope1_methodology_sensitivity(scenario) -> None:
 
     with st.expander(
         "📊 Scope 1 sensitivity to N₂O accounting methodology",
-        expanded=False,
+        expanded=True,
     ):
         st.caption(WARNING_COPY)
 

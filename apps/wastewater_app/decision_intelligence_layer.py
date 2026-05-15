@@ -513,11 +513,11 @@ def _build_data_confidence(
         confidence  = CONF_VERY_LOW,
         volume      = "none",
         issue       = (
-            "No on-site N₂O monitoring data. IPCC Tier 1 EF applies (range: 0.5–3.2% of TN removed). "
+            "No on-site N₂O monitoring data. IPCC Tier 1 EF applies (range: 0.5–5.0% of TN removed). "
             "This is not a data gap that can be resolved at concept stage — "
             "continuous on-site monitoring is required before carbon credits can be claimed."
         ),
-        implication = "Affects carbon reduction estimate by up to ±6× range. Carbon credit verification is not possible without monitoring.",
+        implication = "Affects carbon reduction estimate by up to ±10× range. Carbon credit verification is not possible without monitoring.",
     ))
 
     # 6. Seasonal and temperature effects
