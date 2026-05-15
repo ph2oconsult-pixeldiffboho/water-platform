@@ -32,6 +32,10 @@ References
   - van Dijk et al. (2020) Full-scale Nereda performance — Water Sci. Tech.
   - WEF (2018) Innovative Biological Treatment Processes, Ch. 3
   - Pronk et al. (2015) Full-scale performance of Nereda — Water Research
+  - Jahn et al. (2019) N₂O emissions from full-scale aerobic granular sludge —
+        Water Research 162, 432–443. Reports 0.54–4.8% of influent TN under
+        aerobic operation; mechanism is granule-core SND, PHB-mediated
+        endogenous denitrification, and microbiome heterogeneity.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -491,13 +495,32 @@ class GranularSludgeTechnology(BaseTechnology):
         # kWh per kg NH4 removed — standard energy benchmarking metric
 
         # ── 8. Scope 1 emissions ───────────────────────────────────────────
-        n2o_ef  = self._get_eng("n2o_emission_factor_g_n2o_per_g_n_removed", 0.016)
+        # IMPORTANT: AGS-specific N₂O emission factor.
+        # AGS does NOT confer a Scope 1 advantage over conventional activated
+        # sludge. Full-scale measurements report 0.54–4.8% of influent TN under
+        # aerobic operation (Jahn et al. 2019), driven by:
+        #   1. Simultaneous nitrification–denitrification (SND) within granules,
+        #      with DO gradients setting up partial-denitrification conditions.
+        #   2. PAO/GAO storage on poly-β-hydroxybutyrate (PHB) reserves and
+        #      endogenous denitrification under carbon limitation in granule cores.
+        #   3. Granule heterogeneity (size, shear, age) producing transient
+        #      N₂O bursts during cycle transitions.
+        # The default value below (0.024 kg N₂O/kg N removed ≈ 2.4%) sits at
+        # the midpoint of the Jahn 2019 measured range and is materially higher
+        # than the generic IPCC 2019 Tier 1 default (0.016) used for conventional
+        # BNR. Selection on net-zero grounds requires the same N₂O monitoring
+        # and control regime as conventional BNR.
+        n2o_ef  = self._get_eng("n2o_emission_factor_g_n2o_per_g_n_removed", 0.024)
         n2o_gwp = self._get_eng("n2o_gwp", 273)
         r.carbon.n2o_biological_tco2e_yr = round(
             tn_removed * n2o_ef * 365 * n2o_gwp / 1000.0, 1
         )
         r.notes.add_assumption(
-            f"N2O EF = {n2o_ef} kg N2O/kg N removed (IPCC 2019 Tier 1)"
+            f"N2O EF for AGS = {n2o_ef} kg N2O/kg N removed (range 0.54–4.8% per Jahn et al. 2019, "
+            f"midpoint ~2.4%). Higher than conventional BNR (0.016) due to PHB-mediated SND and "
+            f"endogenous denitrification in granule cores. AGS does NOT deliver a Scope 1 advantage "
+            f"over conventional activated sludge — site-specific N₂O monitoring is required if AGS "
+            f"is selected on net-zero grounds."
         )
         r.notes.add_limitation(
             "AGS bio-P removal can become unreliable at temperatures < 12°C or "

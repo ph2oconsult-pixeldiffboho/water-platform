@@ -12,7 +12,7 @@ from apps.ui.ui_components import render_page_header
 def render() -> None:
     render_page_header("📖 User Manual", "Platform guide, module reference, and engineering notes.")
 
-    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_wp, tab_dil, tab_framework, tab_eng = st.tabs([
+    tab_start, tab_workflow, tab_modules, tab_inputs, tab_results, tab_dt, tab_wp, tab_dil, tab_framework, tab_scope1, tab_eng = st.tabs([
         "🚀 Getting Started",
         "🔄 Workflow Guide",
         "⚙️ Treatment Modules",
@@ -22,6 +22,7 @@ def render() -> None:
         "⚡ WaterPoint Intelligence",
         "🧠 Decision Intelligence",
         "🎯 Decision Framework",
+        "🌿 Scope 1 N₂O Methodology",
         "🔧 Engineering Notes",
     ])
 
@@ -1607,7 +1608,137 @@ Not: *"Technology Y is efficient and could help this plant."*
         )
 
     # ─────────────────────────────────────────────────────────────────────
-    # TAB 10 — ENGINEERING NOTES
+    # TAB 10 — SCOPE 1 N₂O METHODOLOGY
+    # ─────────────────────────────────────────────────────────────────────
+    with tab_scope1:
+        st.markdown("## Scope 1 N₂O methodology")
+        st.markdown("""
+N₂O from biological N-removal is the largest single uncertainty in wastewater
+carbon accounting and — for a typical plant — the dominant component of Scope 1.
+This tab documents the platform's accounting choices and the sensitivity views
+it provides.
+        """)
+
+        with st.expander("**The IPCC 2019 Refinement and why the platform default moved**", expanded=True):
+            st.markdown("""
+The IPCC 2019 Refinement to the 2006 Guidelines (Vol. 5, Ch. 6, Table 6.8A)
+raised the Tier 1 default N₂O emission factor for wastewater treatment plants
+to **1.6% of influent TN** (reported range 0.5–2.0%; full observation
+range 0.005–0.05). This replaces the earlier IPCC 2006 default of ~0.35%.
+
+The methodology revision **mechanically increases reported Scope 1 numbers**
+when a reporting framework migrates, even with zero change in plant
+operation. Documented step-changes:
+
+- **New Zealand:** ~46× increase under the updated MfE methodology
+- **United Kingdom:** ~8× increase under updated DEFRA reporting
+- **Australia (NGER):** ~5× increase as IPCC 2019 is incorporated
+
+**Platform default:** as of this PR, the platform-wide headline EF
+(`carbon_layer.EF_N2O_DEFAULT`) is **0.016** (1.6% of influent TN, on the
+IPCC 2019 basis). It was previously 0.010 — a value that no longer matches
+either the underlying per-technology engines (which already used 0.016) or
+the current Tier 1 default. The PR reconciles these to a single source of
+truth at the IPCC 2019 value.
+            """)
+
+        with st.expander("**AGS / Nereda Scope 1 caveat**", expanded=False):
+            st.markdown("""
+Aerobic Granular Sludge (AGS / Nereda) is sometimes selected on net-zero
+grounds under the assumption that its compact, intensified process delivers
+a Scope 1 advantage. **It does not.**
+
+Full-scale measurements (Jahn et al. 2019, *Water Research* 162, 432–443)
+report N₂O emissions of **0.54–4.8% of influent TN under aerobic operation**
+— materially higher than the IPCC 2019 Tier 1 default (1.6%) used for
+conventional BNR. The mechanism:
+
+1. **Simultaneous nitrification–denitrification (SND)** within granules.
+   Granule geometry sets up DO gradients (aerobic outer shell, anoxic core)
+   producing partial-denitrification conditions that favour N₂O accumulation.
+
+2. **PHB-mediated metabolism.** PAO/GAO populations store
+   poly-β-hydroxybutyrate during feast phases and oxidise it during
+   famine/anoxic phases, supporting endogenous denitrification — but
+   commonly stalling at the N₂O reduction step.
+
+3. **Microbiome heterogeneity.** Variation in granule size, age, and shear
+   produces transient N₂O bursts during cycle transitions.
+
+The platform now uses an AGS-specific default of **0.024 kg N₂O/kg N removed**
+(midpoint of the Jahn 2019 range) and surfaces a credibility-layer flag
+whenever AGS or Nereda appears in the recommended stack or alternatives.
+Selection on net-zero grounds requires the same N₂O monitoring and control
+regime as conventional BNR.
+            """)
+
+        with st.expander("**The three-scenario sensitivity view**", expanded=False):
+            st.markdown("""
+The Carbon & Energy tab on Page 04 (Results) includes a *Scope 1 sensitivity
+to N₂O accounting methodology* expander. It shows the same plant's Scope 1
+N₂O number under three accounting regimes:
+
+| Scenario | EF | What it represents |
+|---|---|---|
+| **Legacy (pre-2019)** | 0.35% of influent TN | IPCC 2006 default; many legacy reporting frameworks still use this. |
+| **Current IPCC 2019 Tier 1** | 1.6% | Current platform default; current NGER basis as IPCC 2019 incorporates. |
+| **Plant-measured high case** | 3.0% | Top of full-scale observation range — Uster-class microbiome-instability worst case (Gruber et al. 2021). |
+
+Two derived risk metrics are surfaced:
+
+- **Methodology-revision exposure** = *current − legacy*. The step-change a
+  utility on the legacy default faces when their reporting framework
+  migrates to IPCC 2019. This is unhedged accounting risk — it materialises
+  on a policy timeline, not an operational one.
+
+- **Microbiome-instability exposure** = *measured-high − current*. The
+  additional exposure if the plant's site-specific N₂O is in the upper tail
+  of measured observations. This is the operational tail risk that
+  site-specific monitoring is needed to quantify.
+
+This view is **complementary to** the IPCC statistical-range view shown
+inside the carbon summary card. The statistical-range view (0.005 / 0.016
+/ 0.050) communicates site-to-site variability within current methodology.
+The methodology-revision view (0.0035 / 0.016 / 0.030) communicates the
+risk that the accounting itself changes.
+            """)
+
+        with st.expander("**How to interpret the numbers**", expanded=False):
+            st.markdown("""
+- A utility's reported Scope 1 number can change by **5×** with no change
+  in plant operation, purely from methodology adoption. If you are setting
+  a net-zero target on the legacy basis, the target is implicitly setting
+  itself ~5× more aggressive when the methodology migrates.
+
+- The "measured-high" case is **not** intended as a forecast. It is an
+  envelope for site-specific tail risk. Plants without continuous N₂O
+  monitoring cannot know which point on the IPCC range applies to them.
+
+- For *option comparison* between technology stacks at this plant, the
+  central IPCC 2019 number is the right basis — the methodology applies
+  equally to all options. The scenario view is for **strategic exposure
+  framing** (net-zero target setting, regulatory contingency).
+
+- For *external reporting*, use whatever EF the relevant framework
+  specifies (NGER for AU NPI, applicable national methodology elsewhere).
+  The platform's central number is screening-level and IPCC-aligned, but
+  not a substitute for formal accounting under a specific framework.
+            """)
+
+        with st.expander("**References**", expanded=False):
+            st.markdown("""
+- IPCC (2006) *Guidelines for National GHG Inventories*, Vol. 5 Ch. 6.
+- IPCC (2019) *Refinement to the 2006 Guidelines*, Vol. 5 Ch. 6, Table 6.8A.
+- Jahn, L., Svardal, K., Krampe, J. (2019) N₂O emissions from full-scale
+  aerobic granular sludge. *Water Research* 162, 432–443.
+- Gruber, W. et al. (2021) N₂O emission in a municipal WWTP: full-scale
+  measurement and modelling. *Water Research* 195, 116963 (Uster, Switzerland).
+- Whitepaper Rev 14 — *Ultra-Low Scope 1 GHG Wastewater Treatment*
+  (internal, ph2o Consulting).
+            """)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # TAB 11 — ENGINEERING NOTES
     # ─────────────────────────────────────────────────────────────────────
     with tab_eng:
         st.markdown("## Engineering notes and key references")

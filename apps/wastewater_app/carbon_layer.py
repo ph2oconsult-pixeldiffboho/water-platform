@@ -19,9 +19,17 @@ Emission framework
 ------------------
 Scope 1 — Direct:
   N₂O from biological nitrification/denitrification (dominant):
-    EF_N2O = 1.0% of influent TN load (IPCC 2019 default range 0.5–2.0%)
+    EF_N2O = 1.6% of influent TN load (IPCC 2019 Refinement Tier 1 default,
+             Table 6.8A; range 0.5–2.0%, full reported range 0.005–0.05)
     N₂O-N → N₂O: × (44/28)
     N₂O GWP₁₀₀ = 273 (IPCC AR6)
+
+    NOTE on methodology revision risk: the IPCC 2019 Refinement raised the
+    Tier 1 default ~5× over the older 2006 Guidelines value (and many legacy
+    reporting frameworks still use the older 0.0035 default). Utilities
+    transitioning to current methodology have seen step-changes of 5–46×
+    in headline Scope 1 numbers from accounting revision alone. See the
+    scope1_scenario_layer for the methodology-revision sensitivity view.
 
   CH₄ from anaerobic zones (if applicable):
     EF_CH4 = 0.25 kg CH₄ per kg COD removed anaerobically
@@ -62,7 +70,10 @@ from apps.wastewater_app.stack_generator import (
 GWP_N2O    = 273.0    # IPCC AR6 GWP100
 GWP_CH4    = 27.9     # IPCC AR6 GWP100
 N2O_CONV   = 44 / 28  # N₂O-N → N₂O mass ratio
-EF_N2O_DEFAULT  = 0.010   # 1.0% of influent TN load as N₂O-N (IPCC 2019 default)
+EF_N2O_DEFAULT  = 0.016   # 1.6% of influent TN load as N₂O-N (IPCC 2019 Refinement Tier 1 default)
+                          # Was 0.010 pre-PR; bumped to align with IPCC 2019 and remove the
+                          # internal inconsistency with per-technology files (which already use 0.016
+                          # on a per-N-removed basis, approximately equivalent at >85% N removal).
 EF_CH4_DEFAULT  = 0.25    # kg CH₄ / kg COD removed anaerobically
 
 # ── Scope 3 chemical emission factors ────────────────────────────────────────
@@ -442,7 +453,7 @@ def calculate_carbon(
           plant_type        str    "cas"/"bnr"/"sbr"/"mbr"/"nereda"/"mabr"
           has_anaerobic     bool   True if anaerobic digester or zones (for CH₄)
           grid_factor       float  kg CO₂e / kWh (default 0.8)
-          ef_n2o            float  override EF_N2O (default 0.010)
+          ef_n2o            float  override EF_N2O (default 0.016 — IPCC 2019 Tier 1)
 
     Returns
     -------

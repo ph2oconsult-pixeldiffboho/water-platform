@@ -50,6 +50,8 @@ def main():
          "Engineering calculations (30 tests)", False),
         (ROOT / "tests/domains/wastewater/test_bnr_mbr.py",
          "BNR + MBR technology (16 tests)", False),
+        (ROOT / "tests/domains/wastewater/test_scope1_methodology.py",
+         "Scope 1 N₂O methodology fixes — Whitepaper Rev 14 (17 checks)", False),
         (ROOT / "tests/domains/wastewater/test_decision_engine.py",
          "Decision engine — hierarchy, fields, two-pathway, consistency (81 tests)", False),
         (ROOT / "tests/integration/test_wastewater_full_run.py",
