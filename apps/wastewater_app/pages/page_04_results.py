@@ -159,6 +159,7 @@ def render() -> None:
 
     with tab_carbon:
         render_carbon_summary_card(scenario.carbon_result)
+        _render_scope1_methodology_sensitivity(scenario)
 
     with tab_risk:
         if scenario.risk_result:
@@ -166,6 +167,102 @@ def render() -> None:
 
     # ── Step 6: Key assumptions audit trail ────────────────────────────────
     _render_assumptions_panel(scenario)
+
+
+def _render_scope1_methodology_sensitivity(scenario) -> None:
+    """
+    Scope 1 sensitivity to N₂O accounting methodology.
+
+    This is a methodology-revision view, distinct from (and complementary to)
+    the IPCC statistical-range expander already rendered by
+    `render_carbon_summary_card`. The statistical-range view scales the
+    central estimate across the IPCC 2019 reported EF range (0.005–0.050)
+    to convey site-to-site variability. This view scales it across three
+    accounting regimes — legacy (pre-2019), current (IPCC 2019), and
+    plant-measured high case — to convey methodology-revision and
+    microbiome-instability tail risk.
+
+    Why this matters: utilities planning to a 2050 net-zero target on the
+    legacy default face an unhedged step-change in their reported Scope 1
+    number when their reporting framework migrates to IPCC 2019. See
+    scope1_scenario_layer.py for the underlying model and references.
+    """
+    from apps.wastewater_app.scope1_scenario_layer import (
+        build_scope1_scenarios, EF_IPCC_2019, WARNING_COPY,
+    )
+
+    if scenario is None or not getattr(scenario, "carbon_result", None):
+        return
+
+    car = scenario.carbon_result
+
+    # Source the central N₂O number. Prefer an explicit n2o_biological_tco2e_yr
+    # if the carbon_result carries one; otherwise estimate from Scope 1
+    # (N₂O dominates Scope 1 for biological N-removal plants — ~90%).
+    n2o_central = getattr(car, "n2o_biological_tco2e_yr", None)
+    if n2o_central is None or n2o_central <= 0:
+        scope1 = getattr(car, "scope_1_tco2e_yr", 0) or 0
+        n2o_central = scope1 * 0.90 if scope1 > 0 else 0.0
+
+    if n2o_central <= 0:
+        return  # nothing to project
+
+    report = build_scope1_scenarios(
+        n2o_central_tco2e_yr = n2o_central,
+        ef_central           = EF_IPCC_2019,
+    )
+
+    with st.expander(
+        "📊 Scope 1 sensitivity to N₂O accounting methodology",
+        expanded=False,
+    ):
+        st.caption(WARNING_COPY)
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric(
+                label = "Legacy default (pre-2019)",
+                value = f"{report.legacy:,.0f} tCO₂e/yr",
+                help  = "EF = 0.35% of influent TN — older IPCC 2006 / pre-revision frameworks.",
+            )
+        with col_b:
+            st.metric(
+                label = "Current IPCC 2019 Tier 1",
+                value = f"{report.ipcc_2019:,.0f} tCO₂e/yr",
+                help  = "EF = 1.6% of influent TN — current platform default and current NGER basis.",
+            )
+        with col_c:
+            st.metric(
+                label = "Plant-measured high case",
+                value = f"{report.measured_high:,.0f} tCO₂e/yr",
+                help  = "EF = 3.0% — Uster-class microbiome-instability worst-case (Gruber 2021).",
+            )
+
+        col_x, col_y = st.columns(2)
+        with col_x:
+            st.metric(
+                label = "Methodology-revision exposure",
+                value = f"+{report.methodology_revision_risk_tco2e_yr:,.0f} tCO₂e/yr",
+                help  = "Current IPCC 2019 minus legacy default — the step-change "
+                        "a utility on the old default faces when frameworks migrate.",
+            )
+        with col_y:
+            st.metric(
+                label = "Microbiome-instability exposure",
+                value = f"+{report.microbiome_instability_risk_tco2e_yr:,.0f} tCO₂e/yr",
+                help  = "Measured-high minus current IPCC 2019 — the operational "
+                        "tail risk that site-specific monitoring is needed to quantify.",
+            )
+
+        st.info(report.interpretation)
+        st.caption(
+            "Note: this view scales against an IPCC 2019 central EF of 1.6%. "
+            "For AGS / Nereda scenarios the platform's central Scope 1 number is "
+            "computed at an elevated AGS-specific EF (2.4%, per Jahn et al. 2019), "
+            "so the 'Current IPCC 2019' figure above corresponds to the AGS-elevated "
+            "central. The methodology-revision and microbiome-instability deltas remain "
+            "interpretable as scaling exposures."
+        )
 
 
 def _render_sensitivity_analysis(scenario) -> None:

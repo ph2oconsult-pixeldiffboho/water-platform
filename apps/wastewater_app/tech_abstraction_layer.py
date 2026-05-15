@@ -192,7 +192,13 @@ _reg("Aerobic Granular Sludge (AGS)",
      "Aerobic Granular Sludge (AGS)",
      "Sequential batch reactor process producing dense granular bioaggregates "
      "that settle rapidly. Simultaneous nitrogen and phosphorus removal in a "
-     "compact footprint with no secondary clarifiers required.",
+     "compact footprint with no secondary clarifiers required. "
+     "**Scope 1 caveat:** AGS does NOT confer a Scope 1 GHG advantage over "
+     "conventional activated sludge. N₂O emissions are typically higher "
+     "(0.54–4.8% of influent TN under aerobic operation, Jahn et al. 2019) "
+     "due to granule-core anoxic zones, simultaneous nitrification–denitrification, "
+     "and PHB-mediated metabolism. Selection on net-zero grounds requires the "
+     "same N₂O monitoring and control regime as conventional BNR.",
      AVAIL_MEDIUM, DELRISK_MEDIUM,
      ["IFAS or MBBR",
       "Conventional BNR (lower footprint)",

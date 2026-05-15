@@ -552,6 +552,33 @@ def _check_compatibility(
             "before filter sizing."
         )
 
+    # AGS / Nereda — Scope 1 (N₂O) caveat (whitepaper Rev 14, Jahn et al. 2019)
+    # AGS appears in the pathway as an AlternativePathway with stages containing
+    # "Aerobic Granular Sludge" or "Nereda". It can also appear as a stage
+    # technology in some configurations. Flag in either case so utilities
+    # considering AGS on net-zero grounds see the caveat.
+    _ags_in_stack = any(
+        ("aerobic granular sludge" in s.tech_display.lower()) or
+        ("nereda" in s.tech_display.lower())
+        for s in pathway.stages
+    )
+    _ags_in_alternatives = any(
+        any(("aerobic granular sludge" in stg.lower()) or ("nereda" in stg.lower())
+            for stg in (alt.stages or []))
+        for alt in (pathway.alternatives or [])
+    )
+    if _ags_in_stack or _ags_in_alternatives:
+        flags.append(
+            "AGS / Nereda Scope 1 (N₂O) caveat: Aerobic Granular Sludge does NOT confer a Scope 1 "
+            "GHG advantage over conventional activated sludge. Full-scale measurements report N₂O "
+            "emissions of 0.54–4.8% of influent TN under aerobic operation (Jahn et al. 2019), "
+            "materially higher than the IPCC 2019 Tier 1 default (1.6%) used for conventional BNR. "
+            "The mechanism is granule-core anoxic zones, simultaneous nitrification–denitrification, "
+            "and PHB-mediated endogenous denitrification. If AGS is being selected on net-zero "
+            "grounds, the Scope 1 justification needs explicit re-verification — and the same "
+            "N₂O monitoring and control regime as conventional BNR is required."
+        )
+
     # ── MBR architecture notes (v24Z41) ───────────────────────────────────────
     if is_mbr:
         mbr_report = assess_mbr_applicability(plant_context)
