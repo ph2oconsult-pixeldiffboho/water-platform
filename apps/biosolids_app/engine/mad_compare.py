@@ -199,11 +199,15 @@ class ConfigResult:
     sidestream_treatment_reqd: bool  = False
 
     # ── GHG (Scope 1 / 2 / 3) ────────────────────────────────────────────────
-    scope1_kg_co2e_per_d:  float = 0.0   # Fugitive CH₄, N₂O
-    scope2_kg_co2e_per_d:  float = 0.0   # Grid electricity net
-    scope3_kg_co2e_per_d:  float = 0.0   # Transport + chemicals upstream
-    net_ghg_kg_co2e_per_d: float = 0.0
-    net_ghg_t_co2e_per_yr: float = 0.0
+    scope1_kg_co2e_per_d:         float = 0.0
+    scope1_ch4_kg_co2e_per_d:     float = 0.0   # Fugitive CH4 only
+    scope1_n2o_kg_co2e_per_d:     float = 0.0   # N2O from land application
+    scope2_kg_co2e_per_d:         float = 0.0   # Grid electricity net
+    scope3_kg_co2e_per_d:         float = 0.0
+    scope3_transport_kg_co2e_per_d: float = 0.0  # Cake transport
+    scope3_polymer_kg_co2e_per_d:   float = 0.0  # Polymer upstream
+    net_ghg_kg_co2e_per_d:        float = 0.0
+    net_ghg_t_co2e_per_yr:        float = 0.0
 
     # ── OPEX ($/year) ────────────────────────────────────────────────────────
     opex_polymer_per_yr:       float = 0.0
@@ -214,11 +218,12 @@ class ConfigResult:
     opex_total_per_yr:         float = 0.0
     opex_delta_vs_base_per_yr: float = 0.0   # vs base case (- = saving)
 
-    # ── CAPEX (qualitative) ──────────────────────────────────────────────────
-    capex_low_m:     float = 0.0   # $M, ±30%
-    capex_high_m:    float = 0.0
-    capex_mid_m:     float = 0.0
+    # ── CAPEX — equipment scope only (no dollar estimates) ──────────────────
+    capex_low_m:     float = 0.0   # retained for scoring only — not shown in report
+    capex_high_m:    float = 0.0   # retained for scoring only — not shown in report
+    capex_mid_m:     float = 0.0   # retained for scoring only — not shown in report
     equipment_list:  List[str] = field(default_factory=list)
+    capex_scope_summary: str = ""   # one-line scope description
     capex_note:      str = ""
 
     # ── Headroom ─────────────────────────────────────────────────────────────
@@ -263,6 +268,7 @@ class ComparisonResult:
 CAPEX_DATA = {
     "base": {
         "low": 0.0, "high": 0.0, "mid": 0.0,
+        "scope_summary": "No new capital — existing plant optimisation only.",
         "note": "No new capital — existing plant, operational optimisation only.",
         "equipment": [
             "No new major equipment required",
@@ -272,6 +278,7 @@ CAPEX_DATA = {
     },
     "recup": {
         "low": 0.5, "high": 2.0, "mid": 1.0,
+        "scope_summary": "Centrifuge upgrade, polymer system, recirculation pipework.",
         "note": (
             "Recuperative thickening upgrade: centrifuge(s), polymer station, "
             "pipework, instrumentation. Cost scales with throughput. "
@@ -287,6 +294,7 @@ CAPEX_DATA = {
     },
     "pre_thp": {
         "low": 4.0, "high": 12.0, "mid": 7.0,
+        "scope_summary": "THP reactors, steam boiler, pre-dewatering centrifuge, civil works. New building likely required.",
         "note": (
             "Pre-digestion THP: B6–B12 module(s), steam boiler or composite boiler, "
             "pre-dewatering centrifuge, pulper, flash tank, pipework, civil works. "
@@ -307,6 +315,7 @@ CAPEX_DATA = {
     },
     "solidstream": {
         "low": 3.0, "high": 9.0, "mid": 5.5,
+        "scope_summary": "THP reactors, composite boiler, pre- and post-dewatering centrifuges, coolveyor, cake storage.",
         "note": (
             "SolidStream (post-THP): hydrolysis reactors, composite steam boiler, "
             "pre-dewatering centrifuge, final dewatering centrifuge, coolveyor, "
@@ -492,20 +501,25 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
     else:
         scope2 = abs(elec_net_kw) * 24 / 1000 * site.grid_intensity_kg_co2e_per_kwh
 
-    # Scope 3: transport (wet cake disposal)
+    # Scope 3: transport — scales with actual wet cake volume per config
     transport_t_km = wet_cake_tpd * site.transport_km
     s3_transport = transport_t_km * TRANSPORT_EF
 
-    # Scope 3: polymer upstream
+    # Scope 3: polymer upstream — scales with DS load + dewatering type
     poly_kg_d = (site.ps_ds_tpd + site.was_ds_tpd) * site.polymer_dose_kg_per_tds
     if config_id == "solidstream":
         poly_kg_d *= 1.5   # higher polymer for hot centrifuge dewatering
+    elif config_id == "pre_thp":
+        poly_kg_d *= 1.2   # pre-dewatering + final dewatering — two centrifuge stages
     s3_polymer = poly_kg_d * POLYMER_EF
 
     scope3 = s3_transport + s3_polymer
+    # Store breakdown for report use
+    _ghg_s3_transport = s3_transport
+    _ghg_s3_polymer   = s3_polymer
     net = scope1 + scope2 + scope3
 
-    return scope1, scope2, scope3, net
+    return scope1, scope2, scope3, net, s1_ch4, s1_n2o, s3_transport, s3_polymer
 
 
 def _opex(config_id, elec_net_kw, wet_cake_tpy,
@@ -533,8 +547,10 @@ def _opex(config_id, elec_net_kw, wet_cake_tpy,
     ss_pct = centrate_n_kg_d / max(site.plant_tkn_kg_per_d, 1) * 100
     sidestream_cost = 0.0
     if ss_pct > 10.0 and config_id in ("pre_thp",):
-        # SHARON/ANAMMOX cost estimate: ~$150/kg N treated
-        sidestream_cost = centrate_n_kg_d * 365 * 150.0
+        # SHARON/ANAMMOX OPEX: ~$4/kg N treated (operating cost only, excludes CAPEX)
+        # Source: Metcalf & Eddy (2014), Tchobanoglous et al.; AUD equivalent
+        # Note: sidestream treatment CAPEX is a separate line item not included here
+        sidestream_cost = centrate_n_kg_d * 365 * 4.0
 
     # THP maintenance
     thp_maint = 0.0
@@ -683,7 +699,7 @@ def _weighted_totals(configs: Dict[ConfigID, ConfigResult],
     for cfg_id, cr in included.items():
         wt = sum(cr.driver_scores.get(d, 1) * weights.get(d, 1)
                  for d in DRIVER_IDS)
-        cr.weighted_score = round(wt / total_weight * 25, 1)   # scale 0–25
+        cr.weighted_score = round(wt / (total_weight * 4) * 100, 1)   # scale 0–100 (rank 1-4, max = 4×Σweights)
 
     return configs
 
@@ -790,12 +806,16 @@ def run_comparison(
             )
 
         # ── GHG ───────────────────────────────────────────────────────────
-        s1, s2, s3, net = _ghg(
+        s1, s2, s3, net, s1_ch4, s1_n2o, s3_transport, s3_polymer = _ghg(
             config_id, cr.biogas_m3_per_d, cr.elec_net_kw,
             cr.wet_cake_t_per_day, cr.centrate_nh4_kg_per_d, site)
         cr.scope1_kg_co2e_per_d  = s1
+        cr.scope1_ch4_kg_co2e_per_d = s1_ch4
+        cr.scope1_n2o_kg_co2e_per_d = s1_n2o
         cr.scope2_kg_co2e_per_d  = s2
         cr.scope3_kg_co2e_per_d  = s3
+        cr.scope3_transport_kg_co2e_per_d = s3_transport
+        cr.scope3_polymer_kg_co2e_per_d   = s3_polymer
         cr.net_ghg_kg_co2e_per_d = net
         cr.net_ghg_t_co2e_per_yr = net * 365 / 1000
 
@@ -812,11 +832,12 @@ def run_comparison(
         # ── CAPEX ─────────────────────────────────────────────────────────
         capex_ref = CAPEX_DATA[config_id]
         tds = ds_total
-        cr.capex_low_m      = capex_ref["low"]
-        cr.capex_high_m     = capex_ref["high"]
-        cr.capex_mid_m      = capex_ref["mid"]
-        cr.capex_note       = capex_ref["note"]
-        cr.equipment_list   = capex_ref["equipment"]
+        cr.capex_low_m          = capex_ref["low"]
+        cr.capex_high_m         = capex_ref["high"]
+        cr.capex_mid_m          = capex_ref["mid"]
+        cr.capex_note           = capex_ref["note"]
+        cr.capex_scope_summary  = capex_ref.get("scope_summary", "")
+        cr.equipment_list       = capex_ref["equipment"]
 
         configs[config_id] = cr
 
@@ -854,7 +875,7 @@ def run_comparison(
         exec_summary = (
             f"Based on the configured driver weightings, "
             f"<b>{winner_label}</b> achieves the highest weighted score "
-            f"({wc.weighted_score:.1f}/25). "
+            f"({wc.weighted_score:.0f}/100). "
         )
         if winner_id == "solidstream":
             exec_summary += (

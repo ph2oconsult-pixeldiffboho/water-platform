@@ -131,14 +131,16 @@ def _header_footer(project, prepared_by, date_str, page_type="portrait"):
         canvas.setFillColor(GREY_MID)
         canvas.setFont("Helvetica", 7)
         canvas.drawString(MARGIN, 4*mm,
-            f"SCREENING GRADE — ±30% CAPEX, ±15% energy, ±20% sidestream  |  {VERSION}  |  {date_str}")
-        canvas.drawRightString(w - MARGIN, 4*mm, f"Page {doc.page}")
+            f"SCREENING GRADE — ±15% energy, ±20% sidestream  |  {VERSION}  |  {date_str}")
+        prefix = "A-" if page_type == "landscape" else ""
+        canvas.drawRightString(w - MARGIN, 4*mm, f"{prefix}Page {doc.page}")
         canvas.restoreState()
     return on_page
 
 
 # ── Cover page ─────────────────────────────────────────────────────────────
 def _cover(story, S, result, date_str):
+    from engine.mad_compare import CONFIG_LABELS_SHORT
     story.append(_sp(6))
     story.append(_p("MAD Configuration Comparison", S["title"]))
     story.append(_p("Mesophilic Anaerobic Digestion — Options Assessment", S["subtitle"]))
@@ -153,7 +155,7 @@ def _cover(story, S, result, date_str):
         ["Date",           date_str],
         ["BioPoint version", VERSION],
         ["Configurations compared",
-         ", ".join(result.included_ids)],
+         ", ".join(CONFIG_LABELS_SHORT.get(k, k) for k in result.included_ids)],
         ["Recommended configuration",
          result.winner_label or "—"],
     ]
@@ -177,7 +179,7 @@ def _cover(story, S, result, date_str):
         wc = result.configs[result.winner_id]
         badge_text = (
             f"Recommended: <b>{result.winner_label}</b>  "
-            f"(weighted score {wc.weighted_score:.1f}/25)"
+            f"(weighted score {wc.weighted_score:.0f}/100)"
         )
         badge = Table([[Paragraph(badge_text, ParagraphStyle(
             "badge", parent=S["body"], fontSize=11, fontName="Helvetica-Bold",
@@ -217,10 +219,11 @@ def _driver_weights_section(story, S, result):
     rows = [["Driver", "Weight", "Description"]]
     for d in DRIVER_IDS:
         w = result.driver_weights.get(d, 1)
-        bar = "■" * w + "□" * (5 - w)
+        filled = "[+]" * w
+        empty  = "[ ]" * (5 - w)
         rows.append([
             DRIVER_LABELS.get(d, d),
-            f"{w}/5  {bar}",
+            f"{w}/5  {filled}{empty}",
             DRIVER_DESCRIPTIONS.get(d, ""),
         ])
     tbl = Table(rows, colWidths=[45*mm, 28*mm, CONTENT_W_P - 73*mm])
@@ -241,7 +244,7 @@ def _config_narratives(story, S, result):
         label_text = (
             f"{'★ RECOMMENDED — ' if is_winner else ''}"
             f"{cr.config_label}  "
-            f"(weighted score: {cr.weighted_score:.1f}/25)"
+            f"(weighted score: {cr.weighted_score:.0f}/100)"
         )
         col = SAFE_GREEN if is_winner else PH2O_BLUE
         hdr_style = ParagraphStyle("ch", parent=S["h2"],
@@ -331,7 +334,10 @@ def _opex_section(story, S, result):
     story.append(_sp(3))
     story.append(_p(
         "Parentheses () denote credits (revenue). "
-        "Sidestream treatment cost applies when centrate NH\u2084 return exceeds 10% of plant TKN.",
+        "A negative TOTAL indicates net operating revenue — energy export credits exceed all costs. "
+        "Sidestream treatment OPEX applies when centrate NH<sub>4</sub> return exceeds 10% of plant TKN "
+        "(operating cost only; sidestream treatment CAPEX is a separate item). "
+        "All figures screening-grade ±20%.",
         S["caption"]))
 
 
@@ -355,16 +361,20 @@ def _ghg_section(story, S, result):
             return f"{v:.1f}"
         return f"{v:,.0f}"
 
-    rows.append(["Scope 1 — fugitive CH\u2084"] +
-                [fmt_ghg(cr.scope1_kg_co2e_per_d * 0.85) for cr in included])
-    rows.append(["Scope 1 — N\u2082O (land app.)"] +
-                [fmt_ghg(cr.scope1_kg_co2e_per_d * 0.15) for cr in included])
+    rows.append(["Scope 1 — fugitive CH<sub>4</sub>"] +
+                [fmt_ghg(getattr(cr, 'scope1_ch4_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.85))
+                 for cr in included])
+    rows.append(["Scope 1 — N<sub>2</sub>O (land app.)"] +
+                [fmt_ghg(getattr(cr, 'scope1_n2o_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.15))
+                 for cr in included])
     rows.append(["Scope 2 — grid electricity"] +
                 [fmt_ghg(cr.scope2_kg_co2e_per_d) for cr in included])
-    rows.append(["Scope 3 — transport"] +
-                [fmt_ghg(cr.scope3_kg_co2e_per_d * 0.5) for cr in included])
-    rows.append(["Scope 3 — polymer upstream"] +
-                [fmt_ghg(cr.scope3_kg_co2e_per_d * 0.5) for cr in included])
+    rows.append(["Scope 3 — transport (cake haulage)"] +
+                [fmt_ghg(getattr(cr, 'scope3_transport_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5))
+                 for cr in included])
+    rows.append(["Scope 3 — polymer (upstream)"] +
+                [fmt_ghg(getattr(cr, 'scope3_polymer_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5))
+                 for cr in included])
     rows.append(["NET GHG (kg CO\u2082e/day)"] +
                 [fmt_ghg(cr.net_ghg_kg_co2e_per_d) for cr in included])
     rows.append(["NET GHG (t CO\u2082e/yr)"] +
@@ -435,7 +445,7 @@ def _heatmap_table(story, S, result):
         rows.append(row)
 
     # Weighted total row
-    wt_row = ["WEIGHTED TOTAL (/25)"]
+    wt_row = ["WEIGHTED TOTAL  (/100)"]
     for cr in included:
         wt_row.append(f"{cr.weighted_score:.1f}")
     rows.append(wt_row)
@@ -474,13 +484,43 @@ def _heatmap_table(story, S, result):
             ts.add("TEXTCOLOR",  (col_j, row_i), (col_j, row_i), HEAT_TEXT[heat_idx])
             ts.add("FONTNAME",   (col_j, row_i), (col_j, row_i), "Helvetica-Bold")
 
-    tbl.setStyle(ts)
+    # Apply cell colours LAST so they override row backgrounds
+    final_ts = TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), PH2O_BLUE),
+        ("TEXTCOLOR",     (0,0), (-1,0), WHITE),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,-1), 9),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 6),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 6),
+        ("GRID",          (0,0), (-1,-1), 0.5, WHITE),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("ALIGN",         (1,0), (-1,-1), "CENTER"),
+        ("BACKGROUND",    (0,1), (0,-1), PH2O_LIGHT),
+        ("FONTNAME",      (0,1), (0,-1), "Helvetica-Bold"),
+        # Last row (weighted total)
+        ("BACKGROUND",    (0, len(rows)-1), (-1, len(rows)-1), PH2O_BLUE),
+        ("TEXTCOLOR",     (0, len(rows)-1), (-1, len(rows)-1), WHITE),
+        ("FONTNAME",      (0, len(rows)-1), (-1, len(rows)-1), "Helvetica-Bold"),
+    ])
+    # Add score cell colours AFTER all other styles
+    for row_i, row in enumerate(rows[1:-1], 1):
+        for col_j, cr in enumerate(included, 1):
+            d = DRIVER_IDS[row_i - 1]
+            sc = cr.driver_scores.get(d, 1)
+            heat_idx = 4 - sc
+            heat_idx = max(0, min(3, heat_idx))
+            final_ts.add("BACKGROUND", (col_j, row_i), (col_j, row_i), HEAT[heat_idx])
+            final_ts.add("TEXTCOLOR",  (col_j, row_i), (col_j, row_i), HEAT_TEXT[heat_idx])
+            final_ts.add("FONTNAME",   (col_j, row_i), (col_j, row_i), "Helvetica-Bold")
+    tbl.setStyle(final_ts)
     story.append(tbl)
     story.append(_sp(3))
     story.append(_p(
-        "Score interpretation: 4 = best among configurations compared, "
-        "1 = worst. Scores are relative — adding or removing configurations changes rankings. "
-        "Heatmap does not imply absolute performance adequacy.",
+        "Score 4 (dark green) = best among configurations compared. "
+        "Score 1 (dark red) = worst. Scores are relative — "
+        "adding or removing configurations changes rankings.",
         S["caption"]))
 
 
@@ -523,7 +563,9 @@ def _full_comparison_table(story, S, result):
             ("Wet cake (t/day)",  [fmt_f(cr.wet_cake_t_per_day) for cr in included]),
             ("Wet cake (t/yr)",   [fmt_i(cr.wet_cake_t_per_year) for cr in included]),
             ("Trucks/day (40t)",  [fmt_f(cr.trucks_per_day, 1) for cr in included]),
-            ("Volume reduction vs base", [f"{cr.cake_vol_reduction_pct:+.0f}%" for cr in included]),
+            ("Volume reduction vs base", [
+            "—" if cr.config_id == "base" else f"{cr.cake_vol_reduction_pct:+.0f}%"
+            for cr in included]),
         ]),
         ("Return Load", [
             ("Centrate NH\u2084-N (kg/day)", [fmt_f(cr.centrate_nh4_kg_per_d) for cr in included]),
@@ -543,10 +585,9 @@ def _full_comparison_table(story, S, result):
             ("PS SRT headroom",   [fmt_f(cr.ps_srt_headroom_d) + "d" for cr in included]),
             ("WAS SRT headroom",  [fmt_f(cr.was_srt_headroom_d) + "d" for cr in included]),
         ]),
-        ("CAPEX (±30%, $M)", [
-            ("Low estimate",      [f"${cr.capex_low_m:.1f}M" for cr in included]),
-            ("Mid estimate",      [f"${cr.capex_mid_m:.1f}M" for cr in included]),
-            ("High estimate",     [f"${cr.capex_high_m:.1f}M" for cr in included]),
+        ("CAPEX — Scope only (no cost estimate)", [
+            ("Scope summary",     [getattr(cr, "capex_scope_summary", "See Appendix C")
+                                   for cr in included]),
         ]),
         ("OPEX ($/yr)", [
             ("Total OPEX",        [f"${cr.opex_total_per_yr/1e6:.2f}M" for cr in included]),
@@ -594,23 +635,22 @@ def _full_comparison_table(story, S, result):
 
 
 def _equipment_section(story, S, result):
-    story.append(_p("Appendix C — Equipment Lists & CAPEX Indicators", S["h1"]))
+    story.append(_p("Appendix C — Equipment Scope", S["h1"]))
     story.append(_rule())
     story.append(_p(
-        "Equipment lists are indicative for comparison purposes. "
-        "CAPEX figures are order-of-magnitude estimates ±30%. "
-        "Actual scope requires vendor quotations and site-specific civil assessment.",
+        "Equipment scope listed for comparison purposes. "
+        "Capital cost estimates are not provided — vendor quotations and "
+        "site-specific civil assessment are required before any cost estimate "
+        "can be produced. Lists are indicative of the major scope items only.",
         S["body"]))
 
     for cfg_id in result.included_ids:
         cr = result.configs[cfg_id]
-        story.append(_p(
-            f"{cr.config_label}  —  "
-            f"CAPEX ${cr.capex_low_m:.1f}M – ${cr.capex_high_m:.1f}M  "
-            f"(mid: ${cr.capex_mid_m:.1f}M, ±30%)",
-            S["h2"]))
+        scope_summary = getattr(cr, "capex_scope_summary", "")
+        story.append(_p(f"{cr.config_label}", S["h2"]))
+        if scope_summary:
+            story.append(_p(f"Scope summary: {scope_summary}", S["small"]))
 
-        # Equipment list
         eq_rows = [[f"• {item}"] for item in cr.equipment_list]
         if eq_rows:
             tbl = Table(eq_rows, colWidths=[CONTENT_W_L])
@@ -624,7 +664,6 @@ def _equipment_section(story, S, result):
             ]))
             story.append(tbl)
 
-        story.append(_p(cr.capex_note, S["caption"]))
         story.append(_sp(3))
 
 
