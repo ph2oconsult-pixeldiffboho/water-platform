@@ -137,7 +137,7 @@ def render():
             if nh3_mode == "custom":
                 ki_custom = st.number_input("Custom K_I (g NH3-N/L)", 0.1, 2.0, 0.70, step=0.05)
 
-            st.markdown("**Pretreatment & other**")
+            st.markdown("**THP Options**")
             pretreatment = st.selectbox(
                 "Pretreatment",
                 ["none", "thp", "solidstream"],
