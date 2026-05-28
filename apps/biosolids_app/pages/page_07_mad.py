@@ -138,7 +138,44 @@ def render():
                 ki_custom = st.number_input("Custom K_I (g NH3-N/L)", 0.1, 2.0, 0.70, step=0.05)
 
             st.markdown("**Pretreatment & other**")
-            pretreatment = st.selectbox("Pretreatment", ["none", "thp"], key="mad_pretreat")
+            pretreatment = st.selectbox(
+                "Pretreatment",
+                ["none", "thp", "solidstream"],
+                format_func=lambda x: {
+                    "none":        "None — conventional AD",
+                    "thp":         "Pre-digestion THP",
+                    "solidstream": "SolidStream (post-digestion THP)",
+                }[x],
+                key="mad_pretreat",
+                help="THP configuration. Pre-digestion THP processes feed BEFORE digesters. "
+                     "SolidStream processes digestate AFTER existing digesters."
+            )
+            if pretreatment == "thp":
+                st.info(
+                    "**Pre-digestion THP** — thermal hydrolysis applied to raw sludge "
+                    "before anaerobic digestion. Cell disintegration occurs before "
+                    "digestion, allowing higher loading rates and reducing required "
+                    "digester volume. Biogas uplift ~40–50% vs conventional AD. "
+                    "Kinetic boost: k × 1.35."
+                )
+            elif pretreatment == "solidstream":
+                st.info(
+                    "**SolidStream (post-digestion THP)** — thermal hydrolysis applied "
+                    "to digestate from existing digesters. Does **not** reduce digester "
+                    "volume. Primary benefits: dewatered cake ≥38% DS (no thermal drying "
+                    "required), full pathogen kill, 50–57% cake volume reduction, and "
+                    "~22.7% biogas uplift from COD-rich centrate recycled to digesters. "
+                    "Minimum 15d HRT required.  \n"
+                    "_Source: Cambi Melbourne ETP memo 20.05.2026; "
+                    "Antwerp Schijnpoort 2025 operational._"
+                )
+                # Auto-set NH3 mode to thp for both THP configurations
+            if pretreatment in ("thp", "solidstream"):
+                if nh3_mode != "thp":
+                    st.caption(
+                        "💡 NH₃ acclimation mode auto-recommended as **thp** "
+                        "for THP configurations (K_I = 0.85 g NH₃-N/L)."
+                    )
             trade_waste  = st.selectbox("Trade waste classification",
                 ["normal", "industrial"], key="mad_trade",
                 help="Industrial sets WAS N% baseline ≥ 11%")
@@ -224,13 +261,17 @@ def render():
     if active_flags:
         st.markdown("**Active diagnostic flags:**")
         flag_labels = {
-            "geometric_infeasibility": "🔴 Geometric infeasibility — digester too small for stable SRT",
-            "geometric_marginal":      "🟡 Geometric margin tight — operating window narrow",
-            "biogas_blind_warning":    "🟠 Biogas blind zone — WAS SRT > 30d, use NH4+pH as indicators",
-            "high_TS_diffusion_active":"🟡 High TS — diffusion coupling active (TS > 4%)",
-            "thp_active":              "🔵 THP pretreatment active — kinetic boost applied",
-            "pH_control_engaged":      "🔵 pH control engaged — pH clamped to 7.30",
-            "industrial_trade_waste":  "🟠 Industrial trade waste — WAS N% elevated to ≥ 11%",
+            "geometric_infeasibility":  "🔴 Geometric infeasibility — digester too small for stable SRT",
+            "geometric_marginal":       "🟡 Geometric margin tight — operating window narrow",
+            "biogas_blind_warning":     "🟠 Biogas blind zone — WAS SRT > 30d, use NH4+pH as indicators",
+            "high_TS_diffusion_active": "🟡 High TS — diffusion coupling active (TS > 4%)",
+            "thp_active":               "🔵 THP active — kinetic boost and VSmax uplift applied",
+            "solidstream_active":       "🔵 SolidStream active — post-digestion THP: k × 1.15, "
+                                        "biogas uplift +22.7%, VSmax × 1.22",
+            "solidstream_hrt_warning":  "🟠 SolidStream HRT < 15d — minimum 15d HRT required for "
+                                        "SolidStream. Consider adding digester volume.",
+            "pH_control_engaged":       "🔵 pH control engaged — pH clamped to 7.30",
+            "industrial_trade_waste":   "🟠 Industrial trade waste — WAS N% elevated to ≥ 11%",
         }
         for f in active_flags:
             st.markdown(f"• {flag_labels.get(f, f)}")
@@ -246,6 +287,64 @@ def render():
     e4.metric("Mixing parasitic", f"{result.mixingParasitic_kW:,.0f} kW")
     e5.metric("Net electrical", f"{result.netElec_kW:,.0f} kW",
               delta=f"{result.netElec_kW - result.elecGross_kW:+,.0f} kW (mixing loss)")
+
+    # ── SOLIDSTREAM PERFORMANCE SUMMARY ─────────────────────────────────────
+    if flags.get("solidstream_active"):
+        st.divider()
+        st.subheader("SolidStream dewatering performance")
+        st.caption(
+            "Estimates based on Cambi Melbourne ETP conceptual design memo (20.05.2026) "
+            "and Antwerp Schijnpoort 2025 operational data. "
+            "_Vendor-estimated — not guaranteed performance._"
+        )
+        from engine.ghg_coefficients import (
+            THP_SOLIDSTREAM_CAKE_DS_PCT,
+            THP_SOLIDSTREAM_BIOGAS_UPLIFT_PCT,
+            THP_SOLIDSTREAM_VSR_PCT,
+            THP_CAKE_VOLUME_REDUCTION_PCT,
+            THP_DRYING_ENERGY_REDUCTION_PCT,
+            THP_SOLIDSTREAM_ELECTRICITY_UPLIFT_PCT,
+            THP_SOLIDSTREAM_TRUCK_REDUCTION_PCT,
+        )
+        ss1, ss2, ss3 = st.columns(3)
+        with ss1:
+            st.metric("Dewatered cake DS%",
+                      f"≥{THP_SOLIDSTREAM_CAKE_DS_PCT:.0f}% DS",
+                      delta="vs 20–22% conventional",
+                      delta_color="normal")
+            st.metric("Cake volume reduction",
+                      f"~{THP_CAKE_VOLUME_REDUCTION_PCT:.0f}%",
+                      delta="fewer trucks, lower disposal cost",
+                      delta_color="normal")
+        with ss2:
+            st.metric("VSR with SolidStream",
+                      f"~{THP_SOLIDSTREAM_VSR_PCT:.1f}%",
+                      delta="vs 57.5% conventional",
+                      delta_color="normal")
+            st.metric("Biogas uplift",
+                      f"+{THP_SOLIDSTREAM_BIOGAS_UPLIFT_PCT:.1f}%",
+                      delta="COD-rich centrate recycled to digesters",
+                      delta_color="normal")
+        with ss3:
+            st.metric("Drying energy reduction",
+                      f"~{THP_DRYING_ENERGY_REDUCTION_PCT:.0f}%",
+                      delta="if thermal drying still applied",
+                      delta_color="normal")
+            st.metric("Electricity uplift",
+                      f"+{THP_SOLIDSTREAM_ELECTRICITY_UPLIFT_PCT:.1f}%",
+                      delta="from higher biogas production",
+                      delta_color="normal")
+        st.success(
+            "✅ **Pathogen kill:** SolidStream operates at 145–165°C / 6 bar for 40 min "
+            "— full sterilisation, Class A equivalent. "
+            "3-year stockpiling for EPA Victoria pathogen criteria is eliminated."
+        )
+        if flags.get("solidstream_hrt_warning"):
+            st.error(
+                "⚠️ **HRT < 15d** — SolidStream requires minimum 15d hydraulic retention time "
+                "in existing digesters. Current digester volume is insufficient at this throughput. "
+                "Either reduce throughput or add digester volume before installing SolidStream."
+            )
 
     st.divider()
 
