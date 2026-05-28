@@ -209,15 +209,6 @@ def render():
             st.session_state.get("mad_prepared_by", "ph2o Consulting"),
             key="mad_prepared_by")
 
-    # ── REPORT SETTINGS ─────────────────────────────────────────────────────
-    with st.expander("📄 Report settings", expanded=False):
-        st.text_input("Project name",
-            st.session_state.get("mad_project_name", "BioPoint Analysis"),
-            key="mad_project_name")
-        st.text_input("Prepared by",
-            st.session_state.get("mad_prepared_by", "ph2o Consulting"),
-            key="mad_prepared_by")
-
     # ── RUN BUTTON ──────────────────────────────────────────────────────────
     run = st.button("▶ Run MAD Analysis", type="primary")
 
