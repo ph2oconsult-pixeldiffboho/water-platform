@@ -18,6 +18,12 @@ if str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
 from engine.mad import MADInputs, run_mad
+try:
+    from engine.mad_report import generate_mad_report
+    _REPORT_AVAILABLE = True
+except ImportError:
+    _REPORT_AVAILABLE = False
+from engine.mad_report import generate_mad_report
 
 
 # ── Status colour helpers ──────────────────────────────────────────────────
@@ -192,6 +198,26 @@ def render():
                                         st.session_state.get("mad_chp_avail", 88.0),
                                         step=1.0, key="mad_chp_avail")
 
+    # ── REPORT SETTINGS ─────────────────────────────────────────────────────
+    with st.expander("📄 Report settings", expanded=False):
+        project_name = st.text_input(
+            "Project name", 
+            st.session_state.get("mad_project_name", "BioPoint Analysis"),
+            key="mad_project_name")
+        prepared_by  = st.text_input(
+            "Prepared by",
+            st.session_state.get("mad_prepared_by", "ph2o Consulting"),
+            key="mad_prepared_by")
+
+    # ── REPORT SETTINGS ─────────────────────────────────────────────────────
+    with st.expander("📄 Report settings", expanded=False):
+        st.text_input("Project name",
+            st.session_state.get("mad_project_name", "BioPoint Analysis"),
+            key="mad_project_name")
+        st.text_input("Prepared by",
+            st.session_state.get("mad_prepared_by", "ph2o Consulting"),
+            key="mad_prepared_by")
+
     # ── RUN BUTTON ──────────────────────────────────────────────────────────
     run = st.button("▶ Run MAD Analysis", type="primary")
 
@@ -233,6 +259,53 @@ def render():
 
     result = st.session_state["mad_result"]
     inputs = st.session_state["mad_inputs"]
+
+    st.divider()
+
+    # ── REPORT DOWNLOAD (top — always visible) ───────────────────────────────
+    if _REPORT_AVAILABLE:
+        rpt_col1, rpt_col2, rpt_spacer = st.columns([2, 2, 5])
+        with rpt_col1:
+            if st.button("📄 Download Tier 1 Report", type="secondary",
+                         help="Generate a consultant-grade PDF report of this analysis"):
+                with st.spinner("Building report..."):
+                    try:
+                        inp_dict = {
+                            "ps_volume_m3": psV,     "was_volume_m3": wasV,
+                            "ps_ds_tpd":    psDS,    "was_ds_tpd":    wasDS,
+                            "ps_ts_pct":    psTS,    "was_ts_pct":    wasTS,
+                            "ps_vs_pct":    psVS,    "was_vs_pct":    wasVS,
+                            "ps_n_pct":     psN,     "was_n_pct":     wasN,
+                            "ps_cap_pct":   psCap,   "was_cap_pct":   wasCap,
+                            "ps_beta":      psBeta,  "was_beta":      wasBeta,
+                            "mixing_type":  mixing_sys,
+                            "mixing_power": mixing_power,
+                            "digester_pH":  digester_pH,
+                            "ph_control":   ph_control,
+                            "nh3_mode":     nh3_mode,
+                            "pretreatment": pretreatment,
+                            "trade_waste":  trade_waste,
+                            "final_cap_pct":final_cap,
+                            "chp_eff_pct":  chp_eff,
+                            "chp_avail_pct":chp_avail,
+                        }
+                        st.session_state["mad_report_pdf"] = generate_mad_report(
+                            inp_dict, result,
+                            project_name=st.session_state.get("mad_project_name", "BioPoint Analysis"),
+                            prepared_by=st.session_state.get("mad_prepared_by", "ph2o Consulting"),
+                        )
+                    except Exception as ex:
+                        st.error(f"Report error: {ex}")
+        with rpt_col2:
+            if "mad_report_pdf" in st.session_state:
+                proj = st.session_state.get("mad_project_name", "MAD").replace(" ", "_")
+                st.download_button(
+                    "⬇ Save PDF",
+                    data=st.session_state["mad_report_pdf"],
+                    file_name=f"MAD_Report_{proj}.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                )
 
     st.divider()
 
@@ -482,3 +555,10 @@ def render():
         ]
         df = pd.DataFrame(rows, columns=["Parameter", "Value", "Units"])
         st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # ── REPORT NOTE (bottom) ────────────────────────────────────────────────
+    st.divider()
+    st.caption(
+        "📄 Use the **Download Tier 1 Report** button at the top of the results "
+        "to generate and save the PDF report for this analysis."
+    )
