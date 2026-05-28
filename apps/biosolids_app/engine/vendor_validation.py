@@ -1311,3 +1311,134 @@ def _system_summary(reports, feed_ds_pct, gcv, ds_tpd, feedstock_kwh_d) -> str:
             "systematically overstated at this feedstock condition."
         )
     return " ".join(parts)
+
+
+
+# ============================================================
+# SOLIDSTREAM THP VENDOR CLAIM LIBRARY
+# ============================================================
+# Source: Cambi Conceptual Design Memo, Melbourne ETP, 20.05.2026
+#         Cambi plant data sheets (Antwerp 2025, Munich 2015)
+#         Confidence: VENDOR MODEL — label as vendor-estimated in UI
+#
+# These claims are for SolidStream (post-digestion THP) specifically.
+# They are DISTINCT from pre-digestion THP claims and must not be
+# applied to conventional pre-THP configurations.
+
+SOLIDSTREAM_VENDOR_CLAIMS = [
+    {
+        "claim_id": "SS01",
+        "claim_text": "SolidStream achieves 38% DS cake without thermal drying",
+        "pathway": "thp_incineration",
+        "config": "SolidStream",
+        "verdict": "SUPPORTED",
+        "evidence": "Antwerp Schijnpoort 2025 operational (45 tDS/day); "
+                    "Munich Amperverband demonstrated; Melbourne ETP minimum guarantee.",
+        "condition": None,
+        "site_sensitivity": "Feedstock-dependent. 38% DS achieved from 20–22% DS conventional digestate. "
+                            "Lower VS% feeds may achieve lower cake DS.",
+    },
+    {
+        "claim_id": "SS02",
+        "claim_text": "SolidStream increases biogas production by ~23% vs conventional AD",
+        "pathway": "thp_incineration",
+        "config": "SolidStream",
+        "verdict": "CONDITIONAL",
+        "evidence": "Melbourne ETP memo: +22.7% (65%VS) and +22.6% (72%VS). "
+                    "Consistent with post-digestion THP literature.",
+        "condition": "Conditional on: (a) hot centrate recycled to digesters as specified; "
+                     "(b) minimum 15d HRT maintained in existing digesters; "
+                     "(c) feedstock VS% in 65–75% range.",
+        "site_sensitivity": "Uplift is lower than pre-digestion THP (~40–50%). "
+                            "Do not apply pre-THP literature uplift to SolidStream.",
+    },
+    {
+        "claim_id": "SS03",
+        "claim_text": "SolidStream reduces drying energy demand by 67–72%",
+        "pathway": "thp_incineration",
+        "config": "SolidStream",
+        "verdict": "SUPPORTED",
+        "evidence": "Melbourne ETP memo: -67% (Scenario 1), -72% (Scenario 2). "
+                    "Mechanistically sound: drier cake + lower volume = less water to evaporate.",
+        "condition": "Only relevant when thermal drying is applied after SolidStream. "
+                     "If drying is eliminated entirely (pathway to direct land application), "
+                     "the reduction is 100% — but this requires market acceptance of 38%DS cake.",
+        "site_sensitivity": "Reduction depends on baseline DS%. Higher baseline DS% → smaller saving.",
+    },
+    {
+        "claim_id": "SS04",
+        "claim_text": "SolidStream achieves full pathogen kill (Class A equivalent) without drying",
+        "pathway": "thp_incineration",
+        "config": "SolidStream",
+        "verdict": "SUPPORTED",
+        "evidence": "THP operates at 145–165°C / 6 bar for 40 minutes — well above EPA Part 503 "
+                    "Class A time/temperature requirements. Antwerp and Munich confirmed. "
+                    "Source: Cambi Melbourne memo p.4.",
+        "condition": "Requires validated time/temperature monitoring and EPA/EPA Victoria "
+                     "regulatory acceptance. Melbourne memo notes 3-year stockpiling for EPA Victoria "
+                     "pathogen criteria is eliminated with SolidStream.",
+        "site_sensitivity": "Jurisdiction-specific regulatory acceptance required. "
+                            "Not automatically Class A in all jurisdictions without process validation.",
+    },
+    {
+        "claim_id": "SS05",
+        "claim_text": "SolidStream reduces dewatered cake volume by 50–57%",
+        "pathway": "thp_incineration",
+        "config": "SolidStream",
+        "verdict": "SUPPORTED",
+        "evidence": "Melbourne ETP memo: -50.6% (Scenario 1, 65%VS), -56.5% (Scenario 2, 72%VS). "
+                    "Consistent with Munich Amperverband: 60% reduction in biosolids volume.",
+        "condition": "Reduction is combination of (a) higher VS destruction and "
+                     "(b) higher cake DS%. Both effects scale with feedstock VS%.",
+        "site_sensitivity": "Higher VS% feed → larger volume reduction. "
+                            "Melbourne Scenario 2 (72%VS) achieves larger reduction than Scenario 1 (65%VS).",
+    },
+    {
+        "claim_id": "SS06",
+        "claim_text": "SolidStream achieves 70% VSR vs 57.5% for conventional AD",
+        "pathway": "thp_incineration",
+        "config": "SolidStream",
+        "verdict": "CONDITIONAL",
+        "evidence": "Melbourne ETP memo: 70.3% (Sc1), 70.4% (Sc2) vs 57.5% conventional. "
+                    "Consistent with published THP literature range 65–75% VSR.",
+        "condition": "Conditional on: (a) minimum 15d HRT; (b) hot centrate recycle; "
+                     "(c) municipal mixed sludge feedstock. Industrial sludge may differ.",
+        "site_sensitivity": "VSR is feedstock-dependent. Food waste co-digestion and "
+                            "industrial trade waste may show different VSR response to THP.",
+    },
+    {
+        "claim_id": "SS07",
+        "claim_text": "SolidStream does not require additional digester volume",
+        "pathway": "thp_incineration",
+        "config": "SolidStream",
+        "verdict": "SUPPORTED",
+        "evidence": "Melbourne ETP memo explicitly states: SolidStream 'does not give reduction in "
+                    "the needed digestion volume compared to Conventional Digestion.' "
+                    "HRT in existing digesters: 13.4–13.6d (vs 18.1–18.3d conventional) "
+                    "because hot centrate recycle reduces hydraulic load.",
+        "condition": "Minimum 15d HRT required for SolidStream. If existing digester HRT "
+                     "is below 15d at design load, additional volume is required. "
+                     "Melbourne ETP: 64,000m³ existing adequate for 50,000 tDS/y at 4%DS.",
+        "site_sensitivity": "At higher DS% feed or higher throughput, HRT may fall below 15d "
+                            "and additional digesters would be needed.",
+    },
+]
+
+# IMPORTANT: SolidStream vs pre-digestion THP — do not conflate
+# Pre-digestion THP (conventional): THP before digesters
+#   - Reduces required digester volume (can be designed smaller)
+#   - Higher biogas uplift: ~40–50% (cell disintegration before digestion)
+#   - HRT reduction: significant
+# SolidStream (post-digestion): THP after digesters
+#   - No digester volume reduction (existing digesters used as-is)
+#   - Lower biogas uplift: ~22–23% (COD-rich centrate recycled to digesters)
+#   - Primary benefit: dewatering (38% DS cake), hygienisation, drying energy reduction
+#   - Best fit for: retrofit of existing AD plants; plants already at capacity
+SOLIDSTREAM_NOTE = (
+    "SolidStream is a POST-DIGESTION THP configuration. "
+    "Key distinction from pre-digestion THP: no digester volume reduction; "
+    "primary benefit is dewatering performance and hygienisation. "
+    "Biogas uplift (~23%) is lower than pre-digestion THP (~40-50%). "
+    "Source: Cambi Melbourne ETP memo 20.05.2026; Antwerp Schijnpoort 2025 operational."
+)
+

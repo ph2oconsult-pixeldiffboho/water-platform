@@ -68,7 +68,7 @@ MIN_STABLE_SRT_DAYS: Dict[str, float] = {
 KI_NH3_DEFAULTS: Dict[str, float] = {
     "conservative": 0.40,
     "acclimated":   0.70,
-    "thp":          0.85,
+    "thp":          0.85,   # K_I = 0.85 g NH3-N/L: acclimated to THP (Hansen 1998)
     "custom":       0.70,
 }
 
@@ -469,6 +469,10 @@ def run_mad(inputs: MADInputs) -> MADResult:
     wasK_eff = inputs.wasK * 1.35 if thp_active else inputs.wasK
     psN_eff  = inputs.psN  * 1.15 if thp_active else inputs.psN
     wasN_eff = wasN_eff    * 1.15 if thp_active else wasN_eff
+    # THP VSmax uplift: SolidStream achieves 70.3–70.4% VSR vs 57.5% conventional
+    # Source: Cambi Melbourne ETP memo 20.05.2026; consistent with THP literature 65–75%
+    psVSmax_eff  = min(inputs.psVSmax  * 1.22, 75.0) if thp_active else inputs.psVSmax
+    wasVSmax_eff = min(inputs.wasVSmax * 1.22, 72.0) if thp_active else inputs.wasVSmax
 
     # Mixing & diffusion
     psFmix  = _f_mix(inputs.psTS,  inputs.mixingPower, inputs.mixingSystemType,
@@ -490,7 +494,7 @@ def run_mad(inputs: MADInputs) -> MADResult:
         DS_t_per_d=inputs.psDS, TS_pct=inputs.psTS, VS_pct=inputs.psVS,
         N_pct=psN_eff, V_m3=inputs.psV,
         cap_pct=inputs.psCap, beta=inputs.psBeta,
-        K_hyd=psK_eff, VSmax_pct=inputs.psVSmax,
+        K_hyd=psK_eff, VSmax_pct=psVSmax_eff,
         pH=pH, KI=KI, n_NH3=inputs.n_NH3,
         f_mix_val=psFmix, f_diff_eff_val=psFdiff, f_eff=psFeff,
         cap_srt=False,
@@ -499,7 +503,7 @@ def run_mad(inputs: MADInputs) -> MADResult:
         DS_t_per_d=inputs.wasDS, TS_pct=inputs.wasTS, VS_pct=inputs.wasVS,
         N_pct=wasN_eff, V_m3=inputs.wasV,
         cap_pct=inputs.wasCap, beta=inputs.wasBeta,
-        K_hyd=wasK_eff, VSmax_pct=inputs.wasVSmax,
+        K_hyd=wasK_eff, VSmax_pct=wasVSmax_eff,
         pH=pH, KI=KI, n_NH3=inputs.n_NH3,
         f_mix_val=wasFmix, f_diff_eff_val=wasFdiff, f_eff=wasFeff,
         cap_srt=True,

@@ -265,6 +265,95 @@ DESTINY_CATEGORIES = [
 # displacement. Removal and displacement are separate lines always.
 
 
+
+# ============================================================
+# THP / SOLIDSTREAM PERFORMANCE COEFFICIENTS
+# ============================================================
+# Source: Cambi Conceptual Design Memo, Melbourne Eastern Treatment Plant,
+#         20.05.2026 (Doc 10590-ZME-001-7035 A01, Melbourne Water Corporation)
+#         Cambi plant data sheets: Antwerp Schijnpoort 2025, Munich Amperverband
+# Confidence: VENDOR MODEL (pre-contract conceptual stage). Not peer-reviewed.
+#         "Design numbers should be checked and verified as the project matures."
+#         Consistent with published THP literature where noted.
+# Configuration: SolidStream = post-digestion THP (distinct from pre-digestion THP)
+
+# Cake DS% with SolidStream — minimum guarantee
+# Antwerp Schijnpoort 2025 operational; Munich Amperverband demonstrated;
+# Melbourne memo minimum guarantee 38%DS from 20-22%DS conventional
+THP_SOLIDSTREAM_CAKE_DS_PCT: float = 38.0
+
+# Conventional digestion cake DS% (baseline for comparison)
+# Melbourne memo: 22%DS (Scenario 1, 65%VS) and 20%DS (Scenario 2, 72%VS)
+THP_CONVENTIONAL_CAKE_DS_PCT_LOW: float = 20.0    # 72%VS feed (higher VS, wetter cake)
+THP_CONVENTIONAL_CAKE_DS_PCT_HIGH: float = 22.0   # 65%VS feed
+
+# Cake volume reduction with SolidStream vs conventional
+# Melbourne memo: -50.6% (Scenario 1, 65%VS), -56.5% (Scenario 2, 72%VS)
+# Use conservative end for BioPoint screening
+THP_CAKE_VOLUME_REDUCTION_PCT: float = 50.0   # Conservative (Scenario 1)
+
+# Drying energy reduction when drying applied after SolidStream
+# Melbourne memo: -67% (Sc1), -72% (Sc2). Basis: less water to evaporate
+# because cake is drier and volume is lower.
+THP_DRYING_ENERGY_REDUCTION_PCT: float = 67.0   # Conservative (Scenario 1)
+
+# Biogas uplift from SolidStream vs conventional mesophilic AD
+# Melbourne memo: +22.7% (Sc1), +22.6% (Sc2)
+# NOTE: This is POST-DIGESTION THP (SolidStream). Pre-digestion THP literature
+#       shows 40–50% uplift (Amperverband 2015 data). The two configurations
+#       are physically different — do not conflate.
+THP_SOLIDSTREAM_BIOGAS_UPLIFT_PCT: float = 22.7   # Post-digestion (SolidStream)
+THP_PREDIGESTION_BIOGAS_UPLIFT_PCT: float = 40.0  # Pre-digestion THP (literature range 40–50%)
+
+# VSR with SolidStream
+# Melbourne memo: 70.3% (Sc1), 70.4% (Sc2) vs 57.5% conventional
+# Consistent with published THP literature: 65–75% VSR
+THP_SOLIDSTREAM_VSR_PCT: float = 70.3
+THP_CONVENTIONAL_VSR_PCT: float = 57.5   # Melbourne memo baseline
+
+# Hygienisation: SolidStream operates at 145–165°C / 6 bar for 40 minutes
+# This achieves sterilisation-level pathogen kill — Class A equivalent
+# Source: Cambi Melbourne memo p.4, Antwerp data sheet
+THP_SOLIDSTREAM_ACHIEVES_CLASS_A: bool = True
+
+# Electricity production uplift with SolidStream vs conventional
+# Melbourne memo: +20.7% (Sc1), +22.6% (Sc2)
+THP_SOLIDSTREAM_ELECTRICITY_UPLIFT_PCT: float = 20.7   # Conservative (Scenario 1)
+
+# Number of trucks reduction (indicative, basis 40 wet t/truck, Melbourne ETP scale)
+# Melbourne memo: 15/day conventional → 7–8/day with SolidStream (Scenario 1)
+# Relevant for transport emissions (Scope 3) and logistics planning
+THP_SOLIDSTREAM_TRUCK_REDUCTION_PCT: float = 50.0
+
+# Australian reference sites for THP (Cambi Reference List March 2026)
+THP_AUSTRALIAN_REFERENCES = [
+    {"site": "Brisbane - Oxley Creek",   "client": "Brisbane Water",    "year": 2007,
+     "capacity_tds_day": 66,  "feedstock": "Secondary sludge", "use": "Land"},
+    {"site": "Sydney - St Marys",        "client": "Sydney Water",      "year": 2022,
+     "capacity_tds_day": 33,  "feedstock": "Mixed sludge",     "use": "Land"},
+    {"site": "Perth - Woodman Point",    "client": "Water Corporation", "year": 2026,
+     "capacity_tds_day": 70,  "feedstock": "Secondary sludge", "use": "Land",
+     "status": "Under execution"},
+]
+
+# Key SolidStream operational references
+THP_SOLIDSTREAM_REFERENCES = [
+    {"site": "Antwerp - Schijnpoort", "client": "Aquafin", "country": "Belgium",
+     "year": 2025, "capacity_tds_day": 45, "feedstock": "Digested PS+WAS",
+     "use": "Incineration", "config": "SolidStream (B8 P)",
+     "note": "Post-digestion THP; 38%DS cake; enables auto-thermal incineration"},
+    {"site": "Munich - Amperverband", "client": "AmperVerband", "country": "Germany",
+     "year": 2015, "capacity_tds_day": 6, "feedstock": "WAS only",
+     "use": "Incineration", "config": "SolidStream (Custom)",
+     "note": "40-50% biogas uplift; 70-75% VSR; 60% cake volume reduction; "
+             "EUR 515,000/yr cost saving. WAS-only configuration."},
+    {"site": "Oslo - Veas", "client": "Veas", "country": "Norway",
+     "year": 2027, "capacity_tds_day": 70, "feedstock": "Digested PS+WAS",
+     "use": "Land application", "config": "SolidStream (B6-4 E)",
+     "note": "Under execution. Post-digestion THP; serves 1M population; "
+             "biogas refined to liquid fuel for transportation."},
+]
+
 # ============================================================
 # 12. VS DESTRUCTION SOURCE RULES (Gap 3 from audit)
 # ============================================================
