@@ -204,10 +204,15 @@ class ConfigResult:
     scope1_n2o_kg_co2e_per_d:     float = 0.0   # N2O from land application
     scope2_kg_co2e_per_d:         float = 0.0   # Grid electricity net
     scope3_kg_co2e_per_d:         float = 0.0
-    scope3_transport_kg_co2e_per_d: float = 0.0  # Cake transport
-    scope3_polymer_kg_co2e_per_d:   float = 0.0  # Polymer upstream
-    net_ghg_kg_co2e_per_d:        float = 0.0
-    net_ghg_t_co2e_per_yr:        float = 0.0
+    scope3_transport_kg_co2e_per_d:  float = 0.0  # Cake transport
+    scope3_polymer_kg_co2e_per_d:    float = 0.0  # Polymer upstream
+    scope3_gas_upstream_kg_co2e_per_d: float = 0.0  # Supplementary boiler gas
+    scope1_boiler_kg_co2e_per_d:     float = 0.0  # Supplementary boiler combustion
+    heat_self_sufficient:            bool  = True
+    heat_surplus_kw:                 float = 0.0
+    thp_steam_demand_kw:             float = 0.0
+    net_ghg_kg_co2e_per_d:           float = 0.0
+    net_ghg_t_co2e_per_yr:           float = 0.0
 
     # ── OPEX ($/year) ────────────────────────────────────────────────────────
     opex_polymer_per_yr:       float = 0.0
@@ -344,6 +349,26 @@ CAPEX_DATA = {
 OPEX_THP_MAINTENANCE_PER_TDS_PER_YR = 25000.0   # $/tDS/day/yr for THP O&M
 OPEX_RECUP_MAINTENANCE_PER_TDS_PER_YR = 8000.0  # $/tDS/day/yr for recup centrifuge O&M
 
+# ── Heat recovery constants ────────────────────────────────────────────────
+# CHP heat recovery: jacket water + exhaust HRSG
+# Typical gas engine: 40% electrical, 45% heat recovery, 15% radiated losses
+CHP_HEAT_RECOVERY_FRAC  = 0.45   # fraction of fuel input recoverable as useful heat
+# THP steam demand per tDS/day feed (from Cambi Melbourne memo, scaled)
+# Scenario 1: 6,215 kg/h steam for 219.5 tDS/day = 28.3 kg steam/tDS
+# At 2,700 kJ/kg: 28.3 × 2700 / 3600 = 21.2 kW thermal per tDS/day
+THP_STEAM_KW_PER_TDS_PER_DAY = 21.2
+# Digester heating: Q = m_dot × Cp × ΔT
+# Feed at 4%TS: 1 tDS/day → 25 m³/day feed → at 22°C rise → 26.7 kW/tDS/day
+DIGESTER_HEAT_KW_PER_TDS_PER_DAY = 26.7
+# SolidStream hot centrate recycle heat credit
+# Hot centrate ~77°C at ~1,200/219.5 = 5.47 m³/tDS/day → at 40°C rise → 10.5 kW/tDS/day
+SOLIDSTREAM_CENTRATE_HEAT_CREDIT_KW_PER_TDS = 10.5
+# Natural gas upstream emission factor (for supplementary boiler if needed)
+# IPCC / Ecoinvent: ~0.20 kg CO2e / kWh (LHV) upstream extraction + transport
+NG_UPSTREAM_EF_KG_CO2E_PER_KWH = 0.20
+# Natural gas combustion EF (Scope 1 direct): 0.202 kg CO2e/kWh LHV
+NG_COMBUSTION_EF_KG_CO2E_PER_KWH = 0.202
+
 # GHG constants
 GWP_CH4 = 28.0         # AR5
 CH4_FUGITIVE_FRAC = 0.015
@@ -478,9 +503,65 @@ def _cake_properties(config_id: ConfigID, vsr_pct: float,
     return cake_ds, wet_cake_tpd, wet_cake_tpy, trucks_per_day
 
 
+def _heat_balance(config_id: str, elec_gross_kw: float,
+                    ds_total: float, site) -> dict:
+    """
+    Compute CHP waste heat available vs THP steam + digester heating demand.
+    Returns dict with heat budget components in kW.
+
+    Physics:
+    - CHP fuel input = elec_gross_kw / (chp_eff/100)
+    - CHP heat available = fuel_input × CHP_HEAT_RECOVERY_FRAC
+    - THP steam demand = ds_total × THP_STEAM_KW_PER_TDS_PER_DAY (pre_thp/solidstream only)
+    - Digester heat demand = ds_total × DIGESTER_HEAT_KW_PER_TDS_PER_DAY
+    - SolidStream: hot centrate recycle reduces digester demand
+    - If CHP heat >= (steam + digester): self-sufficient, no gas boiler
+    - If deficit: supplementary boiler required → Scope 1 + Scope 3 gas emissions
+
+    Source: Cambi Melbourne ETP memo 20.05.2026; typical CHP heat recovery literature.
+    """
+    chp_eff_frac = site.chp_eff_pct / 100.0
+    fuel_input_kw = elec_gross_kw / max(chp_eff_frac, 0.01)
+    heat_available_kw = fuel_input_kw * CHP_HEAT_RECOVERY_FRAC
+
+    # THP steam demand (only for THP configurations)
+    thp_steam_kw = 0.0
+    if config_id in ("pre_thp", "solidstream"):
+        thp_steam_kw = ds_total * THP_STEAM_KW_PER_TDS_PER_DAY
+
+    # Digester heating demand (all configs)
+    digester_heat_gross_kw = ds_total * DIGESTER_HEAT_KW_PER_TDS_PER_DAY
+
+    # SolidStream hot centrate recycle reduces digester heating demand
+    centrate_heat_credit_kw = 0.0
+    if config_id == "solidstream":
+        centrate_heat_credit_kw = ds_total * SOLIDSTREAM_CENTRATE_HEAT_CREDIT_KW_PER_TDS
+
+    digester_heat_net_kw = max(0.0, digester_heat_gross_kw - centrate_heat_credit_kw)
+
+    total_heat_demand_kw = thp_steam_kw + digester_heat_net_kw
+    heat_surplus_kw = heat_available_kw - total_heat_demand_kw
+    supplementary_boiler_kw = max(0.0, -heat_surplus_kw)
+    heat_self_sufficient = heat_surplus_kw >= 0
+
+    return {
+        "fuel_input_kw":           fuel_input_kw,
+        "heat_available_kw":       heat_available_kw,
+        "thp_steam_kw":            thp_steam_kw,
+        "digester_heat_gross_kw":  digester_heat_gross_kw,
+        "digester_heat_net_kw":    digester_heat_net_kw,
+        "centrate_heat_credit_kw": centrate_heat_credit_kw,
+        "total_heat_demand_kw":    total_heat_demand_kw,
+        "heat_surplus_kw":         heat_surplus_kw,
+        "supplementary_boiler_kw": supplementary_boiler_kw,
+        "heat_self_sufficient":    heat_self_sufficient,
+    }
+
+
 def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
-         centrate_n_kg_d, site: ComparisonSiteInputs):
-    """Scope 1/2/3 GHG calculation."""
+         centrate_n_kg_d, site: ComparisonSiteInputs,
+         elec_gross_kw: float = 0.0):
+    """Scope 1/2/3 GHG calculation including heat recovery assessment."""
     # Scope 1: fugitive CH4
     ch4_fugitive_kg_d = (biogas_m3_d * CH4_FRACTION_BIOGAS
                          * CH4_FUGITIVE_FRAC * CH4_DENSITY)
@@ -518,13 +599,25 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
         poly_kg_d *= 1.2   # pre-dewatering + final dewatering — two centrifuge stages
     s3_polymer = poly_kg_d * POLYMER_EF
 
-    scope3 = s3_transport + s3_polymer
+    # Scope 3c: supplementary boiler gas — only if CHP waste heat insufficient
+    # Heat balance determines if a gas boiler is needed beyond CHP exhaust recovery
+    ds_total = site.ps_ds_tpd + site.was_ds_tpd
+    heat = _heat_balance(config_id, elec_gross_kw, ds_total, site)
+    supp_kw = heat["supplementary_boiler_kw"]
+    # Upstream gas extraction + transport (Scope 3)
+    s3_gas_upstream  = supp_kw * 24 / 1000 * NG_UPSTREAM_EF_KG_CO2E_PER_KWH
+    # Supplementary boiler combustion (Scope 1 — direct on-site)
+    s1_boiler = supp_kw * 24 / 1000 * NG_COMBUSTION_EF_KG_CO2E_PER_KWH
+    # Add boiler combustion to Scope 1
+    scope1 = scope1 + s1_boiler
+    scope3 = s3_transport + s3_polymer + s3_gas_upstream
     # Store breakdown for report use
     _ghg_s3_transport = s3_transport
     _ghg_s3_polymer   = s3_polymer
     net = scope1 + scope2 + scope3
 
-    return scope1, scope2, scope3, net, s1_ch4, s1_n2o, s3_transport, s3_polymer
+    return (scope1, scope2, scope3, net, s1_ch4, s1_n2o, s3_transport, s3_polymer,
+            s3_gas_upstream, s1_boiler, heat)
 
 
 def _opex(config_id, elec_net_kw, wet_cake_tpy,
@@ -820,16 +913,23 @@ def run_comparison(
             )
 
         # ── GHG ───────────────────────────────────────────────────────────
-        s1, s2, s3, net, s1_ch4, s1_n2o, s3_transport, s3_polymer = _ghg(
+        (s1, s2, s3, net, s1_ch4, s1_n2o, s3_transport, s3_polymer,
+         s3_gas_upstream, s1_boiler, heat_bal) = _ghg(
             config_id, cr.biogas_m3_per_d, cr.elec_net_kw,
-            cr.wet_cake_t_per_day, cr.centrate_nh4_kg_per_d, site)
+            cr.wet_cake_t_per_day, cr.centrate_nh4_kg_per_d, site,
+            elec_gross_kw=cr.elec_gross_kw)
         cr.scope1_kg_co2e_per_d  = s1
         cr.scope1_ch4_kg_co2e_per_d = s1_ch4
         cr.scope1_n2o_kg_co2e_per_d = s1_n2o
         cr.scope2_kg_co2e_per_d  = s2
         cr.scope3_kg_co2e_per_d  = s3
-        cr.scope3_transport_kg_co2e_per_d = s3_transport
-        cr.scope3_polymer_kg_co2e_per_d   = s3_polymer
+        cr.scope3_transport_kg_co2e_per_d    = s3_transport
+        cr.scope3_polymer_kg_co2e_per_d      = s3_polymer
+        cr.scope3_gas_upstream_kg_co2e_per_d = s3_gas_upstream
+        cr.scope1_boiler_kg_co2e_per_d       = s1_boiler
+        cr.heat_self_sufficient = heat_bal['heat_self_sufficient']
+        cr.heat_surplus_kw      = heat_bal['heat_surplus_kw']
+        cr.thp_steam_demand_kw  = heat_bal['thp_steam_kw']
         cr.net_ghg_kg_co2e_per_d = net
         cr.net_ghg_t_co2e_per_yr = net * 365 / 1000
 
