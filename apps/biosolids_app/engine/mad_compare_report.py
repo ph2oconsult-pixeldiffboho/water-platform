@@ -174,24 +174,44 @@ def _cover(story, S, result, date_str):
     story.append(tbl)
     story.append(_sp(5))
 
-    # Winner badge
+    # Winner badge — tie-aware
     if result.winner_id:
-        wc = result.configs[result.winner_id]
-        badge_text = (
-            f"Recommended: <b>{result.winner_label}</b>  "
-            f"(weighted score {wc.weighted_score:.0f}/100)"
-        )
+        wc   = result.configs[result.winner_id]
+        is_tie = getattr(result, "is_tie", False)
+        tie_ids = getattr(result, "tie_ids", [])
+        if is_tie:
+            tie_labels = " and ".join(CONFIG_LABELS_SHORT.get(k,"") for k in tie_ids)
+            badge_text = (
+                f"Effectively tied: <b>{tie_labels}</b>  "
+                f"(weighted score {wc.weighted_score:.0f}/100 each) — "
+                f"see sensitivity note"
+            )
+            badge_colour = WARN_AMBER
+        else:
+            badge_text = (
+                f"Recommended: <b>{result.winner_label}</b>  "
+                f"(weighted score {wc.weighted_score:.0f}/100)"
+            )
+            badge_colour = SAFE_GREEN
         badge = Table([[Paragraph(badge_text, ParagraphStyle(
             "badge", parent=S["body"], fontSize=11, fontName="Helvetica-Bold",
             textColor=WHITE, alignment=TA_CENTER))]],
             colWidths=[CONTENT_W_P])
         badge.setStyle(TableStyle([
-            ("BACKGROUND",    (0,0), (-1,-1), SAFE_GREEN),
+            ("BACKGROUND",    (0,0), (-1,-1), badge_colour),
             ("TOPPADDING",    (0,0), (-1,-1), 9),
             ("BOTTOMPADDING", (0,0), (-1,-1), 9),
         ]))
         story.append(badge)
         story.append(_sp(4))
+        if is_tie:
+            story.append(_p(
+                "<b>Sensitivity note:</b> The scores above are within the tie threshold "
+                "(2 points). A change in any single driver weighting could alter the "
+                "ranking. Review driver weights carefully and consider whether the "
+                "project context clearly favours one option before proceeding.",
+                S["small"]))
+            story.append(_sp(2))
 
     story.append(_p(result.executive_summary, S["body"]))
     story.append(_sp(3))
@@ -213,21 +233,47 @@ def _driver_weights_section(story, S, result):
         "The following driver weightings were applied. A weight of 4–5 indicates "
         "a primary project driver; 1–2 indicates a secondary consideration. "
         "The weighted total score is calculated as: "
-        "Σ (driver_rank × driver_weight) / Σ weights × 25.",
+        "Σ (driver_rank × driver_weight) / (4 × Σ weights) × 100. "
+        "Score 100 = best on all drivers; scores below 50 indicate below-average performance.",
         S["body"]))
 
-    rows = [["Driver", "Weight", "Description"]]
+    P = lambda t: Paragraph(str(t), S["cell"])
+    PH = lambda t: Paragraph(str(t), S["cell_b"])
+    # Apply <sub> tags to driver descriptions
+    rows = [[PH("Driver"), PH("Weight"), PH("Description")]]
     for d in DRIVER_IDS:
         w = result.driver_weights.get(d, 1)
-        filled = "[+]" * w
-        empty  = "[ ]" * (5 - w)
+        filled = ("+" * w).ljust(5, "-")
+        # Chemical names in descriptions need <sub> tags
+        desc = (DRIVER_DESCRIPTIONS.get(d, "")
+                .replace("NH₄",  "NH<sub>4</sub>")
+                .replace("CO₂e", "CO<sub>2</sub>e")
+                .replace("CO₂",  "CO<sub>2</sub>")
+                .replace("CH₄",  "CH<sub>4</sub>")
+                .replace("N₂O",  "N<sub>2</sub>O")
+                .replace("NH4",  "NH<sub>4</sub>")
+                .replace("CO2e", "CO<sub>2</sub>e")
+                .replace("CO2",  "CO<sub>2</sub>")
+                .replace("CH4",  "CH<sub>4</sub>")
+                .replace("N2O",  "N<sub>2</sub>O"))
+        def _dl(text):
+            t = (str(text)
+                 .replace("NH4", "NH<sub>4</sub>")
+                 .replace("CO2e", "CO<sub>2</sub>e")
+                 .replace("CO2",  "CO<sub>2</sub>")
+                 .replace("CH4",  "CH<sub>4</sub>")
+                 .replace("N2O",  "N<sub>2</sub>O"))
+            return Paragraph(t, S["cell"])
+
         rows.append([
-            DRIVER_LABELS.get(d, d),
-            f"{w}/5  {filled}{empty}",
-            DRIVER_DESCRIPTIONS.get(d, ""),
+            _dl(DRIVER_LABELS.get(d, d)),
+            P(f"{w}/5  [{filled}]"),
+            P(desc),
         ])
-    tbl = Table(rows, colWidths=[45*mm, 28*mm, CONTENT_W_P - 73*mm])
-    tbl.setStyle(_tbl_style_base())
+    tbl = Table(rows, colWidths=[42*mm, 24*mm, CONTENT_W_P - 66*mm])
+    ts = _tbl_style_base()
+    ts.add("WORDWRAP", (0,0), (-1,-1), "LTR")
+    tbl.setStyle(ts)
     story.append(tbl)
 
 
@@ -239,10 +285,12 @@ def _config_narratives(story, S, result):
     for cfg_id in result.included_ids:
         cr = result.configs[cfg_id]
         is_winner = cfg_id == result.winner_id
+        is_tie    = getattr(result, "is_tie", False)
+        in_tie    = cfg_id in getattr(result, "tie_ids", [])
 
         # Section header
         label_text = (
-            f"{'★ RECOMMENDED — ' if is_winner else ''}"
+            f"{'★ TIED — ' if (in_tie and is_tie) else ('★ RECOMMENDED — ' if is_winner else '')}"
             f"{cr.config_label}  "
             f"(weighted score: {cr.weighted_score:.0f}/100)"
         )
@@ -346,14 +394,14 @@ def _ghg_section(story, S, result):
     story.append(_p("4. Greenhouse Gas Assessment", S["h1"]))
     story.append(_rule())
     story.append(_p(
-        "Net GHG per configuration. Scope 1: fugitive CH\u2084 and N\u2082O from "
+        "Net GHG per configuration. Scope 1: fugitive CH<sub>4</sub> and N<sub>2</sub>O from "
         "land application. Scope 2: grid electricity import/export (negative = credit). "
         "Scope 3: transport of dewatered cake and upstream polymer production. "
         "GWP basis: AR5, 100-year (CH\u2084=28, N\u2082O=265).",
         S["body"]))
 
     included = [result.configs[k] for k in result.included_ids]
-    headers = ["GHG Component\n(kg CO\u2082e/day)"] + [cr.config_label for cr in included]
+    headers = [Paragraph("GHG Component\n(kg CO<sub>2</sub>e/day)", S["cell_b"])] + [Paragraph(cr.config_label, S["cell_b"]) for cr in included]
     rows = [headers]
 
     def fmt_ghg(v):
@@ -361,24 +409,27 @@ def _ghg_section(story, S, result):
             return f"{v:.1f}"
         return f"{v:,.0f}"
 
-    rows.append(["Scope 1 — fugitive CH<sub>4</sub>"] +
-                [fmt_ghg(getattr(cr, 'scope1_ch4_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.85))
+    def PG(text): return Paragraph(str(text), S["cell"])
+    def PGH(text): return Paragraph(str(text), S["cell_b"])
+
+    rows.append([PG("Scope 1 — fugitive CH<sub>4</sub>")] +
+                [PG(fmt_ghg(getattr(cr, 'scope1_ch4_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.85)))
                  for cr in included])
-    rows.append(["Scope 1 — N<sub>2</sub>O (land app.)"] +
-                [fmt_ghg(getattr(cr, 'scope1_n2o_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.15))
+    rows.append([PG("Scope 1 — N<sub>2</sub>O (land app.)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope1_n2o_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.15)))
                  for cr in included])
-    rows.append(["Scope 2 — grid electricity"] +
-                [fmt_ghg(cr.scope2_kg_co2e_per_d) for cr in included])
-    rows.append(["Scope 3 — transport (cake haulage)"] +
-                [fmt_ghg(getattr(cr, 'scope3_transport_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5))
+    rows.append([PG("Scope 2 — grid electricity (net)")] +
+                [PG(fmt_ghg(cr.scope2_kg_co2e_per_d)) for cr in included])
+    rows.append([PG("Scope 3 — transport (cake haulage)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope3_transport_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5)))
                  for cr in included])
-    rows.append(["Scope 3 — polymer (upstream)"] +
-                [fmt_ghg(getattr(cr, 'scope3_polymer_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5))
+    rows.append([PG("Scope 3 — polymer (upstream)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope3_polymer_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5)))
                  for cr in included])
-    rows.append(["NET GHG (kg CO\u2082e/day)"] +
-                [fmt_ghg(cr.net_ghg_kg_co2e_per_d) for cr in included])
-    rows.append(["NET GHG (t CO\u2082e/yr)"] +
-                [f"{cr.net_ghg_t_co2e_per_yr:,.0f}" for cr in included])
+    rows.append([PGH("NET GHG (kg CO<sub>2</sub>e/day)")] +
+                [PGH(fmt_ghg(cr.net_ghg_kg_co2e_per_d)) for cr in included])
+    rows.append([PGH("NET GHG (t CO<sub>2</sub>e/yr)")] +
+                [PGH(f"{cr.net_ghg_t_co2e_per_yr:,.0f}") for cr in included])
 
     cw_label = 55*mm
     n = len(included)
@@ -394,8 +445,8 @@ def _ghg_section(story, S, result):
     story.append(_sp(3))
     story.append(_p(
         "Scope 2 credits (negative) reflect avoided grid electricity from CHP export. "
-        f"Grid intensity: {result.site.grid_intensity_kg_co2e_per_kwh:.2f} kg CO\u2082e/kWh. "
-        "Biogenic CO\u2082 from biogas combustion is excluded (IPCC carbon-neutral convention). "
+        f"Grid intensity: {result.site.grid_intensity_kg_co2e_per_kwh:.2f} kg CO<sub>2</sub>e/kWh. "
+        "Biogenic CO<sub>2</sub> from biogas combustion is excluded (IPCC carbon-neutral convention). "
         "Figures are screening-grade \u00b120%.",
         S["caption"]))
 
@@ -407,8 +458,9 @@ def _disclaimer(story, S):
     story.append(_rule())
     story.append(_p(
         "This report is produced by BioPoint V1 (ph2o Consulting). All outputs are "
-        "screening-grade for Stage 1–2 options analysis. CAPEX estimates carry ±30% "
-        "uncertainty. Energy and sidestream figures carry ±15–20% uncertainty. "
+        "screening-grade for Stage 1–2 options analysis. "
+        "Capital cost estimates are not provided — equipment scope lists are in Appendix C. "
+        "Energy and sidestream figures carry ±15–20% uncertainty. "
         "SolidStream performance figures are vendor-estimated (Cambi Melbourne ETP "
         "memo, May 2026) and are not guaranteed. Independent engineering verification "
         "is required before capital commitment or regulatory submission. "
@@ -434,18 +486,28 @@ def _heatmap_table(story, S, result):
     n = len(included)
 
     header = ["Driver  (weight)"] + [cr.config_label for cr in included]
+    def _hl(text):
+        """Heatmap label — plain string with sub tags applied."""
+        t = (str(text)
+             .replace("NH4", "NH<sub>4</sub>")
+             .replace("CO2e", "CO<sub>2</sub>e")
+             .replace("CO2",  "CO<sub>2</sub>")
+             .replace("CH4",  "CH<sub>4</sub>")
+             .replace("N2O",  "N<sub>2</sub>O"))
+        return Paragraph(t, S["cell_b"])
+
     rows = [header]
 
     for d in DRIVER_IDS:
         w = result.driver_weights.get(d, 1)
-        row = [f"{DRIVER_LABELS.get(d, d)}  ({w})"]
+        row = [_hl(f"{DRIVER_LABELS.get(d, d)}  ({w})")]
         for cr in included:
             sc = cr.driver_scores.get(d, 1)
             row.append(str(sc))
         rows.append(row)
 
     # Weighted total row
-    wt_row = ["WEIGHTED TOTAL  (/100)"]
+    wt_row = [Paragraph("WEIGHTED TOTAL  (/100)", S["cell_b"])]
     for cr in included:
         wt_row.append(f"{cr.weighted_score:.1f}")
     rows.append(wt_row)
@@ -572,7 +634,7 @@ def _full_comparison_table(story, S, result):
             ("% of plant TKN",    [fmt_f(cr.centrate_pct_of_plant_tkn) + "%" for cr in included]),
             ("SS treatment req'd?",["Yes" if cr.sidestream_treatment_reqd else "No" for cr in included]),
         ]),
-        ("GHG (kg CO\u2082e/day)", [
+        ("GHG (kg CO<sub>2</sub>e/day)", [
             ("Scope 1",           [fmt_i(cr.scope1_kg_co2e_per_d) for cr in included]),
             ("Scope 2",           [fmt_i(cr.scope2_kg_co2e_per_d) for cr in included]),
             ("Scope 3",           [fmt_i(cr.scope3_kg_co2e_per_d) for cr in included]),
@@ -600,7 +662,15 @@ def _full_comparison_table(story, S, result):
 
     for section_title, section_rows in sections:
         # Section header row
-        hdr = Table([[Paragraph(section_title, ParagraphStyle(
+        # Apply sub tags to section title
+        section_title_p = (section_title
+            .replace("CO₂e", "CO<sub>2</sub>e")
+            .replace("CO₂", "CO<sub>2</sub>")
+            .replace("CH₄", "CH<sub>4</sub>")
+            .replace("CO2e", "CO<sub>2</sub>e")
+            .replace("CO2", "CO<sub>2</sub>")
+            .replace("CH4", "CH<sub>4</sub>"))
+        hdr = Table([[Paragraph(section_title_p, ParagraphStyle(
             "sh", parent=S["cell_b"], textColor=WHITE))]
             + [Paragraph("", S["cell"]) for _ in included]],
             colWidths=[cw_label] + [cw_col]*n)
@@ -613,12 +683,27 @@ def _full_comparison_table(story, S, result):
         ]))
         story.append(hdr)
 
-        data_rows = [[r[0]] + r[1] for r in section_rows]
+        def _wrap_label(t):
+            """Wrap label string in Paragraph with chemical sub tags."""
+            t2 = (str(t)
+                  .replace("NH₄", "NH<sub>4</sub>")
+                  .replace("CO₂e", "CO<sub>2</sub>e")
+                  .replace("CO₂", "CO<sub>2</sub>")
+                  .replace("CH₄", "CH<sub>4</sub>")
+                  .replace("N₂O", "N<sub>2</sub>O")
+                  .replace("NH4", "NH<sub>4</sub>")
+                  .replace("CO2e", "CO<sub>2</sub>e")
+                  .replace("CO2", "CO<sub>2</sub>")
+                  .replace("CH4", "CH<sub>4</sub>")
+                  .replace("N2O", "N<sub>2</sub>O"))
+            return Paragraph(t2, S["cell_b"])
+        def _wrap_val(t):
+            return Paragraph(str(t), S["cell_c"])
+        data_rows = [[_wrap_label(r[0])] + [_wrap_val(v) for v in r[1]]
+                     for r in section_rows]
         tbl = Table(data_rows, colWidths=[cw_label] + [cw_col]*n)
         ts = TableStyle([
             ("BACKGROUND",    (0,0), (0,-1), PH2O_LIGHT),
-            ("FONTNAME",      (0,0), (0,-1), "Helvetica-Bold"),
-            ("FONTNAME",      (1,0), (-1,-1), "Helvetica"),
             ("FONTSIZE",      (0,0), (-1,-1), 8.5),
             ("ROWBACKGROUNDS",(0,0), (-1,-1), [WHITE, GREY_LIGHT]),
             ("TOPPADDING",    (0,0), (-1,-1), 4),
@@ -626,8 +711,8 @@ def _full_comparison_table(story, S, result):
             ("LEFTPADDING",   (0,0), (-1,-1), 6),
             ("RIGHTPADDING",  (0,0), (-1,-1), 6),
             ("GRID",          (0,0), (-1,-1), 0.3, GREY_RULE),
-            ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
-            ("ALIGN",         (1,0), (-1,-1), "CENTER"),
+            ("VALIGN",        (0,0), (-1,-1), "TOP"),
+            ("WORDWRAP",      (0,0), (-1,-1), "LTR"),
         ])
         tbl.setStyle(ts)
         story.append(tbl)

@@ -58,7 +58,7 @@ DRIVER_LABELS = {
     "energy":      "Energy Recovery",
     "biosolids":   "Biosolids Quality",
     "dewatering":  "Dewatering Performance",
-    "return_load": "Return Load (NH₄)",
+    "return_load": "Return Load (NH4)",   # plain ASCII — sub tag applied in report
     "carbon":      "GHG / Carbon Footprint",
     "opex":        "Operating Cost (OPEX)",
     "capex":       "Capital Cost (CAPEX)",
@@ -69,8 +69,8 @@ DRIVER_DESCRIPTIONS = {
     "energy":      "Biogas production (m³/day) and net electricity output (kW). Higher = better.",
     "biosolids":   "Pathogen classification (Class A / B), regulatory compliance, product marketability.",
     "dewatering":  "Dewatered cake DS%, wet cake volume (t/day), truck movements. Drier = better.",
-    "return_load": "NH₄-N returned to liquid treatment train (kg/day). Lower = better.",
-    "carbon":      "Net GHG kg CO₂e/day. Scope 1 (fugitive CH₄, N₂O) + Scope 2 (grid) + Scope 3 (transport).",
+    "return_load": "NH4-N returned to liquid treatment train (kg/day). Lower = better.",
+    "carbon":      "Net GHG kg CO2e/day. Scope 1 (fugitive CH4, N2O) + Scope 2 (grid) + Scope 3 (transport).",
     "opex":        "Annual operating cost: polymer, energy, disposal, sidestream treatment.",
     "capex":       "Capital cost indicator (order-of-magnitude, ±30%). New THP = higher CAPEX.",
     "headroom":    "Digester hydraulic headroom — capacity available for throughput growth.",
@@ -157,7 +157,7 @@ class ComparisonSiteInputs:
     transport_cost_per_t_km:  float = 0.25   # $/t·km
 
     # GHG
-    grid_intensity_kg_co2e_per_kwh: float = 0.55   # kg CO₂e/kWh (VIC default)
+    grid_intensity_kg_co2e_per_kwh: float = 0.55   # kg CO2e/kWh (VIC default)
 
     # Plant context
     plant_tkn_kg_per_d: float = 500.0   # Total plant TKN load (for % return calc)
@@ -260,6 +260,8 @@ class ComparisonResult:
     driver_weights: Dict[str, int] = field(default_factory=dict)
     winner_id:      Optional[ConfigID] = None
     winner_label:   str = ""
+    is_tie:         bool = False
+    tie_ids:        List[str] = field(default_factory=list)
     executive_summary: str = ""
     site: Optional[ComparisonSiteInputs] = None
 
@@ -350,9 +352,9 @@ CH4_FRACTION_BIOGAS = 0.64
 N2O_EF_LAND = 0.01
 GWP_N2O = 265.0
 N2O_MW_RATIO = 44.0/28.0
-TRANSPORT_EF = 0.10    # kg CO₂e / t·km
-POLYMER_EF = 3.5       # kg CO₂e / kg polymer
-BIOGAS_LHV_MJ_M3 = 35.8 * CH4_FRACTION_BIOGAS   # CH₄ fraction only
+TRANSPORT_EF = 0.10    # kg CO2e / t·km
+POLYMER_EF = 3.5       # kg CO2e / kg polymer
+BIOGAS_LHV_MJ_M3 = 35.8 * CH4_FRACTION_BIOGAS   # CH4 fraction only
 
 
 # ── Physics helpers ────────────────────────────────────────────────────────
@@ -479,12 +481,12 @@ def _cake_properties(config_id: ConfigID, vsr_pct: float,
 def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
          centrate_n_kg_d, site: ComparisonSiteInputs):
     """Scope 1/2/3 GHG calculation."""
-    # Scope 1: fugitive CH₄
+    # Scope 1: fugitive CH4
     ch4_fugitive_kg_d = (biogas_m3_d * CH4_FRACTION_BIOGAS
                          * CH4_FUGITIVE_FRAC * CH4_DENSITY)
     s1_ch4 = ch4_fugitive_kg_d * GWP_CH4
 
-    # Scope 1: N₂O from land application (if Class B → land applied)
+    # Scope 1: N2O from land application (if Class B → land applied)
     cake_ds_pct = {"base": 20, "recup": 23, "pre_thp": 32, "solidstream": 38}[config_id]
     ds_remaining = site.ps_ds_tpd + site.was_ds_tpd  # simplified
     n_applied_kg_d = ds_remaining * (site.ps_n_pct / 100.0 + site.was_n_pct / 100.0) / 2.0
@@ -594,11 +596,20 @@ def _narratives(config_id: ConfigID, cr: ConfigResult,
         risks    = ["Class B biosolids only — no pathogen upgrade",
                     "Limited VS destruction improvement vs pre-THP or SolidStream",
                     "Higher TS% increases diffusion limitations at TS > 5–6%",
-                    "NH₃ inhibition risk increases with higher feed TS%"]
+                    "NH3 inhibition risk increases with higher feed TS%"]
 
     elif config_id == "pre_thp":
         uplift = cr.biogas_uplift_pct
-        benefits = [f"Highest biogas uplift of all options (~{uplift:.0f}% vs base case)",
+        # Flag if uplift is unexpectedly low — indicates VSmax saturation at this scale
+        if uplift < 25:
+            uplift_note = (
+                f"~{uplift:.0f}% vs base case at this digester scale "
+                f"(note: VS destruction near VSmax ceiling — actual uplift at larger "
+                f"scale typically 40–50% per literature)"
+            )
+        else:
+            uplift_note = f"~{uplift:.0f}% vs base case (consistent with THP literature)"
+        benefits = [f"Highest biogas uplift of all options — {uplift_note}",
                     "Class A pathogen classification — expands market options",
                     "Improved dewatering (~30–35% DS)",
                     "Enables digester volume reduction for same throughput",
@@ -864,46 +875,78 @@ def run_comparison(
         if cr.included:
             configs[cfg_id] = _narratives(cfg_id, cr, base_cr, site)
 
-    # ── Winner ─────────────────────────────────────────────────────────────
+    # ── Winner — with tie detection ─────────────────────────────────────────
     included_scored = [(k, v.weighted_score) for k, v in configs.items() if v.included]
-    winner_id = max(included_scored, key=lambda x: x[1])[0] if included_scored else None
-    winner_label = CONFIG_LABELS_SHORT.get(winner_id, "") if winner_id else ""
+    if not included_scored:
+        winner_id    = None
+        winner_label = ""
+        is_tie       = False
+        tie_ids      = []
+    else:
+        top_score  = max(s for _, s in included_scored)
+        # Tie threshold: within 2 points (out of 100) — effectively same score
+        tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 2.0]
+        is_tie     = len(tie_ids) > 1
+        winner_id  = tie_ids[0]   # first alphabetically among tied; report flags tie
+        winner_label = CONFIG_LABELS_SHORT.get(winner_id, "") if winner_id else ""
+
+    # Store tie info on result for report use
+    # (attached to ComparisonResult below)
 
     # ── Executive summary ──────────────────────────────────────────────────
     if winner_id:
         wc = configs[winner_id]
-        exec_summary = (
-            f"Based on the configured driver weightings, "
-            f"<b>{winner_label}</b> achieves the highest weighted score "
-            f"({wc.weighted_score:.0f}/100). "
-        )
-        if winner_id == "solidstream":
-            exec_summary += (
+        if is_tie:
+            tie_labels = " and ".join(CONFIG_LABELS_SHORT.get(k,"") for k in tie_ids)
+            exec_summary = (
+                f"<b>Effectively tied:</b> {tie_labels} both achieve a weighted score of "
+                f"<b>{top_score:.0f}/100</b> under the current driver weightings. "
+                "A change in any single driver weighting could shift the recommendation. "
+                "The configurations are differentiated below — review the key risks and benefits "
+                "for each before making a decision, and consider adjusting driver weightings "
+                "to reflect your specific project priorities."
+            )
+        elif winner_id == "solidstream":
+            exec_summary = (
+                f"Based on the configured driver weightings, "
+                f"<b>{winner_label}</b> achieves the highest weighted score "
+                f"({wc.weighted_score:.0f}/100). "
                 "SolidStream delivers the best overall balance of dewatering "
                 "performance, biosolids quality, and operating cost reduction. "
                 "The minimum 15d HRT requirement should be confirmed before "
                 "proceeding to detailed design."
             )
         elif winner_id == "pre_thp":
-            exec_summary += (
+            exec_summary = (
+                f"Based on the configured driver weightings, "
+                f"<b>{winner_label}</b> achieves the highest weighted score "
+                f"({wc.weighted_score:.0f}/100). "
                 "Pre-digestion THP delivers the highest energy uplift and "
-                "Class A biosolids. The higher CAPEX is offset by energy "
-                "revenue and reduced disposal cost over the asset life."
+                "Class A biosolids. Recommended where land application regulation "
+                "is tightening or where new digester capacity is planned."
             )
         elif winner_id == "recup":
-            exec_summary += (
+            exec_summary = (
+                f"Based on the configured driver weightings, "
+                f"<b>{winner_label}</b> achieves the highest weighted score "
+                f"({wc.weighted_score:.0f}/100). "
                 "Recuperative thickening offers the best risk-adjusted outcome "
                 "at this site — meaningful biogas uplift at moderate CAPEX "
                 "without the complexity of THP."
             )
         else:
-            exec_summary += (
+            exec_summary = (
+                f"Based on the configured driver weightings, "
+                f"<b>{winner_label}</b> (Base Case) achieves the highest weighted score "
+                f"({wc.weighted_score:.0f}/100). "
                 "The base case performs best against the current driver mix. "
                 "Review driver weightings if regulatory or quality drivers "
                 "are expected to tighten."
             )
     else:
         exec_summary = "No configurations included — check selection."
+        is_tie = False
+        tie_ids = []
 
     return ComparisonResult(
         configs=configs,
@@ -911,6 +954,8 @@ def run_comparison(
         driver_weights=driver_weights,
         winner_id=winner_id,
         winner_label=winner_label,
+        is_tie=is_tie,
+        tie_ids=tie_ids,
         executive_summary=exec_summary,
         site=site,
     )
