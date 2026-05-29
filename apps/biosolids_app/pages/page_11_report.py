@@ -121,6 +121,35 @@ def render():
             "GHG analysis for land-applied biosolids. Select Zero if the long-term "
             "pathway is thermal treatment (incineration/pyrolysis) rather than land application.")
 
+    with st.expander("PFAS site characterisation", expanded=False):
+        st.caption("Site PFAS inputs inform the technology fate recommendation. "
+                   "Leave as Unknown if not yet characterised — the engine will "
+                   "flag characterisation as the first required action.")
+        pfas_catchment_risk = st.selectbox("Catchment PFAS risk",
+            ["unknown", "low", "medium", "high"],
+            format_func=lambda x: {
+                "unknown": "Unknown — not assessed",
+                "low":     "Low — no known industrial/AFFF sources",
+                "medium":  "Medium — some industrial sources in catchment",
+                "high":    "High — confirmed AFFF, industrial or military sources",
+            }[x], key="t1_pfas_catchment")
+        pfas_risk_level = st.selectbox("Overall PFAS risk level",
+            ["unknown", "low", "medium", "high", "critical"],
+            format_func=lambda x: {
+                "unknown":  "Unknown — characterisation not complete",
+                "low":      "Low — tested, below all thresholds",
+                "medium":   "Medium — tested, approaching thresholds",
+                "high":     "High — tested, above guidance thresholds",
+                "critical": "Critical — land application prohibited",
+            }[x], key="t1_pfas_risk")
+        pfas_ng_per_g = st.number_input("Total PFAS concentration (ng/g DS)",
+            min_value=0.0, value=0.0, step=0.1,
+            help="Enter 0 if not yet tested. Typical threshold: 0.1 mg/kg = 100 ng/g DS",
+            key="t1_pfas_conc")
+        pfas_land_viable = st.checkbox("Land application currently viable",
+            value=True, key="t1_pfas_land_viable",
+            help="Uncheck if land application is restricted or prohibited by the regulator")
+
     with st.expander("Project background (optional)", expanded=False):
         client_context = st.text_area("Brief project description",
             value=ss.get("t1_client_context", ""), height=90,

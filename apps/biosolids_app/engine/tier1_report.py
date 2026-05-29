@@ -1135,61 +1135,234 @@ def _heat_balance_section(story, S, d: Tier1ReportData, section_num: int):
 
 
 def _pfas_section(story, S, d: Tier1ReportData, section_num: int):
-    """PFAS risk register."""
-    story.append(_p(f"{section_num}. PFAS & Contaminant Risk Register", S["h1"]))
+    """PFAS & Contaminant Fate Engine — technology fate matrix + site recommendation."""
+    story.append(_p(f"{section_num}. PFAS & Contaminant Fate Assessment", S["h1"]))
     story.append(_section_rule())
+
+    # ── Site risk context ──────────────────────────────────────────────────
+    risk_level   = getattr(d, "pfas_risk_level",     "unknown").lower()
+    catchment    = getattr(d, "pfas_catchment_risk",  "unknown").lower()
+    tested_conc  = getattr(d, "pfas_ng_per_g_ds",     0.0)
+    land_viable  = getattr(d, "pfas_land_app_viable",  True)
+    reg_pfas     = d.regulatory.get("pfas_note",
+                   "Assess biosolids PFAS levels against relevant authority guidance.")
+
+    # Determine overall site PFAS risk for recommendation
+    if risk_level in ("high", "critical") or not land_viable:
+        site_risk = "HIGH"
+        risk_colour = colors.HexColor("#b71c1c")
+    elif risk_level == "medium" or catchment in ("medium", "high"):
+        site_risk = "MEDIUM"
+        risk_colour = colors.HexColor("#e65100")
+    else:
+        site_risk = "UNKNOWN — characterisation required"
+        risk_colour = colors.HexColor("#1a3a5c")
+
     story.append(_p(
-        "PFAS (per- and polyfluoroalkyl substances) present a specific risk for "
-        "biosolids land application. Catchments with industrial, commercial, or firefighting training area sources may "
-        "industrial and commercial areas that may contribute PFAS-laden influent. "
-        "The current biosolids classification and management strategy must be reviewed "
-            "against the applicable regulator's PFAS position. "
-        "The long-term thermal treatment pathway is relevant to PFAS strategy, "
-        "as both incineration and pyrolysis offer high-temperature destruction.",
+        "PFAS (per- and polyfluoroalkyl substances) are persistent synthetic compounds "
+        "that accumulate in biosolids and are not destroyed by biological treatment "
+        "or conventional digestion. The technology pathway selected for biosolids "
+        "determines whether PFAS is destroyed, concentrated, transferred, or "
+        "redistributed. This section assesses each technology option on a common "
+        "PFAS fate basis and provides a minimum thermal treatment recommendation.",
         S["body"]))
     story.append(_sp(3))
 
-    P2 = lambda t: Paragraph(str(t), S["cell"])
+    # ── 1. Site characterisation status ───────────────────────────────────
+    story.append(_p("1. Site PFAS Characterisation", S["h2"]))
+    P2  = lambda t: Paragraph(str(t), S["cell"])
     PH2 = lambda t: Paragraph(str(t), S["cell_b"])
 
-    pfas_rows = [
-        [PH2("Risk Item"), PH2("Relevance"), PH2("Configuration impact"), PH2("Action required")],
-        [P2("PFAS in biosolids"),
-         P2("Site-dependent — assess based on catchment and influent data"),
-         P2("Class B land application: full PFAS risk. Class A land application: same risk unless PFAS concentrations tested."),
-         P2("Commission PFAS characterisation of current biosolids before any expansion of land application.")],
-        [P2("Land application restriction"),
-         P2("High — EPA Vic 2021 PFAS position may restrict or prohibit land application if PFAS thresholds exceeded"),
-         P2("ALL configurations using land application carry this risk. Does not differentiate THP options."),
-         P2("Obtain current PFAS testing data. Assess against EPA Vic PFAS interim criteria.")],
-        [P2("Thermal treatment — PFAS destruction"),
-         P2("Medium — incineration >850°C destroys PFAS >99.99%. Pyrolysis >600°C effective."),
-         P2("SolidStream cake at 38%DS is the optimal feedstock for incineration without pre-drying. Enables PFAS destruction at lower overall energy cost."),
-         P2("If PFAS risk is confirmed, thermal treatment pathway should be accelerated.")],
-        [P2("Pyrolysis char — PFAS residual"),
-         P2("Medium — char from pyrolysis <550°C may retain PFAS. Higher temperatures needed for full destruction."),
-         P2("If pyrolysis is selected, process temperature must be confirmed to achieve PFAS destruction."),
-         P2("Specify PFAS destruction requirements in pyrolysis process tender documentation.")],
-        [P2("Ash disposal — PFAS in ash"),
-         P2("Low-Medium — FBF ash may concentrate some PFAS if combustion temperature and gas treatment are inadequate"),
-         P2("Ash classification may restrict disposal options if PFAS concentrations are high."),
-         P2("Specify PFAS monitoring in FBF design. Plan for ash characterisation and classification.")],
+    conc_str = (f"{tested_conc:.0f} ng/g DS (tested)"
+                if tested_conc > 0 else "Not tested — characterisation required")
+    lapp_str = ("Viable — subject to ongoing monitoring"
+                if land_viable else "NOT VIABLE — regulatory restriction applies")
+
+    site_rows = [
+        [PH2("Parameter"), PH2("Status"), PH2("Implication")],
+        [P2("Catchment PFAS risk"),
+         P2(catchment.title() if catchment != "unknown" else "Not assessed"),
+         P2("Industrial, commercial or AFFF-use sites in catchment increase biosolids PFAS loading.")],
+        [P2("Biosolids PFAS concentration"),
+         P2(conc_str),
+         P2("Concentrations >0.1 mg/kg DS (sum PFAS) may trigger land application restrictions in some jurisdictions.")],
+        [P2("Land application viability"),
+         Paragraph(lapp_str, ParagraphStyle("risk_cell", parent=S["cell"],
+                   textColor=colors.HexColor("#b71c1c") if not land_viable else colors.black)),
+         P2("If land application is restricted, a thermal destruction pathway is required.")],
+        [P2("Regulatory framework"),
+         P2(d.regulatory.get("label","Relevant authority")),
+         P2(reg_pfas)],
     ]
-    cw = [40*mm, 45*mm, 50*mm, CONTENT_W-135*mm]
-    story.append(_tbl(pfas_rows, cw,
-        [("WORDWRAP",(0,0),(-1,-1),"LTR"),
-         ("FONTSIZE",(0,0),(-1,-1),8)], row_bgs=True))
-    story.append(_sp(3))
+    cw_s = [42*mm, 50*mm, CONTENT_W-92*mm]
+    story.append(_tbl(site_rows, cw_s,
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"),("FONTSIZE",(0,0),(-1,-1),8)], row_bgs=True))
+    story.append(_sp(4))
+
+    # ── 2. PFAS fate by technology — the fate matrix ───────────────────────
+    story.append(_p("2. PFAS Fate by Technology Pathway", S["h2"]))
     story.append(_p(
-        "PFAS does not currently differentiate between the four AD/THP configurations "
-        "assessed in this report — all carry the same land application risk. "
-        "However, PFAS is a strong argument for accelerating the thermal treatment "
-        "pathway. SolidStream at 38%DS significantly reduces the mass of material "
-        "requiring PFAS-safe disposal, and the high-DS cake is the most economic "
-        "feedstock for FBF incineration. "
-        "A PFAS characterisation study and disposal strategy should be commissioned "
-        "in parallel with the THP assessment.",
+        "The table below compares all relevant biosolids management technologies "
+        "on PFAS destruction efficiency (DRE), residual risk pathway, and overall "
+        "PFAS risk rating. Technologies are grouped by risk level.",
         S["body"]))
+    story.append(_sp(2))
+
+    # Colour map for risk ratings
+    RISK_COLOURS = {
+        "LOW":         colors.HexColor("#e8f5e9"),
+        "LOW-MEDIUM":  colors.HexColor("#f1f8e9"),
+        "MEDIUM":      colors.HexColor("#fff8e1"),
+        "MEDIUM-HIGH": colors.HexColor("#fff3e0"),
+        "HIGH":        colors.HexColor("#ffebee"),
+    }
+    RISK_TEXT_COLOURS = {
+        "LOW":         colors.HexColor("#1b5e20"),
+        "LOW-MEDIUM":  colors.HexColor("#33691e"),
+        "MEDIUM":      colors.HexColor("#e65100"),
+        "MEDIUM-HIGH": colors.HexColor("#bf360c"),
+        "HIGH":        colors.HexColor("#b71c1c"),
+    }
+
+    # Technology fate data (literature-based, 2022-2024)
+    PFAS_TECHS = [
+        # (label, dre_range, residual_pathway, risk, applicability_to_this_plant)
+        ("Land application", "0–5%",
+         "Soil accumulation → groundwater / food chain", "HIGH",
+         "Current endpoint for ALL configurations unless changed."),
+        ("Conventional AD + land app", "0–5%",
+         "PFAS concentrated in cake. Full load to soil.", "HIGH",
+         "Base configuration. No PFAS benefit vs raw biosolids."),
+        ("THP + AD + land app\n(SolidStream / Pre-THP)", "2–8%",
+         "THP (150-165°C) does not destroy PFAS.\nCake PFAS load similar to conventional.", "HIGH",
+         "Higher DS cake reduces volume but not PFAS risk per kg DS."),
+        ("Thermal drying (<200°C)", "0–5%",
+         "Short-chain PFAS may volatilise to offgas.\nRisk transfers, not eliminated.", "HIGH",
+         "Pre-treatment only. Does not resolve PFAS."),
+        ("Slow pyrolysis (<500°C)", "40–70%",
+         "Residual PFAS in biochar.\nLeachability uncertain — may restrict land application.", "MEDIUM-HIGH",
+         "Partial solution. Temperature must be confirmed >500°C."),
+        ("HTL (hydrothermal liq.)", "60–85%",
+         "PFAS partitions aqueous phase (60-70%).\nAqueous PFAS requires treatment. NOT standalone.", "MEDIUM-HIGH",
+         "Insufficient as standalone PFAS solution. Aqueous PFAS is a secondary risk."),
+        ("Pyrolysis (≥700°C)", "95–99%",
+         "Trace PFAS in biochar (<1%).\nTypically below regulatory detection limits.", "MEDIUM",
+         "Effective at ≥700°C. Requires process verification and biochar testing."),
+        ("Gasification (≥900°C)", "99–99.9%",
+         "Trace PFAS in syngas — destroyed in afterburner.\nAsh: typically non-detect.", "LOW-MEDIUM",
+         "High efficiency. Limited AU biosolids references (TRL 6-7)."),
+        ("FBF incineration (≥850°C\n+ afterburner)", ">99.9%",
+         "Stack gas <ppt after APCD.\nAsh: PFAS non-detect. Gold standard.", "LOW",
+         "Highest PFAS DRE of any biosolids technology. Proven at scale (TRL 9)."),
+    ]
+
+    fate_rows = [[PH2("Technology pathway"), PH2("PFAS DRE"),
+                  PH2("Residual pathway"), PH2("Risk"), PH2("Notes for this plant")]]
+    for lbl, dre, path, risk, note in PFAS_TECHS:
+        rc = RISK_COLOURS.get(risk, colors.white)
+        rtc= RISK_TEXT_COLOURS.get(risk, colors.black)
+        fate_rows.append([
+            Paragraph(lbl.replace("\n", "<br/>"), S["cell"]),
+            Paragraph(f"<b>{dre}</b>", ParagraphStyle("dre", parent=S["cell"],
+                      textColor=rtc)),
+            Paragraph(path.replace("\n", "<br/>"), S["cell"]),
+            Paragraph(f"<b>{risk}</b>", ParagraphStyle("risk", parent=S["cell"],
+                      textColor=rtc)),
+            Paragraph(note.replace("\n", "<br/>"), S["cell"]),
+        ])
+
+    cw_f = [38*mm, 18*mm, 45*mm, 22*mm, CONTENT_W-123*mm]
+    story.append(_tbl(fate_rows, cw_f,
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"),("FONTSIZE",(0,0),(-1,-1),7.5),
+         ("BACKGROUND",(0,1),(-1,3), colors.HexColor("#ffebee")),    # HIGH rows
+         ("BACKGROUND",(0,4),(-1,5), colors.HexColor("#fff3e0")),    # MED-HIGH rows
+         ("BACKGROUND",(0,6),(-1,6), colors.HexColor("#fff8e1")),    # MEDIUM row
+         ("BACKGROUND",(0,7),(-1,7), colors.HexColor("#f1f8e9")),    # LOW-MED row
+         ("BACKGROUND",(0,8),(-1,8), colors.HexColor("#e8f5e9")),    # LOW row
+        ], row_bgs=False))
+    story.append(_sp(3))
+
+    # ── 3. Minimum thermal treatment recommendation ────────────────────────
+    story.append(_p("3. Minimum Thermal Treatment Recommendation", S["h2"]))
+
+    # Derive recommendation from risk level and land application viability
+    if not land_viable or risk_level == "critical":
+        rec_tech  = "Fluidised Bed Furnace (FBF) incineration at ≥850°C with afterburner"
+        rec_why   = ("Land application is not viable. FBF provides >99.9% PFAS DRE "
+                     "and is the only technology with a sufficient track record for "
+                     "regulatory acceptance as a PFAS destruction pathway.")
+        rec_dre   = ">99.9%"
+        rec_risk  = "LOW"
+        alt_tech  = "High-temperature pyrolysis (≥700°C) as an alternative if FBF scale is not achievable"
+        urgency   = "IMMEDIATE — thermal treatment pathway planning should commence in parallel with THP assessment"
+    elif risk_level == "high" or catchment in ("high",):
+        rec_tech  = "FBF incineration (≥850°C) or high-temperature pyrolysis (≥700°C)"
+        rec_why   = ("High PFAS risk indicates land application is likely to become "
+                     "non-viable within the planning horizon. Thermal treatment should "
+                     "be designed into the long-term biosolids strategy now.")
+        rec_dre   = "≥95% (pyrolysis) to >99.9% (FBF)"
+        rec_risk  = "LOW to MEDIUM"
+        alt_tech  = "Conventional AD + THP is NOT a long-term PFAS solution"
+        urgency   = "NEAR-TERM — include thermal endpoint in Tier 2 assessment"
+    elif risk_level == "medium" or catchment == "medium":
+        rec_tech  = "Commission PFAS characterisation study first, then assess thermal endpoint"
+        rec_why   = ("Medium PFAS risk. Thermal treatment may be required. Characterisation "
+                     "data needed before committing to a technology pathway.")
+        rec_dre   = "Dependent on characterisation results"
+        rec_risk  = "MEDIUM — confirm with testing"
+        alt_tech  = "If PFAS confirmed >threshold: FBF or pyrolysis ≥700°C required"
+        urgency   = "MEDIUM — commission characterisation within 12 months"
+    else:
+        rec_tech  = "Commission PFAS characterisation of biosolids before any process change"
+        rec_why   = ("PFAS status unknown. Any change to biosolids management — including "
+                     "THP installation — should be preceded by PFAS characterisation to "
+                     "establish baseline and confirm land application viability.")
+        rec_dre   = "N/A — characterisation required first"
+        rec_risk  = "UNKNOWN"
+        alt_tech  = "Do not expand land application area until PFAS status is confirmed"
+        urgency   = "REQUIRED — PFAS characterisation should precede any THP investment decision"
+
+    rec_rows = [
+        [PH2("Item"), PH2("Detail")],
+        [P2("Minimum treatment technology"), P2(rec_tech)],
+        [P2("Minimum PFAS DRE required"), P2(rec_dre)],
+        [P2("Rationale"), P2(rec_why)],
+        [P2("Alternative option"), P2(alt_tech)],
+        [P2("Urgency"), Paragraph(f"<b>{urgency}</b>",
+            ParagraphStyle("urg", parent=S["cell"],
+            textColor=colors.HexColor("#b71c1c") if "IMMEDIATE" in urgency else
+                       colors.HexColor("#e65100") if "NEAR" in urgency else colors.black))],
+    ]
+    cw_r = [52*mm, CONTENT_W-52*mm]
+    story.append(_tbl(rec_rows, cw_r,
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"),("FONTSIZE",(0,0),(-1,-1),8.5),
+         ("BACKGROUND",(0,0),(-1,0), colors.HexColor("#1a3a5c")),
+         ("TEXTCOLOR",(0,0),(-1,0), colors.white),
+        ], row_bgs=True))
+    story.append(_sp(4))
+
+    # ── 4. Key insight ─────────────────────────────────────────────────────
+    story.append(_p(
+        "The critical planning insight from this analysis is that <b>PFAS fate is "
+        "determined by the thermal endpoint, not the digestion technology.</b> "
+        "Conventional AD, SolidStream, and Pre-THP all achieve the same PFAS outcome "
+        "for biosolids destined for land application (HIGH risk, 0–8% DRE). "
+        "The THP decision and the thermal endpoint decision are therefore independent: "
+        "THP improves digestion economics regardless of the PFAS pathway, but "
+        "does not substitute for a thermal treatment decision if PFAS is a constraint. "
+        "A utility facing PFAS pressure should evaluate THP and thermal endpoint "
+        "as complementary investments — THP improves cake quality and reduces "
+        "the volume entering the thermal process, improving its economics.",
+        S["body"]))
+    story.append(_sp(2))
+    story.append(_p(
+        f"<i>PFAS fate data sourced from peer-reviewed literature (2020-2024). "
+        f"DRE ranges are indicative at screening grade. Site-specific PFAS testing and "
+        f"technology validation testing are required before investment decisions. "
+        f"Regulatory acceptance of destruction claims varies by jurisdiction — "
+        f"confirm with {d.regulatory.get('label','the relevant authority')} "
+        f"before adopting any thermal treatment pathway as a PFAS compliance solution.</i>",
+        S["caption"]))
 
 
 def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int):
@@ -1846,9 +2019,9 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_sp(2))
 
     # Build split table
-    AMBER = rl_colors.HexColor("#fff3e0")
-    GREEN = rl_colors.HexColor("#e8f5e9")
-    RED   = rl_colors.HexColor("#ffebee")
+    AMBER = colors.HexColor("#fff3e0")
+    GREEN = colors.HexColor("#e8f5e9")
+    RED   = colors.HexColor("#ffebee")
     rows  = [[PH2("Split"), PH2("PS HRT"), PH2("WAS HRT"),
               PH2("VSR PS"), PH2("VSR WAS"), PH2("Biogas Nm\u00b3/d"),
               PH2("Uplift vs blended"), PH2("WAS \u226515d?")]]
@@ -1944,9 +2117,9 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         cw2=[55*mm]+[(CONTENT_W-55*mm)/n2]*n2
         story.append(_tbl(rows2, cw2,
         [("WORDWRAP",(0,0),(-1,-1),"LTR"),("FONTSIZE",(0,0),(-1,-1),8),
-         ("BACKGROUND",(1,1),(-1,-1), rl_colors.HexColor("#e8f5e9")),
-         ("BACKGROUND",(2,1),(-1,-1), rl_colors.HexColor("#fff3e0")),
-         ("BACKGROUND",(3,1),(-1,-1), rl_colors.HexColor("#ffebee")) if n2==3 else ("NOP",(0,0),(0,0))
+         ("BACKGROUND",(1,1),(-1,-1), colors.HexColor("#e8f5e9")),
+         ("BACKGROUND",(2,1),(-1,-1), colors.HexColor("#fff3e0")),
+         ("BACKGROUND",(3,1),(-1,-1), colors.HexColor("#ffebee")) if n2==3 else ("NOP",(0,0),(0,0))
         ], row_bgs=False))
         story.append(_sp(2))
         story.append(_p(

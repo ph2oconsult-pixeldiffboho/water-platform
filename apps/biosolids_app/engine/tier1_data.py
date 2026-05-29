@@ -228,6 +228,11 @@ class Tier1ReportData:
     was_volume_m3:  float = 0.0
     plant_tkn_kgd:  float = 500.0
     n2o_ef:         float = 0.010  # N2O emission factor kg N2O-N/kg N applied (IPCC default)
+    # PFAS site characterisation inputs
+    pfas_risk_level:      str   = "unknown"  # unknown / low / medium / high / critical
+    pfas_land_app_viable: bool  = True       # can biosolids still be land-applied?
+    pfas_ng_per_g_ds:     float = 0.0        # total PFAS in biosolids ng/g DS (0=not tested)
+    pfas_catchment_risk:  str   = "unknown"  # catchment PFAS risk: unknown/low/medium/high
 
     # MAD result (single config — from MAD Analyser page)
     mad_result:     Any = None
@@ -298,6 +303,12 @@ def assemble_report_data(ss: dict, report_cfg: dict) -> Tier1ReportData:
     d.carbon_result   = ss.get("carbon_result")
 
     d.include_sankey  = report_cfg.get("include_sankey", True)
+
+    # PFAS site characterisation
+    d.pfas_risk_level     = report_cfg.get("pfas_risk_level",     "unknown")
+    d.pfas_land_app_viable= bool(report_cfg.get("pfas_land_app_viable", True))
+    d.pfas_ng_per_g_ds    = float(report_cfg.get("pfas_ng_per_g_ds",    0.0))
+    d.pfas_catchment_risk = report_cfg.get("pfas_catchment_risk",  "unknown")
 
     d.available = {
         "mad":             d.mad_result   is not None,
