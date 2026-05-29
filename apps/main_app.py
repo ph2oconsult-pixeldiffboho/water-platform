@@ -252,6 +252,8 @@ elif _active == "biosolids":
         "🌍 Carbon & GHG":         "08_carbon",
         "⚖️ Config Comparison":     "09_compare",
         "🔀 Mass & Energy Flow":    "10_sankey",
+        "📋 Tier 1 Report":         "11_report",
+        "🔀 Separate Digestion":    "12_separate",
         "📖  User Manual":          "06_manual",
     }
     if st.session_state.get("_app_context") != "biosolids":
