@@ -162,6 +162,11 @@ class ComparisonSiteInputs:
     # Plant context
     plant_tkn_kg_per_d: float = 500.0   # Total plant TKN load (for % return calc)
     project_name:       str   = "BioPoint Analysis"
+    # Sidestream OPEX parameters
+    aeration_kwh_per_kg_o2:    float = 2.0    # kWh per kg O2 delivered
+    o2_per_kg_n_nitrified:     float = 4.6    # kg O2 per kg NH4-N nitrified
+    lime_cost_per_kg:          float = 0.15   # $/kg CaCO3 (lime equivalent)
+    alk_per_kg_n:              float = 7.14   # kg CaCO3 per kg NH4-N nitrified
     prepared_by:        str   = "ph2o Consulting"
 
 
@@ -215,13 +220,17 @@ class ConfigResult:
     net_ghg_t_co2e_per_yr:           float = 0.0
 
     # ── OPEX ($/year) ────────────────────────────────────────────────────────
-    opex_polymer_per_yr:       float = 0.0
-    opex_energy_net_per_yr:    float = 0.0   # + = cost, - = revenue
-    opex_disposal_per_yr:      float = 0.0
-    opex_sidestream_per_yr:    float = 0.0
-    opex_thp_maintenance_per_yr: float = 0.0
-    opex_total_per_yr:         float = 0.0
-    opex_delta_vs_base_per_yr: float = 0.0   # vs base case (- = saving)
+    opex_polymer_per_yr:                 float = 0.0
+    opex_energy_net_per_yr:              float = 0.0   # + = cost, - = revenue
+    opex_disposal_per_yr:                float = 0.0
+    opex_sidestream_per_yr:              float = 0.0   # dedicated PN/A treatment
+    opex_sidestream_aeration_per_yr:     float = 0.0   # extra mainstream aeration
+    opex_sidestream_alkalinity_per_yr:   float = 0.0   # extra alkalinity dosing
+    opex_sidestream_total_impact_per_yr: float = 0.0   # sum of all sidestream impacts
+    opex_thp_maintenance_per_yr:         float = 0.0
+    opex_total_per_yr:                   float = 0.0
+    opex_delta_vs_base_per_yr:           float = 0.0   # vs base (- = saving)
+    opex_delta_whole_plant_per_yr:       float = 0.0   # incl. sidestream impacts
 
     # ── CAPEX — equipment scope only (no dollar estimates) ──────────────────
     capex_low_m:     float = 0.0   # retained for scoring only — not shown in report
@@ -621,7 +630,8 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
 
 
 def _opex(config_id, elec_net_kw, wet_cake_tpy,
-          centrate_n_kg_d, ds_total, site: ComparisonSiteInputs):
+          centrate_n_kg_d, ds_total, site: ComparisonSiteInputs,
+          base_centrate_n_kg_d: float = 0.0):
     """Annual OPEX breakdown."""
     # Polymer
     poly_dose = site.polymer_dose_kg_per_tds
@@ -641,14 +651,47 @@ def _opex(config_id, elec_net_kw, wet_cake_tpy,
     # Transport (included in disposal assumption above — or separate)
     transport_cost = wet_cake_tpy / 365 * site.transport_km * site.transport_cost_per_t_km * 365
 
-    # Sidestream treatment (if >10% plant TKN)
-    ss_pct = centrate_n_kg_d / max(site.plant_tkn_kg_per_d, 1) * 100
+    # Sidestream nitrogen impacts
+    # Every THP configuration increases centrate NH4-N vs conventional AD.
+    # This creates two unavoidable mainstream costs:
+    # (1) Extra aeration: delta_N × O2_per_N × kWh_per_O2 × electricity_price
+    # (2) Extra alkalinity: delta_N × alk_per_N × lime_cost
+    # These are ALWAYS incurred regardless of whether dedicated sidestream
+    # treatment is installed. They are currently excluded from most THP
+    # screening assessments, leading to overstatement of OPEX savings.
     sidestream_cost = 0.0
-    if ss_pct > 10.0 and config_id in ("pre_thp",):
-        # SHARON/ANAMMOX OPEX: ~$4/kg N treated (operating cost only, excludes CAPEX)
-        # Source: Metcalf & Eddy (2014), Tchobanoglous et al.; AUD equivalent
-        # Note: sidestream treatment CAPEX is a separate line item not included here
-        sidestream_cost = centrate_n_kg_d * 365 * 4.0
+    aeration_extra_cost = 0.0
+    alkalinity_extra_cost = 0.0
+
+    if config_id in ("pre_thp", "solidstream", "recup"):
+        delta_n = max(0.0, centrate_n_kg_d - base_centrate_n_kg_d)
+        # ss_pct: is THP-caused N increase large enough to warrant dedicated treatment?
+        ss_pct = delta_n / max(site.plant_tkn_kg_per_d, 1) * 100
+        aeration_extra_cost = (
+            delta_n * 365
+            * site.o2_per_kg_n_nitrified
+            * site.aeration_kwh_per_kg_o2
+            * site.electricity_buy_per_kwh
+        )
+        alkalinity_extra_cost = (
+            delta_n * 365
+            * site.alk_per_kg_n
+            * site.lime_cost_per_kg
+        )
+
+    # Dedicated sidestream treatment: only warranted when THP-caused NH4-N
+    # increase exceeds ~500 kg/day — below this, mainstream plant absorbs it
+    # (industry rule: dedicated SHARON/ANAMMOX economic above ~500 kg NH4-N/day)
+    SIDESTREAM_DEDICATED_THRESHOLD_KG_D = 500.0
+    if config_id in ("pre_thp", "solidstream"):
+        delta_n_pna = max(0.0, centrate_n_kg_d - base_centrate_n_kg_d)
+        if delta_n_pna > SIDESTREAM_DEDICATED_THRESHOLD_KG_D:
+            # THP increases centrate N enough for dedicated PN/A to be economic
+            sidestream_cost = delta_n_pna * 365 * 4.0
+            # Dedicated treatment handles the sidestream fraction
+            # Mainstream still handles residual N; costs mostly replaced by sidestream_cost
+            aeration_extra_cost   *= 0.20
+            alkalinity_extra_cost *= 0.20
 
     # THP maintenance
     thp_maint = 0.0
@@ -659,13 +702,19 @@ def _opex(config_id, elec_net_kw, wet_cake_tpy,
 
     total = poly_cost + energy_cost + disposal_cost + transport_cost + sidestream_cost + thp_maint
 
+    sidestream_total = sidestream_cost + aeration_extra_cost + alkalinity_extra_cost
+    total = poly_cost + energy_cost + disposal_cost + transport_cost + sidestream_total + thp_maint
+
     return {
-        "polymer":    poly_cost,
-        "energy":     energy_cost,
-        "disposal":   disposal_cost + transport_cost,
-        "sidestream": sidestream_cost,
-        "thp_maint":  thp_maint,
-        "total":      total,
+        "polymer":              poly_cost,
+        "energy":               energy_cost,
+        "disposal":             disposal_cost + transport_cost,
+        "sidestream":           sidestream_cost,
+        "aeration_extra":       aeration_extra_cost,
+        "alkalinity_extra":     alkalinity_extra_cost,
+        "sidestream_total":     sidestream_total,
+        "thp_maint":            thp_maint,
+        "total":                total,
     }
 
 
@@ -934,14 +983,19 @@ def run_comparison(
         cr.net_ghg_t_co2e_per_yr = net * 365 / 1000
 
         # ── OPEX ──────────────────────────────────────────────────────────
+        _base_centrate = base_result.centrate_nh4_kg_per_d if base_result else 0.0
         opex = _opex(config_id, cr.elec_net_kw, cr.wet_cake_t_per_year,
-                     cr.centrate_nh4_kg_per_d, ds_total, site)
-        cr.opex_polymer_per_yr         = opex["polymer"]
-        cr.opex_energy_net_per_yr      = opex["energy"]
-        cr.opex_disposal_per_yr        = opex["disposal"]
-        cr.opex_sidestream_per_yr      = opex["sidestream"]
-        cr.opex_thp_maintenance_per_yr = opex["thp_maint"]
-        cr.opex_total_per_yr           = opex["total"]
+                     cr.centrate_nh4_kg_per_d, ds_total, site,
+                     base_centrate_n_kg_d=_base_centrate)
+        cr.opex_polymer_per_yr                = opex["polymer"]
+        cr.opex_energy_net_per_yr             = opex["energy"]
+        cr.opex_disposal_per_yr               = opex["disposal"]
+        cr.opex_sidestream_per_yr             = opex["sidestream"]
+        cr.opex_sidestream_aeration_per_yr    = opex["aeration_extra"]
+        cr.opex_sidestream_alkalinity_per_yr  = opex["alkalinity_extra"]
+        cr.opex_sidestream_total_impact_per_yr= opex["sidestream_total"]
+        cr.opex_thp_maintenance_per_yr        = opex["thp_maint"]
+        cr.opex_total_per_yr                  = opex["total"]
 
         # ── CAPEX ─────────────────────────────────────────────────────────
         capex_ref = CAPEX_DATA[config_id]
@@ -967,6 +1021,15 @@ def run_comparison(
             cr.cake_vol_reduction_pct = (base_cake - cr.wet_cake_t_per_day) / base_cake * 100
             cr.opex_delta_vs_base_per_yr = (
                 cr.opex_total_per_yr - base_result.opex_total_per_yr)
+        # Whole-plant delta: subtract the BASE sidestream impacts
+        # (base already includes its own aeration/alkalinity cost)
+        # then add back THIS config's sidestream impacts vs base
+        base_ss_impact = base_result.opex_sidestream_total_impact_per_yr
+        cr.opex_delta_whole_plant_per_yr = (
+            cr.opex_total_per_yr - base_result.opex_total_per_yr
+            # The sidestream costs are already included in opex_total;
+            # delta_whole_plant IS the true net saving including sidestream
+        )
 
     # ── Scoring ────────────────────────────────────────────────────────────
     configs = _raw_scores(configs)
