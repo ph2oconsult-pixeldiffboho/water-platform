@@ -405,8 +405,8 @@ def _ghg_section(story, S, result):
     rows = [headers]
 
     def fmt_ghg(v):
-        if abs(v) < 1:
-            return f"{v:.1f}"
+        if abs(v) < 10:
+            return f"{v:.1f}"   # show decimal for small values like Scope 2 credits
         return f"{v:,.0f}"
 
     def PG(text): return Paragraph(str(text), S["cell"])

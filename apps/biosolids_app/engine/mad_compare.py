@@ -496,12 +496,15 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
 
     scope1 = s1_ch4 + s1_n2o
 
-    # Scope 2: grid electricity (import = positive cost, export = negative / credit)
-    # elec_net_kw > 0 = export (offset), < 0 = import (cost)
+    # Scope 2: grid electricity — CHP availability applied, result in kg CO2e/day
+    # elec_net_kw > 0 = net export (credit = negative), < 0 = net import (cost = positive)
+    chp_avail_frac = site.chp_avail_pct / 100.0
     if elec_net_kw > 0:
-        scope2 = -elec_net_kw * 24 / 1000 * site.grid_intensity_kg_co2e_per_kwh   # credit
+        scope2 = -(elec_net_kw * 24 * chp_avail_frac / 1000
+                   * site.grid_intensity_kg_co2e_per_kwh)   # credit
     else:
-        scope2 = abs(elec_net_kw) * 24 / 1000 * site.grid_intensity_kg_co2e_per_kwh
+        scope2 = (abs(elec_net_kw) * 24 * chp_avail_frac / 1000
+                  * site.grid_intensity_kg_co2e_per_kwh)
 
     # Scope 3: transport — scales with actual wet cake volume per config
     transport_t_km = wet_cake_tpd * site.transport_km
