@@ -142,6 +142,7 @@ def _table_style_data():
         ("RIGHTPADDING",(0, 0), (-1, -1), 6),
         ("GRID",        (0, 0), (-1, -1), 0.3, GREY_RULE),
         ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+        ("WORDWRAP",    (0, 0), (-1, -1), "LTR"),
     ])
 
 
@@ -158,6 +159,7 @@ def _table_style_kv():
         ("RIGHTPADDING",(0, 0), (-1, -1), 7),
         ("GRID",        (0, 0), (-1, -1), 0.3, GREY_RULE),
         ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+        ("WORDWRAP",    (0, 0), (-1, -1), "LTR"),
         ("ROWBACKGROUNDS", (0, 0), (-1, -1), [WHITE, GREY_LIGHT]),
     ])
 
@@ -180,6 +182,47 @@ def _p(text, style):
 
 def _rule():
     return HRFlowable(width="100%", thickness=0.5, color=GREY_RULE, spaceAfter=4)
+
+
+def _cell(text, style_name="cell", S=None, bold=False):
+    """
+    Wrap a table cell string in a Paragraph so ReportLab renders
+    <sub>/<super> tags and wraps long text correctly.
+    If S is None, uses a default cell style.
+    """
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
+    if S and style_name in S:
+        style = S[bold and "cell_bold" or style_name]
+    else:
+        style = ParagraphStyle("_c", fontName="Helvetica" if not bold else "Helvetica-Bold",
+                               fontSize=8.5, leading=11, spaceAfter=0)
+    return Paragraph(str(text), style)
+
+
+def _chem(formula: str) -> str:
+    """
+    Convert common chemical formula strings to ReportLab <sub> markup.
+    Safe to call on any string — leaves non-chemical text unchanged.
+    """
+    replacements = [
+        ("NH4-N",  "NH<sub>4</sub>-N"),
+        ("NH4+",   "NH<sub>4</sub><super>+</super>"),
+        ("NH4",    "NH<sub>4</sub>"),
+        ("NH3",    "NH<sub>3</sub>"),
+        ("CH4",    "CH<sub>4</sub>"),
+        ("CO2e",   "CO<sub>2</sub>e"),
+        ("CO2",    "CO<sub>2</sub>"),
+        ("N2O",    "N<sub>2</sub>O"),
+        ("H2O",    "H<sub>2</sub>O"),
+        # Unicode subscripts (belt-and-braces)
+        ("\u2084", "<sub>4</sub>"),
+        ("\u2083", "<sub>3</sub>"),
+        ("\u2082", "<sub>2</sub>"),
+    ]
+    for plain, markup in replacements:
+        formula = formula.replace(plain, markup)
+    return formula
 
 
 # ── Header / footer callbacks ──────────────────────────────────────────────
@@ -241,7 +284,7 @@ def _cover_section(story, S, inputs, project, prepared_by, date_str, version):
         ["Prepared by", prepared_by],
         ["Date",        date_str],
         ["BioPoint version", version],
-        ["Confidence grade", inputs.get("_confidence", "85–92/100")],
+        ["Confidence grade", inputs.get("_confidence", "85-92/100")],
         ["Pretreatment", {
             "none":        "None — conventional AD",
             "thp":         "Pre-digestion THP",
@@ -268,7 +311,7 @@ def _cover_section(story, S, inputs, project, prepared_by, date_str, version):
 
 
 def _executive_summary(story, S, inputs, ps, was, energy, sidestream, flags):
-    story.append(_p("1. Executive Summary", S["h1"]))
+    story.append(_p("Executive Summary", S["h1"]))
     story.append(_rule())
 
     pretreat = inputs.get("pretreatment", "none")
@@ -297,14 +340,65 @@ def _executive_summary(story, S, inputs, ps, was, energy, sidestream, flags):
         ["Biogas energy",        f"{energy['biogas_gj_d']:.1f}",    "GJ/day"],
         ["CHP gross output",     f"{energy['elec_gross_kw']:,.0f}", "kW"],
         ["Net electricity",      f"{energy['net_elec_kw']:,.0f}",   "kW"],
-        ["Centrate NH\u2084\u207a\u2013N", f"{sidestream['centrate_n_kgd']:.1f}", "kg N/day"],
+        [Paragraph("Centrate NH<sub>4</sub>-N", S["cell"]),
+         Paragraph(f"{sidestream['centrate_n_kgd']:.1f}", S["cell"]),
+         Paragraph("kg N/day", S["cell"])],
         ["Cake N",               f"{sidestream['cake_n_kgd']:.1f}", "kg N/day"],
         ["PS VS destruction",    f"{ps['VS_dest_pct']:.1f}",        "% of VS feed"],
         ["WAS VS destruction",   f"{was['VS_dest_pct']:.1f}",       "% of VS feed"],
     ]
-    tbl = Table(rows, colWidths=[90*mm, 50*mm, CONTENT_W - 140*mm])
+    tbl = Table(rows, colWidths=[80*mm, 35*mm, CONTENT_W - 115*mm])
     tbl.setStyle(_table_style_data())
     story.append(tbl)
+
+    # Interpretive narrative
+    ps_vsr  = ps["VS_dest_pct"]
+    was_vsr = was["VS_dest_pct"]
+    net_kw  = energy["net_elec_kw"]
+    pretreat_label = {
+        "none": "conventional mesophilic AD",
+        "thp": "pre-digestion THP",
+        "solidstream": "SolidStream post-digestion THP",
+    }.get(inputs.get("pretreatment", "none"), "")
+
+    if inputs.get("_status") == "SAFE":
+        status_narrative = (
+            f"Both digester streams are operating within acceptable limits. "
+            f"PS volatile solids destruction is <b>{ps_vsr:.1f}%</b> and "
+            f"WAS is <b>{was_vsr:.1f}%</b>. "
+        )
+    else:
+        status_narrative = (
+            f"One or more digester streams is outside recommended operating limits — "
+            f"review the diagnostic flags section. "
+        )
+
+    energy_narrative = (
+        f"Net electrical output of <b>{net_kw:,.0f} kW</b> represents the CHP gross "
+        f"output less mixing parasitic load. "
+    )
+    if inputs.get("pretreatment") == "thp":
+        pretreat_narrative = (
+            "Pre-digestion THP enhances VS destruction by hydrolyzing cell walls before "
+            "digestion, increasing biogas yield and improving dewatering. "
+            "Elevated NH<sub>3</sub> concentrations from increased N mineralisation are expected — "
+            "monitor FAN levels closely during commissioning."
+        )
+    elif inputs.get("pretreatment") == "solidstream":
+        pretreat_narrative = (
+            "SolidStream post-digestion THP improves dewatering to ≥38% DS cake dryness "
+            "and achieves Class A equivalent pathogen kill. The COD-rich hot centrate "
+            "recycled to digesters provides the biogas uplift shown above."
+        )
+    else:
+        pretreat_narrative = (
+            "Conventional mesophilic digestion without THP pretreatment. "
+            "Biosolids will be Class B. Consider THP or SolidStream if Class A "
+            "classification or improved dewatering is required."
+        )
+
+    story.append(Spacer(1, 3*mm))
+    story.append(_p(status_narrative + energy_narrative + pretreat_narrative, S["body"]))
 
     # SolidStream callout
     if flags.get("solidstream_active"):
@@ -332,56 +426,58 @@ def _executive_summary(story, S, inputs, ps, was, energy, sidestream, flags):
 
 
 def _digester_inputs_section(story, S, inputs):
-    story.append(_p("2. Digester Configuration & Inputs", S["h1"]))
+    story.append(_p("Digester Configuration & Inputs", S["h1"]))
     story.append(_rule())
 
-    col_w = (CONTENT_W - 4*mm) / 2
+    col_w = CONTENT_W
 
     # PS inputs
     ps_data = [
-        ["Parameter", "Value"],
-        ["Digester volume", f"{inputs['ps_volume_m3']:,.0f} m\u00b3"],
-        ["Dry solids load", f"{inputs['ps_ds_tpd']:.1f} tDS/day"],
-        ["Feed TS%", f"{inputs['ps_ts_pct']:.1f}%"],
-        ["Volatile solids", f"{inputs['ps_vs_pct']:.1f}% of DS"],
-        ["Nitrogen content", f"{inputs['ps_n_pct']:.1f}% of DS"],
-        ["Recup capture", f"{inputs['ps_cap_pct']:.0f}%"],
-        ["Recirculation \u03b2", f"{inputs['ps_beta']:.2f}"],
+        [Paragraph("Parameter", S["cell_bold"]), Paragraph("Value", S["cell_bold"])],
+        [Paragraph("Digester volume", S["cell"]), Paragraph(f"{inputs['ps_volume_m3']:,.0f} m\u00b3", S["cell"])],
+        [Paragraph("Dry solids load", S["cell"]), Paragraph(f"{inputs['ps_ds_tpd']:.1f} tDS/day", S["cell"])],
+        [Paragraph("Feed TS%", S["cell"]),         Paragraph(f"{inputs['ps_ts_pct']:.1f}%", S["cell"])],
+        [Paragraph("Volatile solids", S["cell"]),  Paragraph(f"{inputs['ps_vs_pct']:.1f}% of DS", S["cell"])],
+        [Paragraph("Nitrogen content", S["cell"]), Paragraph(f"{inputs['ps_n_pct']:.1f}% of DS", S["cell"])],
+        [Paragraph("Recup capture", S["cell"]),    Paragraph(f"{inputs['ps_cap_pct']:.0f}%", S["cell"])],
+        [Paragraph("Recirculation \u03b2", S["cell"]), Paragraph(f"{inputs['ps_beta']:.2f}", S["cell"])],
     ]
     was_data = [
-        ["Parameter", "Value"],
-        ["Digester volume", f"{inputs['was_volume_m3']:,.0f} m\u00b3"],
-        ["Dry solids load", f"{inputs['was_ds_tpd']:.1f} tDS/day"],
-        ["Feed TS%", f"{inputs['was_ts_pct']:.1f}%"],
-        ["Volatile solids", f"{inputs['was_vs_pct']:.1f}% of DS"],
-        ["Nitrogen content", f"{inputs['was_n_pct']:.1f}% of DS"],
-        ["Recup capture", f"{inputs['was_cap_pct']:.0f}%"],
-        ["Recirculation \u03b2", f"{inputs['was_beta']:.2f}"],
+        [Paragraph("Parameter", S["cell_bold"]), Paragraph("Value", S["cell_bold"])],
+        [Paragraph("Digester volume", S["cell"]), Paragraph(f"{inputs['was_volume_m3']:,.0f} m\u00b3", S["cell"])],
+        [Paragraph("Dry solids load", S["cell"]), Paragraph(f"{inputs['was_ds_tpd']:.1f} tDS/day", S["cell"])],
+        [Paragraph("Feed TS%", S["cell"]),         Paragraph(f"{inputs['was_ts_pct']:.1f}%", S["cell"])],
+        [Paragraph("Volatile solids", S["cell"]),  Paragraph(f"{inputs['was_vs_pct']:.1f}% of DS", S["cell"])],
+        [Paragraph("Nitrogen content", S["cell"]), Paragraph(f"{inputs['was_n_pct']:.1f}% of DS", S["cell"])],
+        [Paragraph("Recup capture", S["cell"]),    Paragraph(f"{inputs['was_cap_pct']:.0f}%", S["cell"])],
+        [Paragraph("Recirculation \u03b2", S["cell"]), Paragraph(f"{inputs['was_beta']:.2f}", S["cell"])],
     ]
 
     for label, data in [("Primary Sludge (PS)", ps_data), ("Waste Activated Sludge (WAS)", was_data)]:
         story.append(_p(label, S["h2"]))
-        tbl = Table(data, colWidths=[col_w * 0.55, col_w * 0.45])
+        tbl = Table(data, colWidths=[col_w * 0.50, col_w * 0.50])
         tbl.setStyle(_table_style_data())
         story.append(tbl)
         story.append(Spacer(1, 3*mm))
 
     # Operating conditions
     story.append(_p("Operating conditions", S["h2"]))
+    P = lambda t: Paragraph(str(t), S["cell"])
     op_data = [
-        ["Parameter", "Value", "Parameter", "Value"],
-        ["Mixing system",     inputs["mixing_type"].capitalize(),
-         "Digester pH",       f"{inputs['digester_pH']:.2f}"],
-        ["Mixing power",      f"{inputs['mixing_power']:.0f} W/m\u00b3",
-         "pH control",        inputs["ph_control"].upper()],
-        ["NH\u2083 mode",     inputs["nh3_mode"].capitalize(),
-         "Pretreatment",      {
-             "none": "None", "thp": "Pre-THP", "solidstream": "SolidStream"
-         }.get(inputs["pretreatment"], inputs["pretreatment"])],
-        ["Trade waste",       inputs["trade_waste"].capitalize(),
-         "CHP efficiency",    f"{inputs['chp_eff_pct']:.0f}%"],
-        ["Final dewatering cap", f"{inputs['final_cap_pct']:.0f}%",
-         "CHP availability",  f"{inputs['chp_avail_pct']:.0f}%"],
+        [P("Parameter"), P("Value"), P("Parameter"), P("Value")],
+        [P("Mixing system"),    P(inputs["mixing_type"].capitalize()),
+         P("Digester pH"),      P(f"{inputs['digester_pH']:.2f}")],
+        [P("Mixing power"),     P(f"{inputs['mixing_power']:.0f} W/m³"),
+         P("pH control"),       P(inputs["ph_control"].upper())],
+        [Paragraph("NH<sub>3</sub> mode", S["cell"]),
+         Paragraph(inputs["nh3_mode"].capitalize(), S["cell"]),
+         Paragraph("Pretreatment", S["cell"]),
+         Paragraph({"none": "None", "thp": "Pre-THP", "solidstream": "SolidStream"}
+             .get(inputs["pretreatment"], inputs["pretreatment"]), S["cell"])],
+        [P("Trade waste"),      P(inputs["trade_waste"].capitalize()),
+         P("CHP efficiency"),   P(f"{inputs['chp_eff_pct']:.0f}%")],
+        [P("Final dewatering"), P(f"{inputs['final_cap_pct']:.0f}%"),
+         P("CHP availability"), P(f"{inputs['chp_avail_pct']:.0f}%")],
     ]
     cw = CONTENT_W / 4
     tbl = Table(op_data, colWidths=[cw*1.1, cw*0.9, cw*1.1, cw*0.9])
@@ -403,32 +499,39 @@ def _digester_inputs_section(story, S, inputs):
         ("RIGHTPADDING", (0,0), (-1,-1), 6),
         ("GRID",         (0,0), (-1,-1), 0.3, GREY_RULE),
         ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+        ("WORDWRAP",     (0,0), (-1,-1), "LTR"),
     ]))
     story.append(tbl)
 
 
 def _stream_physics_section(story, S, ps, was, feasibility):
-    story.append(_p("3. Digester Physics & Performance", S["h1"]))
+    story.append(_p("Digester Physics & Performance", S["h1"]))
     story.append(_rule())
+
+    _cell_style = S["cell"]   # used by stream_rows lambdas
 
     # Side-by-side PS / WAS
     def stream_rows(s, label):
         sc = _status_colour(s["status"])
+        P = lambda t: Paragraph(str(t), _cell_style)
         return [
             [Paragraph(f"<b>{label}</b>", S["cell_bold"]),
              Paragraph(f"<b>{s['status']}</b>", ParagraphStyle(
                  "st", parent=S["cell_bold"], textColor=sc))],
-            ["Primary constraint", s["primary"]],
-            ["Mixing factor f_mix", f"{s['f_mix']:.3f}"],
-            ["Diffusion factor f_diff", f"{s['f_diff_eff']:.3f}"],
-            ["Combined f_eff", f"{s['f_eff']:.3f}"],
-            ["HRT (nominal)", f"{s['HRT_d']:.1f} days"],
-            ["SRT (nominal)", f"{s['SRT_nom_d']:.1f} days"],
-            ["SRT (effective)", f"{s['SRT_eff_d']:.1f} days"],
-            ["VS destruction", f"{s['VS_dest_pct']:.1f}%"],
-            ["NH\u2084\u207a concentration", f"{s['NH4_g_L']:.2f} g/L"],
-            ["Free NH\u2083 (inhibiting)", f"{s['NH3_g_L']:.3f} g NH\u2083-N/L"],
-            ["NH\u2083 inhibition", f"{s['inhibition_pct']:.1f}%"],
+            [P("Primary constraint"),  P(str(s["primary"]))],
+            [P("Mixing factor f_mix"), P(f"{s['f_mix']:.3f}")],
+            [P("Diffusion factor f_diff"), P(f"{s['f_diff_eff']:.3f}")],
+            [P("Combined f_eff"),      P(f"{s['f_eff']:.3f}")],
+            [P("HRT (nominal)"),       P(f"{s['HRT_d']:.1f} days")],
+            [P("SRT (nominal)"),       P(f"{s['SRT_nom_d']:.1f} days")],
+            [P("SRT (effective)"),     P(f"{s['SRT_eff_d']:.1f} days")],
+            [P("VS destruction"),      P(f"{s['VS_dest_pct']:.1f}%")],
+            [Paragraph("NH<sub>4</sub><super>+</super> concentration", _cell_style),
+             Paragraph(f"{s['NH4_g_L']:.2f} g/L", _cell_style)],
+            [Paragraph("Free NH<sub>3</sub> (inhibiting)", _cell_style),
+             Paragraph(f"{s['NH3_g_L']:.3f} g NH<sub>3</sub>-N/L", _cell_style)],
+            [Paragraph("NH<sub>3</sub> inhibition", _cell_style),
+             Paragraph(f"{s['inhibition_pct']:.1f}%", _cell_style)],
         ]
 
     ps_rows  = stream_rows(ps,  "Primary Sludge (PS)")
@@ -439,8 +542,8 @@ def _stream_physics_section(story, S, ps, was, feasibility):
     for i, (pr, wr) in enumerate(zip(ps_rows, was_rows)):
         combined.append(pr + wr)
 
-    half = CONTENT_W / 2 - 2*mm
-    cw = [half * 0.52, half * 0.48, half * 0.52, half * 0.48]
+    half = CONTENT_W / 2 - 1*mm
+    cw = [half * 0.55, half * 0.45, half * 0.55, half * 0.45]
     tbl = Table(combined, colWidths=cw)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",   (0,0), (1,0), PH2O_TEAL),
@@ -477,7 +580,7 @@ def _stream_physics_section(story, S, ps, was, feasibility):
          f"{feasibility['max_was_srt']:.1f}d achievable",
          f">{feasibility['min_stable_srt']:.0f}d required"],
     ]
-    tbl2 = Table(feas_data, colWidths=[70*mm, 45*mm, 45*mm, CONTENT_W-160*mm])
+    tbl2 = Table(feas_data, colWidths=[65*mm, 38*mm, 38*mm, CONTENT_W-141*mm])
     ts2 = _table_style_data()
     # Colour feasibility cells
     for col, stream in [(1, feasibility["ps"]), (2, feasibility["was"])]:
@@ -488,62 +591,118 @@ def _stream_physics_section(story, S, ps, was, feasibility):
     story.append(tbl2)
 
 
+def _physics_narrative(story, S, ps, was, feasibility):
+    """Plain-language interpretation of the physics results."""
+    ps_ok  = ps["status"] == "SAFE"
+    was_ok = was["status"] in ("SAFE", "WATCH")
+    ps_inh  = ps["inhibition_pct"]
+    was_inh = was["inhibition_pct"]
+    ps_feff  = ps["f_eff"]
+    was_feff = was["f_eff"]
+    ps_vsr   = ps["VS_dest_pct"]
+    was_vsr  = was["VS_dest_pct"]
+
+    # Mixing assessment
+    if min(ps_feff, was_feff) >= 0.80:
+        mix_text = "Mixing performance is good across both streams (f_eff ≥ 0.80)."
+    elif min(ps_feff, was_feff) >= 0.65:
+        mix_text = (f"Mixing is adequate but not optimal — WAS f_eff = {was_feff:.2f}. "
+                    "Consider increasing mixing power or reviewing system type if throughput increases.")
+    else:
+        mix_text = (f"Mixing efficiency is low (f_eff = {min(ps_feff, was_feff):.2f}). "
+                    "This is the primary performance limiter — upgrade mixing system before increasing load.")
+
+    # Inhibition assessment
+    if max(ps_inh, was_inh) < 10:
+        inh_text = f"NH<sub>3</sub> inhibition is low (PS {ps_inh:.1f}%, WAS {was_inh:.1f}%) — within safe operating range."
+    elif max(ps_inh, was_inh) < 20:
+        inh_text = (f"NH<sub>3</sub> inhibition is moderate (PS {ps_inh:.1f}%, WAS {was_inh:.1f}%). "
+                    "Monitor FAN concentration. pH control or dilution may be warranted if loading increases.")
+    else:
+        inh_text = (f"NH<sub>3</sub> inhibition is elevated (PS {ps_inh:.1f}%, WAS {was_inh:.1f}%). "
+                    "This is likely suppressing biogas yield. Consider pH control, dilution water, or load reduction.")
+
+    # VS destruction
+    vsr_text = (f"Combined VS destruction ({ps_vsr:.1f}% PS / {was_vsr:.1f}% WAS) "
+                f"{'is consistent with well-operated mesophilic digestion.' if was_vsr > 55 else 'is below expected range — review HRT and mixing.'}")
+
+    story.append(_p(mix_text + " " + inh_text + " " + vsr_text, S["body"]))
+    story.append(Spacer(1, 3*mm))
+
+
 def _energy_section(story, S, energy, inputs):
-    story.append(_p("4. Energy Balance & CHP", S["h1"]))
+    P = lambda t: Paragraph(str(t), S['cell'])
+    story.append(_p("Energy Balance & CHP", S["h1"]))
     story.append(_rule())
 
     rows = [
         ["Parameter", "Value", "Notes"],
-        ["Biogas production",      f"{energy['biogas_m3_d']:,.0f} m\u00b3/day",
-         "64% CH\u2084 assumed"],
-        ["Biogas energy (LHV)",    f"{energy['biogas_gj_d']:.1f} GJ/day",
-         "35.8 MJ/m\u00b3 CH\u2084 LHV"],
-        ["CHP gross output",       f"{energy['elec_gross_kw']:,.0f} kW",
-         f"{inputs['chp_eff_pct']:.0f}% electrical efficiency"],
-        ["Mixing parasitic load",  f"{energy['mixing_kw']:,.0f} kW",
-         f"{inputs['mixing_power']:.0f} W/m\u00b3 \u00d7 digester volume"],
-        ["Net electrical output",  f"{energy['net_elec_kw']:,.0f} kW",
-         "Gross minus mixing"],
-        ["Net electrical (annual)",f"{energy['net_elec_kw'] * 8760 / 1000:,.0f} MWh/yr",
-         f"{inputs['chp_avail_pct']:.0f}% CHP availability applied"],
+        [P("Biogas production"),
+         P(f"{energy['biogas_m3_d']:,.0f} m³/day"),
+         P("64% CH<sub>4</sub> assumed")],
+        [P("Biogas energy (LHV)"),
+         P(f"{energy['biogas_gj_d']:.1f} GJ/day"),
+         P("35.8 MJ/m³ CH<sub>4</sub> LHV")],
+        [P("CHP gross output"),
+         P(f"{energy['elec_gross_kw']:,.0f} kW"),
+         P(f"{inputs['chp_eff_pct']:.0f}% electrical efficiency")],
+        [P("Mixing parasitic load"),
+         P(f"{energy['mixing_kw']:,.0f} kW"),
+         P(f"{inputs['mixing_power']:.0f} W/m³ × digester volume")],
+        [P("Net electrical output"),
+         P(f"{energy['net_elec_kw']:,.0f} kW"),
+         P("Gross minus mixing")],
+        [P("Net electrical (annual)"),
+         P(f"{energy['net_elec_kw'] * 8760 / 1000:,.0f} MWh/yr"),
+         P(f"{inputs['chp_avail_pct']:.0f}% CHP availability applied")],
     ]
     tbl = Table(rows, colWidths=[70*mm, 55*mm, CONTENT_W-125*mm])
     tbl.setStyle(_table_style_data())
     story.append(tbl)
 
-    story.append(Spacer(1, 3*mm))
+    annual_mwh = energy['net_elec_kw'] * 8760 * (inputs.get('chp_avail_pct', 88) / 100) / 1000
+    export_rev = annual_mwh * 0.10  # nominal $0.10/kWh export
+    story.append(_p(
+        f"Net annual electricity production of <b>{annual_mwh:,.0f} MWh/yr</b> at current CHP settings. "
+        f"At a nominal export tariff of $0.10/kWh, this represents approximately "
+        f"<b>${export_rev:,.0f}/yr</b> in electricity revenue before parasitic loads and auxiliary consumption. "
+        "Thermal recovery from CHP jacket heat (typically 50–60% of fuel energy as heat) is not modelled "
+        "but can significantly reduce site heating costs — evaluate heat integration at detailed design stage.",
+        S['body']))
+    story.append(Spacer(1, 2*mm))
     story.append(_p(
         "CHP availability and electrical efficiency are as configured. "
         "Gas engine parasitic loads and auxiliary equipment consumption are not modelled — "
-        "deduct 3–5% from net electrical for auxiliary systems. "
-        "Thermal recovery from CHP jacket heat is not included in this report.",
+        "deduct 3–5% from net electrical for auxiliary systems.",
         S["body_small"]))
 
 
 def _sidestream_section(story, S, sidestream, inputs):
-    story.append(_p("5. Sidestream Nitrogen", S["h1"]))
+    story.append(_p("Sidestream Nitrogen", S["h1"]))
     story.append(_rule())
 
     total = sidestream["centrate_n_kgd"] + sidestream["cake_n_kgd"]
     centrate_pct = sidestream["centrate_n_kgd"] / total * 100 if total > 0 else 0
     cake_pct = 100 - centrate_pct
 
+    P  = lambda t: Paragraph(str(t), S["cell"])
+    PH = lambda t: Paragraph(str(t), S["cell_bold"])
     rows = [
-        ["Stream", "N load (kg N/day)", "% of total N released", "Notes"],
-        ["Centrate (return liquor)",
-         f"{sidestream['centrate_n_kgd']:.1f}",
-         f"{centrate_pct:.0f}%",
-         "Returns to liquid treatment"],
-        ["Dewatered cake",
-         f"{sidestream['cake_n_kgd']:.1f}",
-         f"{cake_pct:.0f}%",
-         "Leaves system in biosolids product"],
-        ["Total N released",
-         f"{total:.1f}",
-         "100%",
-         "From digestion + THP N mineralisation"],
+        [PH("Stream"), PH("N load (kg/day)"), PH("% of total"), PH("Notes")],
+        [P("Centrate (return liquor)"),
+         P(f"{sidestream['centrate_n_kgd']:.1f}"),
+         P(f"{centrate_pct:.0f}%"),
+         P("Returns to liquid treatment train")],
+        [P("Dewatered cake"),
+         P(f"{sidestream['cake_n_kgd']:.1f}"),
+         P(f"{cake_pct:.0f}%"),
+         P("Retained in biosolids product")],
+        [P("Total N released"),
+         P(f"{total:.1f}"),
+         P("100%"),
+         P("Digestion + THP N mineralisation")],
     ]
-    tbl = Table(rows, colWidths=[55*mm, 40*mm, 45*mm, CONTENT_W-140*mm])
+    tbl = Table(rows, colWidths=[55*mm, 30*mm, 22*mm, CONTENT_W-107*mm])
     tbl.setStyle(_table_style_data())
     story.append(tbl)
 
@@ -560,7 +719,7 @@ def _sidestream_section(story, S, sidestream, inputs):
 
 
 def _solidstream_section(story, S, solidstream_data):
-    story.append(_p("6. SolidStream Performance Estimates", S["h1"]))
+    story.append(_p("SolidStream Performance Estimates", S["h1"]))
     story.append(_rule())
 
     story.append(_p(
@@ -625,7 +784,7 @@ def _solidstream_section(story, S, solidstream_data):
 
 
 def _flags_section(story, S, flags, inputs):
-    story.append(_p("7. Diagnostic Flags & Recommendations", S["h1"]))
+    story.append(_p("Diagnostic Flags & Recommendations", S["h1"]))
     story.append(_rule())
 
     flag_defs = {
@@ -663,23 +822,29 @@ def _flags_section(story, S, flags, inputs):
 
     severity_colour = {"CRITICAL": FAIL_RED, "WARNING": WARN_AMBER, "INFO": PH2O_TEAL}
 
-    rows = [["Severity", "Flag", "Description / Recommended action"]]
+    P = lambda t, bold=False: Paragraph(str(t),
+        S["cell_bold"] if bold else S["cell"])
+
+    rows = [[P("Severity", bold=True), P("Flag", bold=True),
+             P("Description / Recommended action", bold=True)]]
     for flag_key, flag_val in active.items():
         if not flag_val:
             continue
         if flag_key not in flag_defs:
             continue
         severity, label, desc = flag_defs[flag_key]
-        rows.append([severity, label, desc])
+        col = severity_colour.get(severity, GREY_MID)
+        sev_style = ParagraphStyle("sev", parent=S["cell_bold"], textColor=col)
+        rows.append([
+            Paragraph(severity, sev_style),
+            P(label),
+            P(desc),
+        ])
 
-    cw = [22*mm, 38*mm, CONTENT_W - 60*mm]
+    cw = [22*mm, 36*mm, CONTENT_W - 58*mm]
     tbl = Table(rows, colWidths=cw)
     ts = _table_style_data()
-    for i, row in enumerate(rows[1:], 1):
-        sev = row[0]
-        col = severity_colour.get(sev, GREY_MID)
-        ts.add("TEXTCOLOR", (0, i), (0, i), col)
-        ts.add("FONTNAME",  (0, i), (0, i), "Helvetica-Bold")
+    ts.add("WORDWRAP", (0, 0), (-1, -1), "LTR")
     tbl.setStyle(ts)
     story.append(tbl)
 
@@ -699,8 +864,7 @@ def _disclaimer_section(story, S):
 
     caveats = [
         ("CAPEX estimates",
-         "Not included in this report. Order-of-magnitude CAPEX from the BioPoint "
-         "pathway rankings carries ±30% uncertainty."),
+         "Not included in this report. Pathway rankings carry order-of-magnitude CAPEX indicators (+-30%) for context only."),
         ("Energy uncertainty",
          "All energy figures (biogas, electricity, mixing) carry ±15% uncertainty "
          "at this screening grade."),
@@ -712,7 +876,7 @@ def _disclaimer_section(story, S):
          "stage). Actual performance subject to feedstock, digester configuration, "
          "HRT, and operating conditions. Independent performance guarantee testing "
          "required before commitment."),
-        ("NH3 inhibition",
+        ("NH<sub>3</sub> inhibition",
          "Inhibition model is based on published kinetic constants (Hansen 1998, Wu 2010). "
          "Site-specific acclimation histories may differ from model assumptions."),
         ("Regulatory compliance",
@@ -723,8 +887,9 @@ def _disclaimer_section(story, S):
 
     rows = [["Caveat", "Notes"]]
     for k, v in caveats:
-        rows.append([k, v])
-    tbl = Table(rows, colWidths=[55*mm, CONTENT_W-55*mm])
+        rows.append([Paragraph(k, S["cell_bold"]),
+                     Paragraph(v, S["cell"])])
+    tbl = Table(rows, colWidths=[48*mm, CONTENT_W-48*mm])
     tbl.setStyle(_table_style_data())
     story.append(tbl)
 
@@ -867,6 +1032,7 @@ def generate_mad_report(
     story.append(PageBreak())
 
     _stream_physics_section(story, S, ps_out, was_out, feas_out)
+    _physics_narrative(story, S, ps_out, was_out, feas_out)
     story.append(PageBreak())
 
     _energy_section(story, S, energy_out, inp)
