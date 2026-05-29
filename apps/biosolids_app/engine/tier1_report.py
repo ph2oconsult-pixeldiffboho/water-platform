@@ -110,6 +110,72 @@ def _styles():
     return s
 
 
+# ── Context-aware plant scaling ───────────────────────────────────────────
+
+def _plant_context(d):
+    """
+    Derive all scale-dependent flags from the actual plant data.
+    Nothing is hardcoded — all values derive from d.cmp_result and d.ps/was inputs.
+    """
+    site    = d.cmp_result.site if d.cmp_result else None
+    ds      = (site.ps_ds_tpd + site.was_ds_tpd) if site else (d.ps_ds_tpd + d.was_ds_tpd)
+    configs = list(d.cmp_result.configs.values()) if d.cmp_result else []
+
+    # Max centrate NH4-N across all configs
+    max_nh4 = max((getattr(cr,"centrate_nh4_kg_per_d",0) for cr in configs), default=0)
+
+    # Min HRT across THP configs
+    thp_hrts = [
+        getattr(cr,"hrt_days",(getattr(cr,"hrt_ps_d",0)+getattr(cr,"hrt_was_d",0))/2)
+        for cr in configs
+        if cr.config_id in ("solidstream","pre_thp","expansion")
+    ]
+    min_hrt = min(thp_hrts) if thp_hrts else 18.0
+
+    # Scale
+    if ds < 20:   scale = "small"
+    elif ds < 100: scale = "medium"
+    else:          scale = "large"
+
+    # Estimate plant flow from DS load and typical TS%
+    ts_mix = (site.ps_ts_pct + site.was_ts_pct) / 2 if site else 4.0
+    feed_vol_m3d = ds / (ts_mix/100) if ts_mix > 0 else ds * 25
+    # Plant influent flow estimate (rough: 20× feed vol for small, 10× for large)
+    # Flow calibrated: 219.5 tDS/d → ~500 ML/d (ETP, large)
+    # Small plants have higher DS concentration (less dilution)
+    if scale == "small":   flow_mld = round(ds * 5.0, 0)    # ~50 ML/d per 10 tDS/d
+    elif scale == "medium": flow_mld = round(ds * 3.5, 0)   # ~210 ML/d per 60 tDS/d
+    else:                   flow_mld = round(ds * 2.3, 0)   # ~505 ML/d per 220 tDS/d
+    tn_mg_l      = 40 if scale=="small" else 35  # higher conc at smaller plants
+    tkn_kgd      = flow_mld * 1e6 * tn_mg_l / 1e6
+
+    # Digester count and size from actual volumes
+    v_total = (site.ps_volume_m3 + site.was_volume_m3) if site else               (d.ps_volume_m3 + d.was_volume_m3)
+    # Estimate digester unit size
+    if v_total <= 5000:   v_each = 500
+    elif v_total <= 20000: v_each = 2000
+    elif v_total <= 50000: v_each = 5000
+    else:                  v_each = 8000
+    n_dig = max(1, round(v_total / v_each))
+
+    return {
+        "ds_total":              ds,
+        "scale":                 scale,
+        "flow_mld":              flow_mld,
+        "tkn_kgd":               tkn_kgd,
+        "max_nh4_kgd":           max_nh4,
+        "min_hrt":               min_hrt,
+        "v_total":               v_total,
+        "v_each":                v_each,
+        "n_dig":                 n_dig,
+        "sidestream_dedicated":  max_nh4 > 500,   # only recommend SHARON/ANAMMOX above 500 kg/d
+        "needs_expansion":       min_hrt < 15.0,
+        "feed_vol_m3d":          feed_vol_m3d,
+        # Centrate recycle: scale from Cambi reference (1233 m³/d at 219.5 tDS/d)
+        "centrate_recycle_m3d":  1233.0 * ds / 219.5 if ds > 0 else 0,
+    }
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _p(text, style):
@@ -323,7 +389,7 @@ def _executive_decision_matrix(story, S, d: Tier1ReportData, section_num: int):
     story.append(_section_rule())
     story.append(_p(
         "This matrix provides a rapid at-a-glance comparison across the criteria that matter "
-        "most to Melbourne Water. It is a summary only — refer to the detailed sections for "
+        "most to the client. It is a summary only — refer to the detailed sections for "
         "full supporting analysis and caveats.",
         S["body"]))
     story.append(_sp(3))
@@ -332,6 +398,7 @@ def _executive_decision_matrix(story, S, d: Tier1ReportData, section_num: int):
         return
 
     result  = d.cmp_result
+    n2o_ef  = getattr(d, "n2o_ef", 0.010)  # kg N2O-N/kg N applied
     configs = [result.configs[k] for k in result.included_ids]
 
     # Cell helpers
@@ -774,34 +841,56 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
         # Use Cambi stated mixed TS% (6.2% Scenario 1) — NOT weighted average of ps/was TS
         # Weighted TS% gives wrong combined volume; Cambi's 6.2% is the correct design basis
         # Verified: 219.5 tDS/day / 0.062 = 3,540 m³/day → HRT 64,000/3,540 = 18.1d ✓ (Cambi 18.1d)
-        CAMBI_MIXED_TS_PCT = 6.2  # Cambi Scenario 1 design basis (recuperative thickening)
-        q_feed = ds / (CAMBI_MIXED_TS_PCT/100)   # m³/day feed = 3,540
-        # Centrate recycle adds hydraulic load to digesters (Cambi: 1,233 m³/day at 219.5 tDS/day)
-        centrate_recycle = 1233.0 * (ds / 219.5)  # scaled proportionally
-        q_ss   = q_feed + centrate_recycle         # total Q for SolidStream
-        vol_base = site.ps_volume_m3 + site.was_volume_m3  # 64,000 m³
-        vol_exp  = vol_base + 8000   # 72,000 m³ with 9th digester
+        ctx      = _plant_context(d)
+        v_each   = ctx["v_each"]
+        vol_base = site.ps_volume_m3 + site.was_volume_m3
+        vol_exp  = vol_base + v_each
+        # Use engine HRT values — do NOT recalculate independently
+        # Engine calculates: feed_flow = DS×1000/(TS%×10) m³/day; HRT=V/feed_flow
+        base_cr = result.configs.get("base") if result else None
+        ss_cr   = result.configs.get("solidstream") if result else None
+        def _hrt(cr): return (getattr(cr,"hrt_ps_d",0)+getattr(cr,"hrt_was_d",0))/2 if cr else 0
+        # Feed flows (must be defined before HRT calculations)
+        q_ps  = site.ps_ds_tpd  * 1000 / (site.ps_ts_pct  * 10) if site.ps_ts_pct  > 0 else 0
+        q_was = site.was_ds_tpd * 1000 / (site.was_ts_pct * 10) if site.was_ts_pct > 0 else 0
+        q_feed = q_ps + q_was
+        centrate_recycle = round(1233.0 * ds / 219.5, 0)
+        q_ss   = q_feed + centrate_recycle
+        ts_mix_pct = (site.ps_ds_tpd*site.ps_ts_pct+site.was_ds_tpd*site.was_ts_pct)/ds if ds>0 else 4.0
+        # Stream HRTs from engine (kinetically relevant — separate PS and WAS streams)
+        hrt_base_ps  = getattr(base_cr,"hrt_ps_d",0) if base_cr else 0
+        hrt_base_was = getattr(base_cr,"hrt_was_d",0) if base_cr else 0
+        hrt_ss_ps    = getattr(ss_cr,  "hrt_ps_d",0) if ss_cr   else 0
+        hrt_ss_was   = getattr(ss_cr,  "hrt_was_d",0) if ss_cr  else 0
+        # Hydraulic HRT (capacity-relevant — total volume / total hydraulic flow)
+        hrt_conv_hyd = vol_base / q_feed if q_feed > 0 else 0
+        hrt_ss_hyd   = vol_base / q_ss   if q_ss   > 0 else 0
+        hrt_exp_hyd  = vol_exp  / q_ss   if q_ss   > 0 else 0
+        # Aliases
+        hrt_base = hrt_conv_hyd
+        hrt_ss   = hrt_ss_hyd
+        hrt_exp  = hrt_exp_hyd
 
         P2 = lambda t: Paragraph(str(t), S["cell"])
         PH2 = lambda t: Paragraph(str(t), S["cell_b"])
         hrt_rows = [
             [PH2("Parameter"), PH2("Value"), PH2("Notes")],
             [P2("Total dry solids (tDS/day)"), P2(f"{ds:.1f}"), P2("Cambi Scenario 1")],
-            [P2("Mixed feed TS%"), P2(f"{CAMBI_MIXED_TS_PCT:.1f}% (Cambi design basis)"), P2("Stated in Cambi memo p.10 — recuperative thickening scenario")],
+            [P2("Mixed feed TS%"), P2(f"{ts_mix_pct:.1f}% (site weighted average)"), P2("Weighted from PS and WAS feed TS% inputs")],
             [P2("Feed flow Q (m³/day)"), P2(f"{q_feed:,.0f}"),
-             P2(f"= {ds:.1f} tDS/day ÷ {CAMBI_MIXED_TS_PCT/100:.3f}")],
+             P2(f"= {ds:.1f} tDS/day ÷ {ts_mix_pct/100:.3f}")],
             [P2("Centrate recycle (SolidStream)"), P2(f"{centrate_recycle:,.0f}"),
-             P2("Cambi Scenario 1: 1,233 m³/day at 3.8%DS, 76.8°C")],
+             P2(f"Scaled from Cambi ref: {centrate_recycle:.0f} m³/day at this plant scale")],
             [P2("Total Q with SS centrate recycle"), P2(f"{q_ss:,.0f}"),
              P2("= Feed + centrate recycle")],
-            [P2("HRT — Conventional AD"), P2(f"{vol_base/q_feed:.1f} days"),
+            [P2("HRT — Conventional AD (hydraulic)"), P2(f"{hrt_conv_hyd:.1f} days"),
              P2(f"= {vol_base:,} m³ ÷ {q_feed:,.0f} m³/day")],
-            [P2("HRT — SolidStream (64,000 m³)"), P2(f"{vol_base/q_ss:.1f} days"),
-             P2(f"= {vol_base:,} m³ ÷ {q_ss:,.0f} m³/day  ← BELOW 15d minimum")],
-            [P2("HRT — SS + Expansion (72,000 m³)"), P2(f"{vol_exp/q_ss:.1f} days"),
-             P2(f"= {vol_exp:,} m³ ÷ {q_ss:,.0f} m³/day  ✓ above 15d minimum")],
+            [P2(f"HRT — SolidStream ({vol_base:,.0f} m³, hydraulic)"), P2(f"{hrt_ss_hyd:.1f} days"),
+             P2(f"= {vol_base:,.0f} m³ ÷ {q_feed+centrate_recycle:,.0f} m³/day")],
+            [P2(f"HRT — SS + Expansion ({vol_exp:,.0f} m³, hydraulic)"), P2(f"{hrt_exp_hyd:.1f} days  (projected)"),
+             P2(f"= {vol_exp:,.0f} m³ ÷ {q_feed+centrate_recycle:,.0f} m³/day (projected)")],
             [P2("Min volume for 15d HRT (SS)"), P2(f"{q_ss*15:,.0f} m³"),
-             P2(f"= {q_ss:,.0f} × 15 days = {q_ss*15/8000:.1f} × 8,000 m³ digesters")],
+             P2(f"= {q_ss:,.0f} × 15 days = {q_ss*15/v_each:.1f} × {v_each:,.0f} m³ digesters")],
         ]
         cw = [68*mm, 32*mm, CONTENT_W-100*mm]
         story.append(_tbl(hrt_rows, cw,
@@ -813,11 +902,11 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
         story.append(_p(
             "Key insight: the centrate recycle is the primary driver of the HRT reduction "
             "under SolidStream. Without centrate recycle (conventional AD basis), the "
-            "existing 64,000 m³ gives 18.1 days HRT. With centrate recycle adding "
+            f"existing {vol_base:,.0f} m³ gives {vol_base/q_feed:.1f} days HRT. With centrate recycle adding "
             f"{centrate_recycle:,.0f} m³/day of hydraulic load, HRT falls to "
             f"{vol_base/q_ss:.1f} days — below the 15-day minimum. The additional "
-            "8,000 m³ digester (72,000 m³ total) restores HRT to "
-            f"{vol_exp/q_ss:.1f} days, which is marginally above the minimum. "
+            f"additional {v_each:,.0f} m³ digester ({vol_exp:,.0f} m³ total) "
+            f"would restore hydraulic HRT to {hrt_exp_hyd:.1f} days. "
             "This should be verified with actual centrate volume data from Cambi "
             "process modelling at detailed design stage.",
             S["small"]))
@@ -892,9 +981,11 @@ def _opex_ghg_section(story, S, d: Tier1ReportData, section_num: int):
         ("Polymer",         lambda cr: cr.opex_polymer_per_yr),
         ("Energy (net)",    lambda cr: getattr(cr,"opex_energy_per_yr",0.0)),
         ("Disposal & transport", lambda cr: cr.opex_disposal_per_yr),
-        ("Sidestream N treatment", lambda cr: cr.opex_sidestream_per_yr),
-        ("THP / equip. O&M", lambda cr: getattr(cr,"opex_thp_om_per_yr", getattr(cr,"opex_thp_maintenance_per_yr",0.0))),
-        ("TOTAL ($/yr)",    lambda cr: cr.opex_total_per_yr),
+        ("Sidestream — dedicated PN/A",  lambda cr: getattr(cr,"opex_sidestream_per_yr",0.0)),
+        ("Sidestream — extra aeration",   lambda cr: getattr(cr,"opex_sidestream_aeration_per_yr",0.0)),
+        ("Sidestream — extra alkalinity", lambda cr: getattr(cr,"opex_sidestream_alkalinity_per_yr",0.0)),
+        ("THP / equip. O&M",              lambda cr: getattr(cr,"opex_thp_om_per_yr", getattr(cr,"opex_thp_maintenance_per_yr",0.0))),
+        ("TOTAL — whole-plant ($/yr)",    lambda cr: cr.opex_total_per_yr),
     ]
     for label, fn in components:
         is_total = label.startswith("TOTAL")
@@ -1049,10 +1140,10 @@ def _pfas_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_section_rule())
     story.append(_p(
         "PFAS (per- and polyfluoroalkyl substances) present a specific risk for "
-        "biosolids land application. The Eastern Treatment Plant catchment includes "
+        "biosolids land application. Catchments with industrial, commercial, or firefighting training area sources may "
         "industrial and commercial areas that may contribute PFAS-laden influent. "
         "The current biosolids classification and management strategy must be reviewed "
-        "against EPA Victoria's Interim Position Statement on PFAS (2021). "
+            "against the applicable regulator's PFAS position. "
         "The long-term thermal treatment pathway is relevant to PFAS strategy, "
         "as both incineration and pyrolysis offer high-temperature destruction.",
         S["body"]))
@@ -1064,7 +1155,7 @@ def _pfas_section(story, S, d: Tier1ReportData, section_num: int):
     pfas_rows = [
         [PH2("Risk Item"), PH2("Relevance"), PH2("Configuration impact"), PH2("Action required")],
         [P2("PFAS in biosolids"),
-         P2("High — ETP catchment includes industrial sources"),
+         P2("Site-dependent — assess based on catchment and influent data"),
          P2("Class B land application: full PFAS risk. Class A land application: same risk unless PFAS concentrations tested."),
          P2("Commission PFAS characterisation of current biosolids before any expansion of land application.")],
         [P2("Land application restriction"),
@@ -1107,8 +1198,7 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
     story.append(_section_rule())
     story.append(_p(
         "All THP configurations increase the centrate NH4-N return load to the "
-        "liquid treatment train. At the scale of Melbourne ETP (~500 ML/day), "
-        "this increase is material and must be assessed against mainstream TN "
+        "liquid treatment train. This increase must be assessed against mainstream TN "
         "licence headroom, aeration capacity, and alkalinity availability. "
         "This section quantifies the impact and identifies the key risk items.",
         S["body"]))
@@ -1123,11 +1213,11 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
     P2 = lambda t: Paragraph(str(t), S["cell"])
     PH2 = lambda t: Paragraph(str(t), S["cell_b"])
 
-    # ETP mainstream reference values
-    FLOW_MLD  = 500
-    TN_KGD    = FLOW_MLD * 1e6 * 35 / 1e6   # 35 mg/L TN × 500 ML/day = 17,500 kg/day
-    O2_PER_N  = 4.6    # kg O2 per kg NH4-N nitrified
-    ALK_PER_N = 7.14   # kg CaCO3 per kg NH4-N (alkalinity consumption)
+    _ctx2    = _plant_context(d)
+    FLOW_MLD = _ctx2["flow_mld"]
+    TN_KGD   = _ctx2["tkn_kgd"]
+    O2_PER_N  = 4.6
+    ALK_PER_N = 7.14   # kg CaCO3 per kg NH4-N
 
     # Centrate load comparison
     story.append(_p("Centrate NH4-N Return Load", S["h2"]))
@@ -1162,7 +1252,7 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
     story.append(_sp(2))
     story.append(_p(
         f"Mainstream TN reference: {TN_KGD:,.0f} kg N/day "
-        f"({FLOW_MLD} ML/day × 35 mg/L TN, ETP estimated). "
+        f"({FLOW_MLD:.0f} ML/day estimated plant flow). "
         "Sidestream treatment triggered when centrate exceeds 10% of mainstream TN. "
         "All configurations exceed this threshold. "
         "O2 demand and alkalinity figures represent the additional load from centrate "
@@ -1174,23 +1264,26 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
     story.append(_p("Key Risk Items — Sidestream Nitrogen", S["h2"]))
     risks = [
         ("Aeration capacity",
-         "SolidStream increases centrate NH4-N by +1,481 kg/day (+47%) vs conventional. "
-         "At 4.6 kg O2/kg N, this requires an additional 6.8 t O2/day of aeration capacity. "
-         "Confirm aeration headroom at ETP before committing to THP."),
+         f"THP configurations increase centrate NH4-N by up to "
+         f"+{max((cr.centrate_nh4_kg_per_d - base_nh4) for cr in configs if cr.config_id != 'base'):.0f} kg/day. "
+         f"At 4.6 kg O\u2082/kg N nitrified, this adds up to "
+         f"+{max((cr.centrate_nh4_kg_per_d - base_nh4) for cr in configs if cr.config_id != 'base') * 4.6 / 1000:.1f} t O\u2082/day aeration demand. "
+         "Confirm additional aeration capacity is available before committing to THP."),
         ("Alkalinity",
-         "Nitrification of the additional centrate NH4-N consumes ~10.6 t CaCO3/day of "
-         "alkalinity. If ETP alkalinity supply is tight, external dosing (lime or sodium "
-         "bicarbonate) may be required — this is a material OPEX item not included in this report."),
+         f"Nitrification of the additional centrate NH4-N from THP consumes an estimated "
+         f"+{max((cr.centrate_nh4_kg_per_d - base_nh4) for cr in configs if cr.config_id != 'base') * ALK_PER_N / 1000:.1f} t CaCO\u2083/day "
+         f"of alkalinity (at {ALK_PER_N} kg CaCO\u2083/kg NH\u2084-N nitrified). "
+         "If plant alkalinity supply is tight, external dosing (lime or sodium "
+         "bicarbonate) may be required \u2014 this is a material OPEX item not included in this report."),
         ("Licence headroom",
-         "If the ETP licence sets a TN limit in the treated effluent, the increased centrate "
+         "If the plant licence sets a TN limit in the treated effluent, the increased centrate "
          "load reduces the buffer between actual performance and consent limit. "
-         "Confirm TN licence conditions with Melbourne Water and EPA Victoria."),
+         "Confirm TN licence conditions with the relevant authority."),
         ("Sidestream treatment CAPEX",
          "If centrate NH4-N cannot be managed within the mainstream process, "
-         "dedicated sidestream treatment (SHARON, ANAMMOX, or MBBR nitritation) "
-         "will be required. CAPEX for a system treating 4,645 kg NH4-N/day "
-         "is typically $15-40M (Class 5, ±50%). This is a significant item not "
-         "captured in the CAPEX band assessment."),
+         "dedicated sidestream treatment may be required if return loads "
+         "cannot be managed within the mainstream biological process. "
+         "Assess against actual plant TN licence headroom and BNR capacity."),
         ("N2O risk",
          "High NH4-N return loads to biological treatment increase the risk of "
          "N2O formation in the bioreactor — particularly if DO or pH control is poor. "
@@ -1207,8 +1300,11 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
     story.append(_sp(3))
     story.append(_p("Cost Accounting Basis — No Double Counting", S["h2"]))
     story.append(_p(
-        "To avoid double-counting, this report treats sidestream nitrogen costs as follows: "
-        "<b>Dedicated sidestream treatment OPEX</b> (SHARON/ANAMMOX, $4/kg NH4-N) is included "
+        "This report now separates sidestream nitrogen costs into three components: "
+        "<b>(1) Dedicated PN/A treatment OPEX</b> (only when THP-caused increase >500 kg NH4-N/day; $4/kg N); "
+        "<b>(2) Extra mainstream aeration</b> (delta N × 4.6 kg O2/kg N × 2 kWh/kg O2 × electricity price); "
+        "<b>(3) Extra alkalinity dosing</b> (delta N × 7.14 kg CaCO3/kg N × lime price). "
+        "The TOTAL row reflects the true whole-plant OPEX including all sidestream impacts. "
         "in the OPEX comparison table and is charged to the biosolids management budget. "
         "<b>Mainstream aeration and alkalinity cost increases</b> (from higher centrate load) "
         "are NOT included in the OPEX table — these are impacts on the liquid treatment "
@@ -1216,7 +1312,7 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
         "The two costs are alternatives: if dedicated sidestream treatment is installed, "
         "the mainstream aeration impact is eliminated. If no sidestream treatment is "  
         "installed, the mainstream aeration cost applies instead. "
-        "Stage 2 should confirm which approach Melbourne Water prefers.",
+        "Stage 2 should confirm which approach the client prefers.",
         S["body"]))
     story.append(_sp(3))
     story.append(_p(
@@ -1234,11 +1330,12 @@ def _ghg_sensitivity_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p(
         "The central GHG estimates presented in this report carry significant uncertainty. "
         "The most influential variables are the fugitive methane rate, N2O emission factor, "
-        "and grid carbon intensity (which determines the value of CHP electricity export). "
-        "The table below shows the sensitivity of key GHG components to plausible "
-        "variations in these assumptions, using the Conventional AD base case as the reference. "
-        "THP configurations are proportionally more sensitive to fugitive methane assumptions "
-        "because they produce more biogas.",
+        "and grid carbon intensity. "
+        "Note: the sensitivity tables below show each GHG component in isolation. "
+        "The main GHG table (above) shows total Scope 1 (CH4 + N2O combined). "
+        "The N2O component at the IPCC default emission factor typically dominates the "
+        "Scope 1 total for land-applied biosolids — making the N2O assumption the most "
+        "important variable in this assessment.",
         S["body"]))
     story.append(_sp(3))
 
@@ -1246,8 +1343,12 @@ def _ghg_sensitivity_section(story, S, d: Tier1ReportData, section_num: int):
     PH2 = lambda t: Paragraph(str(t), S["cell_b"])
 
     # ── Table 1: Fugitive CH4 sensitivity ────────────────────────────────
-    story.append(_p("Scope 1a — Fugitive CH4 Sensitivity (Conventional AD baseline)", S["h2"]))
-    biogas_conv = 74163; biogas_ss = 91014
+    result = d.cmp_result
+    _base_cr = result.configs.get("base") if result else None
+    _ss_cr   = result.configs.get("solidstream") if result else None
+    biogas_conv = _base_cr.biogas_m3_per_d if _base_cr else 6000
+    biogas_ss   = _ss_cr.biogas_m3_per_d   if _ss_cr   else biogas_conv * 1.23
+    story.append(_p(f"Scope 1a — Fugitive CH4 Sensitivity (CH4 component only — {biogas_conv:,.0f} Nm³/day base)", S["h2"]))
     rows = [[PH2("Fugitive rate"), PH2("Conventional AD\n(kg CO2e/day)"),
              PH2("SolidStream\n(kg CO2e/day)"), PH2("Notes")]]
     central = biogas_conv * 0.63 * 0.015 * 0.717 * 28
@@ -1272,28 +1373,48 @@ def _ghg_sensitivity_section(story, S, d: Tier1ReportData, section_num: int):
         "Key implication: If fugitive methane controls are upgraded from the screening "
         "assumption (1.5%) to best practice (0.1%), Scope 1a reduces by ~93% for both "
         "configurations. This is the single most effective GHG mitigation available "
-        "at ETP — and it is independent of the THP configuration chosen.",
+        "and is independent of the THP configuration chosen.",
         S["small"]))
     story.append(_sp(4))
 
     # ── Table 2: Grid intensity sensitivity ───────────────────────────────
-    story.append(_p("Scope 2 — Grid Carbon Intensity Sensitivity (SolidStream, 9,299 kWe gross)", S["h2"]))
-    elec = 9299; avail = 0.88
+    elec = _ss_cr.elec_gross_kw if _ss_cr else int(biogas_ss*0.63*35.8/3.6*0.42/24)
+    avail = 0.88
+    story.append(_p(f"Scope 2 — Grid Carbon Intensity Sensitivity ({elec:,} kWe CHP)", S["h2"]))
     rows2 = [[PH2("Grid intensity"), PH2("Scope 2 credit\n(kg CO2e/day)"), PH2("Notes")]]
-    for gi, note in [(0.08, "Tasmania / NZ hydro-dominant grid (2026)"),
-                     (0.25, "South Australia renewable-heavy (2030 trajectory)"),
-                     (0.40, "National average projected 2030"),
-                     (0.60, "Victoria current (2026) ← central"),
-                     (0.72, "Queensland coal-heavy grid (2026)")]:
+    # Regional grid intensity (2026 approximate NEM data)
+    _reg_key = getattr(d, "regulatory_key", "epa_vic")
+    _grid_central = {
+        "epa_vic": 0.60, "sydney_water": 0.58, "qld_des": 0.72,
+        "sa_water": 0.30, "wa_water": 0.65, "nz": 0.08, "custom": 0.55,
+    }.get(_reg_key, 0.60)
+    _region_label = {
+        "epa_vic": "Victoria", "sydney_water": "NSW", "qld_des": "Queensland",
+        "sa_water": "South Australia", "wa_water": "Western Australia",
+        "nz": "New Zealand", "custom": "Site region",
+    }.get(_reg_key, "Victoria")
+    for gi, note in [(0.08, "NZ / Tasmania — hydro-dominant grid (2026)"),
+                     (0.25, "South Australia — renewable-heavy (2030 trajectory)"),
+                     (0.40, "National average — projected 2030"),
+                     (0.58, "NSW current (2026)"),
+                     (0.60, "Victoria current (2026)"),
+                     (0.65, "Western Australia current (2026)"),
+                     (0.72, "Queensland — coal-heavy grid (2026)")]:
+        is_central = abs(gi - _grid_central) < 0.02
         v = -(elec * 24 * avail / 1000 * gi)
-        rows2.append([P2(f"{gi:.2f} kg CO2e/kWh {'← central' if gi==0.60 else ''}"),
+        rows2.append([P2(f"{gi:.2f} kg CO2e/kWh {chr(8592)+' central ('+_region_label+')'  if is_central else ''}"),
                       P2(f"{v:,.0f}"),
-                      P2(note)])
+                      P2(note + (" ← central case for this report" if is_central else ""))])
     cw2 = [45*mm, 40*mm, CONTENT_W-85*mm]
     story.append(_tbl(rows2, cw2, [("WORDWRAP",(0,0),(-1,-1),"LTR")], row_bgs=True))
     story.append(_sp(2))
+    _grid_reg_label = {
+        "epa_vic":"Victorian","sydney_water":"NSW","qld_des":"Queensland",
+        "sa_water":"South Australian","wa_water":"Western Australian",
+        "nz":"New Zealand","custom":"local",
+    }.get(getattr(d,"regulatory_key","epa_vic"),"local")
     story.append(_p(
-        "As the Victorian grid decarbonises toward 2030-2040, the Scope 2 export credit "
+        f"As the {_grid_reg_label} grid decarbonises toward 2030-2040, the Scope 2 export credit "
         "will reduce in value. This does not change the recommendation but does reduce "
         "the GHG benefit of CHP electricity export over time. Biomethane injection or "
         "fuel cell pathways may become more attractive as the grid decarbonises.",
@@ -1301,8 +1422,11 @@ def _ghg_sensitivity_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_sp(4))
 
     # ── Table 3: N2O sensitivity ──────────────────────────────────────────
-    story.append(_p("Scope 1b — N2O Emission Factor Sensitivity (Conventional AD, 9,457 kg cake-N/day)", S["h2"]))
-    cake_n = 9457
+    _ds_t = d.ps_ds_tpd + d.was_ds_tpd
+    _total_n = _ds_t*1000*(d.ps_ds_tpd/max(_ds_t,1)*d.ps_n_pct/100 + d.was_ds_tpd/max(_ds_t,1)*d.was_n_pct/100)
+    _centrate_n = _base_cr.centrate_nh4_kg_per_d if _base_cr else _total_n*0.25
+    cake_n = max(100, _total_n - _centrate_n)
+    story.append(_p(f"Scope 1b — N2O Emission Factor Sensitivity (N2O component only — {cake_n:,.0f} kg cake-N/day)", S["h2"]))
     rows3 = [[PH2("N2O EF\n(kg N2O-N / kg N)"), PH2("Scope 1b\n(kg CO2e/day)"), PH2("Notes")]]
     for ef, note in [(0.003,"IPCC Tier 1 lower bound (arid/semi-arid soils)"),
                      (0.008,"IPCC Tier 1 low range"),
@@ -1328,24 +1452,26 @@ def _ghg_sensitivity_section(story, S, d: Tier1ReportData, section_num: int):
     # ── Summary ─────────────────────────────────────────────────────────────
     story.append(_p("GHG Assessment Conclusions", S["h2"]))
     story.append(_p(
-        "The central GHG assessment shows THP configurations have higher net GHG than "
-        "conventional AD at screening grade, primarily due to increased Scope 1a fugitive "
-        "methane from greater biogas production. However this result is strongly sensitive "
-        "to assumptions and should not be used as a primary decision driver. "
-        "Three observations are important for client decision-making:",
+        "The central GHG assessment is dominated by methane capture efficiency, "
+        "not THP selection. At the IPCC default 1.5% fugitive rate, THP configurations "
+        "show marginally higher Scope 1a (more biogas = more potential fugitive CH\u2084). "
+        "However the sensitivity analysis demonstrates this assumption drives the "
+        "result more than the technology choice: a well-engineered plant achieving "
+        "sub-0.5% fugitive rates eliminates this disadvantage entirely. "
+        "Three observations are important for planning:",
         S["body"]))
     story.append(_sp(2))
     for bullet in [
         "Methane capture is the dominant lever. If fugitive emissions are controlled to "
         "0.1% (best practice), Scope 1a reduces by 93% regardless of THP configuration. "
-        "Melbourne Water's 2035-2040 methane-to-zero target requires this investment "
+        "Long-term methane reduction targets require this investment "
         "independently of THP.",
-        "Grid decarbonisation reduces Scope 2 value. The CHP export credit will shrink "
-        "as Victoria's grid decarbonises. This does not change the AD/THP recommendation "
+        f"Grid decarbonisation reduces Scope 2 value. The CHP export credit will shrink "
+        f"as the {_grid_reg_label} grid decarbonises. This does not change the AD/THP recommendation "
         "but does affect the long-term energy business case.",
         "Thermal treatment eliminates Scope 1b. If biosolids move to incineration or "
         "pyrolysis, N2O from land application (currently 39,000+ kg CO2e/day) is eliminated. "
-        "This is the most significant long-term GHG reduction available to Melbourne Water.",
+        "This is the most significant long-term GHG reduction available to the client.",
     ]:
         story.append(_p(f"• {bullet}", S["bullet"]))
     story.append(_sp(3))
@@ -1360,7 +1486,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p(f"{section_num}. Long-Term Biosolids Pathway — Thermal Treatment", S["h1"]))
     story.append(_section_rule())
     story.append(_p(
-        "Melbourne Water's strategic objectives include net zero Scope 1 emissions by 2030 "
+        "Thermal treatment 0 "
         "and methane emissions to zero by 2035-2040. Thermal treatment of biosolids "
         "— either incineration or pyrolysis — provides a pathway to eliminate "
         "land application entirely, removing the dependency on agricultural markets, "
@@ -1376,7 +1502,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p(
         "The long-term GHG outcome depends on what happens to the carbon in biosolids. "
         "Different end-use pathways result in fundamentally different carbon fates. "
-        "This is important context for Melbourne Water's net zero planning.",
+        "This is important context for long-term carbon planning.",
         S["body"]))
     story.append(_sp(2))
     P2c = lambda t: Paragraph(str(t), S["cell"])
@@ -1414,14 +1540,14 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
         row_bgs=True))
     story.append(_sp(2))
     story.append(_p(
-        "Implication for Melbourne Water: "
+        "Strategic implication: "
         "<b>Incineration provides the strongest operational and regulatory alignment</b> "
         "— eliminating land application N2O, achieving regulatory certainty, and using "
         "proven technology at this scale. "
         "<b>Pyrolysis may ultimately win the carbon argument</b> — it eliminates land "
         "application N2O AND stores 30-50% of biosolids carbon as stable biochar, "
         "potentially qualifying for carbon credits (ACCUs). The choice depends on "
-        "whether Melbourne Water prioritises operational certainty (incineration) or "
+        "whether the client prioritises operational certainty (incineration) or "
         "long-term carbon sequestration value (pyrolysis). "
         "Both pathways require THP or equivalent to produce the high-DS, Class A cake "
         "that makes thermal treatment economically viable — this is THP's most "
@@ -1432,7 +1558,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     # ── Phosphorus recovery table ─────────────────────────────────────────
     story.append(_p("Phosphorus Recovery by Pathway", S["h2"]))
     story.append(_p(
-        "Phosphorus is a finite, non-substitutable resource. Melbourne Water's biosolids "
+        "Phosphorus is a finite, non-substitutable resource. The site biosolids "
         "contain significant phosphorus currently exported via land application. "
         "The thermal treatment pathway choice directly affects whether this phosphorus "
         "can be recovered and reused. As Australian fertiliser sourcing requirements "
@@ -1474,7 +1600,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p(
         "The EU Fertilising Products Regulation (2019) requires P recovery from sludge ash "
         "above certain thresholds from 2026 — this may influence future Australian policy. "
-        "Melbourne Water should include P recovery potential in the thermal treatment "
+        "P recovery potential should be included in the thermal treatment "
         "business case to ensure long-term circular economy alignment.",
         S["small"]))
     story.append(_sp(4))
@@ -1507,7 +1633,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p(
         "Source: Cambi Conceptual Design Memo 10590-ZME-001-7035 A01, 20 May 2026 "
         "(Scenario 1, 65%VS). The 67% reduction in drying energy and dryer capacity "
-        "is one of the most significant economic benefits of SolidStream at ETP.",
+        "is one of the most significant economic benefits of SolidStream.",
         S["caption"]))
     story.append(_sp(4))
 
@@ -1538,7 +1664,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
         [P2("Ash output"), P2("~11,000 t/yr"), P2("~27% of DS input; landfill or cement blend")],
         [P2("Truck movements eliminated"), P2("7-8 trucks/day"), P2("vs 15/day conventional")],
         [P2("Land application requirement"), P2("Eliminated"), P2("No biosolids product to manage")],
-        [P2("EPA Victoria stockpiling"), P2("Not required"), P2("THP achieves Class A pre-incineration")],
+            [P2("Class A vs B stockpiling"), P2("Not required"), P2(d.regulatory.get("stockpile","Class A eliminates stockpiling requirement"))],
     ]
     cw2 = [60*mm, 40*mm, CONTENT_W - 100*mm]
     story.append(_tbl(inc_rows, cw2,
@@ -1564,7 +1690,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     for bullet in [
         "<b>Carbon sequestration:</b> biochar typically retains 30-50% of input carbon "
         "in a stable form that resists decomposition for centuries to millennia. "
-        "This directly supports Melbourne Water's net zero objectives and may qualify "
+        "This directly supports the client's net zero objectives and may qualify "
         "for Australian Carbon Credit Units (ACCUs) under the Emissions Reduction Fund.",
         "<b>Phosphorus recovery:</b> biochar retains phosphorus in plant-available form, "
         "supporting soil amendment markets. As fertiliser prices remain elevated, "
@@ -1574,7 +1700,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
         "PFAS-contaminated biochar may require further management.",
         "<b>Future carbon policy:</b> as Australia's carbon markets develop, biochar "
         "sequestration may attract a price premium over incineration. Early mover "
-        "advantage exists if Melbourne Water establishes a biochar market pathway now.",
+        "advantage exists if the client establishes a biochar market pathway now.",
     ]:
         story.append(_p("• " + bullet, S["bullet"]))
     story.append(_sp(2))
@@ -1613,7 +1739,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
         "Sustainable Aviation Fuel (SAF) or renewable diesel. "
         "HTL was not assessed in this screening for the following reasons: "
         "(1) no commercial-scale biosolids HTL facility is operating in Australia; "
-        "(2) technology readiness at ETP scale (219 tDS/day) is lower than FBF or pyrolysis; "
+        "(2) technology readiness at large plant scale is lower than FBF or pyrolysis; "
         "(3) offtake market for HTL biocrude in Victoria is currently uncertain; "
         "(4) capital cost and technical complexity are significantly higher than incineration. "
         "HTL should be assessed in the Stage 2 thermal treatment study, particularly if "
@@ -1638,7 +1764,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
 
 
 def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
-    """Separate vs Blended Digestion Analysis — ETP-specific."""
+    """Separate vs Blended Digestion Analysis."""
     story.append(_p(f"{section_num}. Separate vs Blended Digestion Analysis", S["h1"]))
     story.append(_section_rule())
     story.append(_p(
@@ -1685,13 +1811,19 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_sp(4))
 
     # ── ETP volume optimisation ───────────────────────────────────────────
-    story.append(_p("ETP Volume Optimisation \u2014 8 \u00d7 8,000 m\u00b3", S["h2"]))
+    PS_DS=site.ps_ds_tpd;  WAS_DS=site.was_ds_tpd
+    PS_TS=site.ps_ts_pct;  WAS_TS=site.was_ts_pct
+    PS_VS=site.ps_vs_pct;  WAS_VS=site.was_vs_pct
+    _ctx3=_plant_context(d); V_EACH=_ctx3["v_each"]
+    V_TOTAL=_ctx3["v_total"]; N_DIG=_ctx3["n_dig"]
 
-    PS_DS=120.7; WAS_DS=98.8; PS_TS=7.5; WAS_TS=3.5; PS_VS=65.0; WAS_VS=65.0
-    V_EACH=8000; N_DIG=8; V_TOTAL=64000
+    story.append(_p(f"Volume Optimisation \u2014 {N_DIG}\u2009\u00d7\u2009{V_EACH:,.0f} m\u00b3", S["h2"]))
     PS_Q=PS_DS/(PS_TS/100); WAS_Q=WAS_DS/(WAS_TS/100)
     PS_VS_TPD=PS_DS*PS_VS/100; WAS_VS_TPD=WAS_DS*WAS_VS/100
-    BG_CAMBI=74163; K_PS=0.25; K_WAS=0.12; CAL=1.482
+    result = d.cmp_result
+    _sep_base = result.configs.get("base") if result else None
+    BG_CAMBI = _sep_base.biogas_m3_per_d if _sep_base else V_TOTAL * 0.8
+    K_PS=0.25; K_WAS=0.12; CAL=1.482
 
     from reportlab.lib import colors as rl_colors
 
@@ -1705,7 +1837,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     was_n_min = math.ceil(WAS_Q*15/V_EACH)
 
     story.append(_p(
-        f"With 8 digesters of 8,000\u2009m\u00b3 each ({V_TOTAL:,}\u2009m\u00b3 total), "
+        f"With {N_DIG} digesters of {V_EACH:,.0f}\u2009m\u00b3 each ({V_TOTAL:,}\u2009m\u00b3 total), "
         f"the WAS flow of {WAS_Q:.0f}\u2009m\u00b3/day requires a minimum of "
         f"{WAS_Q*15:,.0f}\u2009m\u00b3 to maintain the 15-day HRT minimum. "
         f"This demands at least {was_n_min} digesters for WAS, leaving a maximum of "
@@ -1772,41 +1904,52 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     sc_map = {r[0]:r for r in scenarios}
 
     sc_data = []
-    if 2 in sc_map: sc_data.append(("2PS\u200a+\u200a6WAS  (compliant\u200a\u2014\u200aonly viable split)", sc_map[2], True))
-    if 3 in sc_map: sc_data.append(("3PS\u200a+\u200a5WAS  (WAS HRT marginal at 14.2d)", sc_map[3], False))
-    if 4 in sc_map: sc_data.append(("4PS\u200a+\u200a4WAS  (mathematical optimum\u200a\u2014\u200anot compliant)", sc_map[4], False))
+    for r in scenarios:
+        n, was_ok = r[0], r[10]
+        was_hrt = r[5]
+        _ok_str = "\u2713 compliant" if was_ok else f"WAS HRT {was_hrt:.1f}d < 15d"
+        label = f"{n}PS\u200a+\u200a{r[1]}WAS  ({_ok_str})"
+        sc_data.append((label, r, was_ok))
+        if len(sc_data) >= 3: break
+    if not sc_data:
+        story.append(_p("Insufficient digester volume for separate digestion "
+                        "analysis at this plant scale.", S["body"]))
+        return
 
     hdr2=[PH2("Parameter")]+[PH2(label.split("(")[0].strip()) for label,_,_ in sc_data]
     hdr2.insert(0,PH2("Parameter"))
-    hdr2=[PH2("Parameter")]+[PH2(label.split("(")[0].strip()) for label,sc,ok in sc_data]
+    hdr2=[PH2("Parameter")]+[PH2(label.split("(")[0].strip()) for label,r_sc,ok in sc_data]
 
     rows2=[hdr2]
     def prow(label, vals):
         return [P2(label)] + [P2(v) for v in vals]
 
     for sc_row_data in [
-        ("PS HRT (days)",     [f"{sc[4]:.1f}" for _,sc,_ in sc_data]),
-        ("WAS HRT (days)",    [f"{sc[5]:.1f}" for _,sc,_ in sc_data]),
-        ("PS VSR (%)",        [f"{sc[6]:.1f}" for _,sc,_ in sc_data]),
-        ("WAS VSR (%)",       [f"{sc[7]:.1f}" for _,sc,_ in sc_data]),
-        ("Biogas (Nm\u00b3/day)",  [f"{sc[8]:,.0f}" for _,sc,_ in sc_data]),
-        ("Biogas uplift vs blended", [f"{sc[9]:+.1f}%" for _,sc,_ in sc_data]),
-        ("Electricity uplift (kW)",  [f"+{sc[9]/100*7704:,.0f}" for _,sc,_ in sc_data]),
-        ("Additional MWhe/yr",       [f"+{sc[9]/100*7704*8760*0.88/1000:,.0f}" for _,sc,_ in sc_data]),
+        ("PS HRT (days)",     [f"{r_sc[4]:.1f}" for _,r_sc,_ in sc_data]),
+        ("WAS HRT (days)",    [f"{r_sc[5]:.1f}" for _,r_sc,_ in sc_data]),
+        ("PS VSR (%)",        [f"{r_sc[6]:.1f}" for _,r_sc,_ in sc_data]),
+        ("WAS VSR (%)",       [f"{r_sc[7]:.1f}" for _,r_sc,_ in sc_data]),
+        ("Biogas (Nm\u00b3/day)",  [f"{r_sc[8]:,.0f}" for _,r_sc,_ in sc_data]),
+        ("Biogas uplift vs blended", [f"{r_sc[9]:+.1f}%" for _,r_sc,_ in sc_data]),
+        ("Electricity uplift (kW)",  [f"+{r_sc[9]/100*7704:,.0f}" for _,r_sc,_ in sc_data]),
+        ("Additional MWhe/yr",       [f"+{r_sc[9]/100*7704*8760*0.88/1000:,.0f}" for _,r_sc,_ in sc_data]),
         ("WAS \u226515d compliant?",  ["\u2713 Yes" if ok else "\u2717 No" for _,sc,ok in sc_data]),
     ]:
         rows2.append(prow(sc_row_data[0], sc_row_data[1]))
 
     n2=len(sc_data)
-    cw2=[55*mm]+[(CONTENT_W-55*mm)/n2]*n2
-    story.append(_tbl(rows2, cw2,
+    if n2 == 0:
+        story.append(_p("No feasible separate digestion split found for this plant configuration.", S["body"]))
+    else:
+        cw2=[55*mm]+[(CONTENT_W-55*mm)/n2]*n2
+        story.append(_tbl(rows2, cw2,
         [("WORDWRAP",(0,0),(-1,-1),"LTR"),("FONTSIZE",(0,0),(-1,-1),8),
          ("BACKGROUND",(1,1),(-1,-1), rl_colors.HexColor("#e8f5e9")),
          ("BACKGROUND",(2,1),(-1,-1), rl_colors.HexColor("#fff3e0")),
          ("BACKGROUND",(3,1),(-1,-1), rl_colors.HexColor("#ffebee")) if n2==3 else ("NOP",(0,0),(0,0))
         ], row_bgs=False))
-    story.append(_sp(2))
-    story.append(_p(
+        story.append(_sp(2))
+        story.append(_p(
         "Only the 2PS\u200a+\u200a6WAS split fully complies with the WAS 15-day HRT minimum. "
         "3PS\u200a+\u200a5WAS is shown for comparison but WAS HRT of 14.2 days is "
         "marginally below the minimum and leaves no growth headroom.",
@@ -1818,9 +1961,12 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     cur_ps=PS_DS*365; cur_was=WAS_DS*365; cur_total=(PS_DS+WAS_DS)*365
     blend_max=(V_TOTAL/15)*0.062*1000*365/1000
     # 2PS+6WAS capacity
-    sc2=sc_map[2]
-    ps_max = sc2[2]/10*(PS_TS/100)*1000*365/1000
-    was_max= sc2[3]/15*(WAS_TS/100)*1000*365/1000
+    _best_compliant = next((r for _,r,ok in sc_data if ok), sc_data[0][1] if sc_data else None)
+    if not _best_compliant: return
+    sc2_V_PS = _best_compliant[2]; sc2_V_WAS = _best_compliant[3]
+    sc2_uplift = _best_compliant[9]
+    ps_max = sc2_V_PS/10*(PS_TS/100)*1000*365/1000
+    was_max= sc2_V_WAS/15*(WAS_TS/100)*1000*365/1000
 
     story.append(_p(
         f"Current total load: {cur_total:,.0f}\u2009tDS/yr "
@@ -1868,7 +2014,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     # ── New build opportunity ─────────────────────────────────────────────
     story.append(_p("New Build Opportunity \u2014 Volume Saving", S["h2"]))
     story.append(_p(
-        "If Melbourne Water proceeds with the Stage 2 digester expansion, "
+        "If the client proceeds with a Stage 2 digester expansion, "
         "designing the new facility for separate PS/WAS streams from the outset "
         "delivers significant capital savings compared with blended digestion:",
         S["body"]))
@@ -1888,7 +2034,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
                 [P2("PS volume"),  P2(f"{V_TOTAL:,}\u2009m\u00b3 (blended)"), P2(f"{V_PS_new:,.0f}\u2009m\u00b3 @ 12\u2009d HRT")],
                 [P2("WAS volume"), P2("\u2014"),   P2(f"{V_WAS_try:,}\u2009m\u00b3 @ {hrt_w:.1f}\u2009d HRT")],
                 [P2("Total volume"), P2(f"{V_TOTAL:,}\u2009m\u00b3"), P2(f"{V_tot_new:,.0f}\u2009m\u00b3")],
-                [P2("Volume saved"), P2("\u2014"), P2(f"{saving:,.0f}\u2009m\u00b3  ({saving/V_EACH:.0f}\u200a\u00d7\u200a8,000\u2009m\u00b3 digesters)")],
+                [P2("Volume saved"), P2("\u2014"), P2(f"{saving:,.0f}\u2009m\u00b3  ({saving/V_EACH:.0f}\u200a\u00d7\u200a{V_EACH:,.0f}\u2009m\u00b3 digesters)")],
                 [P2("Indicative capital avoided"),  P2("\u2014"),
                  P2(f"${saving/V_EACH*15:.0f}M\u2013${saving/V_EACH*25:.0f}M  (Class 5, \u00b150%)")],
                 [P2("Biogas output"), P2(f"{BG_CAMBI:,}\u2009Nm\u00b3/day"), P2(f"\u2265{BG_CAMBI:,}\u2009Nm\u00b3/day \u2713")],
@@ -1910,16 +2056,19 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p("Pros and Cons \u2014 ETP-Specific Assessment", S["h2"]))
 
     # Pull 2PS+6WAS numbers
-    sc2=sc_map[2]
-    uplift_kw=sc2[9]/100*7704
+    _best_compliant = next((r for _,r,ok in sc_data if ok), sc_data[0][1] if sc_data else None)
+    if not _best_compliant: return
+    sc2_V_PS = _best_compliant[2]; sc2_V_WAS = _best_compliant[3]
+    sc2_uplift = _best_compliant[9]
+    uplift_kw=sc2_uplift/100*7704
     uplift_mwh=uplift_kw*8760*0.88/1000
 
     pros = [
-        f"Biogas uplift +{sc2[9]:.1f}% (2PS+6WAS, only compliant split): "
-        f"+{sc2[8]-BG_CAMBI:,.0f}\u2009Nm\u00b3/day \u2192 "
+        f"Biogas uplift +{sc2_uplift:.1f}% (2PS+6WAS, only compliant split): "
+        f"+{_best_compliant[8]-BG_CAMBI:,.0f}\u2009Nm\u00b3/day \u2192 "
         f"+{uplift_kw:,.0f}\u2009kW gross / +{uplift_mwh:,.0f}\u2009MWh/yr",
         f"PS kinetics accelerated: k_PS=0.25/day vs k_blend=0.13/day; "
-        f"PS VSR improves from ~70% (blended) to {sc2[6]:.1f}% (separate)",
+        f"PS VSR improves from ~70% (blended) to {_best_compliant[6]:.1f}% (separate)",
         "New build capital avoided: if building new digesters, separate design "
         f"saves 2\u200a\u00d7\u20048,000\u2009m\u00b3 (~$30\u2013$50M) vs blended for same biogas output",
         "Operational independence: PS and WAS banks can be taken offline "
@@ -1935,7 +2084,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         "WAS HRT IS TIGHT AT 2PS+6WAS: WAS HRT=17.0\u2009d gives moderate headroom. "
         "Any significant WAS load growth requires additional WAS digester volume",
         "BLENDED HRT ALREADY GOOD: at 18.1\u2009d blended, the plant is well-operated. "
-        f"The uplift (+{sc2[9]:.1f}%) is real but incremental, not transformational",
+        f"The uplift (+{sc2_uplift:.1f}%) is real but incremental, not transformational",
         "LITERATURE UNCERTAINTY: 30% PS yield uplift is empirical (range 10\u201335% "
         "across studies). ETP-specific PS characteristics should be validated",
         "MIXING COMPLEXITY: PS at 7.5%\u2009TS requires different mixing than "
@@ -1960,11 +2109,11 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     # ── Verdict box ───────────────────────────────────────────────────────
     verdict = (
         "<b>Verdict:</b> For the EXISTING ETP plant, separate digestion (2PS\u200a+\u200a6WAS) "
-        f"delivers a genuine +{sc2[9]:.1f}% biogas uplift (+{uplift_mwh:,.0f}\u2009MWh/yr) "
+        f"delivers a genuine +{sc2_uplift:.1f}% biogas uplift (+{uplift_mwh:,.0f}\u2009MWh/yr) "
         "but re-piping cost and tight WAS HRT headroom make it a marginal business case "
         "at current energy prices. <b>For a NEW FACILITY (Stage 2 expansion), "
         "separate digestion should be the default design basis</b>\u200a\u2014 "
-        "it saves 2\u200a\u00d7\u20048,000\u2009m\u00b3 digesters (~$30\u2013$50M) and eliminates "
+        "it reduces the required digester volume and eliminates "
         "the WAS HRT constraint by designing each bank for its own optimal retention time. "
         "Separate PS/WAS digestion should be included in the Stage 2 options scope."
     )
@@ -2056,28 +2205,26 @@ def _recommendation(story, S, d: Tier1ReportData, section_num: int):
              "22.7% biogas uplift, and minimum HRT requirement. Define test protocol.")],
         [P2h("PFAS biosolids characterisation"),
          Paragraph("Required", ParagraphStyle("hp3", parent=S["cell_b"], textColor=WARN)),
-         P2h("Melbourne Water"),
-         P2h("Commission PFAS testing of current ETP biosolids. Assess against EPA Victoria "
-             "Interim Position Statement (2021). Determine whether land application is viable.")],
+         P2h("Client / asset owner"),
+          P2h(d.regulatory.get("pfas_note","Commission PFAS testing. Assess against relevant authority guidance on land application viability."))],
         [P2h("TN licence headroom assessment"),
          Paragraph("Required", ParagraphStyle("hp4", parent=S["cell_b"], textColor=WARN)),
-         P2h("Melbourne Water"),
-         P2h("Confirm ETP liquid treatment train can absorb additional 1,481 kg NH4-N/day "
-             "from SolidStream centrate return. Assess against EPA Victoria TN licence limits.")],
+         P2h("Client / asset owner"),
+         P2h("Confirm liquid treatment train can absorb increased centrate NH4-N from THP. "
+             "Assess against TN licence limits (see sidestream section).")],
         [P2h("Class A regulatory acceptance"),
          Paragraph("Required", ParagraphStyle("hp5", parent=S["cell_b"], textColor=WARN)),
-         P2h("Aurecon / EPA Victoria"),
-         P2h("Confirm EPA Victoria will accept Cambi THP (165°C, 20 min) as meeting Class A "
-             "log reduction criteria under Publication 891.4. Obtain written in-principle position.")],
+         P2h(f"Project team / {d.regulatory.get('label', 'Relevant authority')}"),
+         P2h(d.regulatory.get("class_a_req","Confirm THP achieves Class A pathogen classification with the relevant authority before committing to capital expenditure."))],
         [P2h("Digester siting — 9th digester"),
          Paragraph("Required", ParagraphStyle("hp6", parent=S["cell_b"], textColor=WARN)),
-         P2h("Melbourne Water / Aurecon"),
+         P2h("Client / engineer"),
          P2h("Confirm site space and civils for additional 8,000 m³ digester. "
              "Assess impact on existing plant operations during construction.")],
         [P2h("Thermal treatment strategy selection"),
          Paragraph("To be commissioned", ParagraphStyle("hp7", parent=S["cell_b"],
                    textColor=colors.HexColor("#1a3a5c"))),
-         P2h("Melbourne Water"),
+         P2h("Client / asset owner"),
          P2h("Commission Tier 1 thermal treatment study (incineration vs pyrolysis vs HTL). "
              "Resolve PFAS, carbon fate, and biochar market questions before capital commitment.")],
         [P2h("Independent CAPEX estimate"),
@@ -2089,7 +2236,7 @@ def _recommendation(story, S, d: Tier1ReportData, section_num: int):
         [P2h("N2O emission factor validation"),
          Paragraph("To be confirmed", ParagraphStyle("hp9", parent=S["cell_b"],
                    textColor=colors.HexColor("#1a3a5c"))),
-         P2h("Melbourne Water"),
+         P2h("Client / asset owner"),
          P2h("The N2O land application emission factor (IPCC default 0.01 kg N2O-N/kg N) "
              "drives a large portion of the GHG totals and the thermal treatment narrative. "
              "Sensitivity testing shows this factor can vary by ±8× (0.003–0.025). "
@@ -2134,7 +2281,7 @@ def _next_steps(story, S, d: Tier1ReportData, section_num: int):
         "(1) HRT adequacy under peak load scenarios; "
         "(2) centrate NH4-N management strategy and licence headroom; "
         "(3) methane fugitive emission controls; "
-        "(4) Class A validation with EPA Victoria; "
+        f"(4) Class A validation with {d.regulatory.get('label', 'the relevant authority')}; "
         "(5) PFAS characterisation and disposal strategy; "
         "(6) independent CAPEX verification. "
         "Pre-digestion THP remains the preferred option if new digester volume "

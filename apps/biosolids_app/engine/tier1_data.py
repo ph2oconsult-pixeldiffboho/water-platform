@@ -74,6 +74,21 @@ REGULATORY_CONTEXTS = {
                        "Sidestream treatment may be required under water quality objectives.",
         "stockpile":   "Grade B biosolids require consent conditions and restricted use.",
     },
+    "qld_des": {
+        "label":       "Queensland DES (Dept. of Environment and Science)",
+        "class_a_req": "Queensland Environmental Protection Act 1994 and associated guidelines "
+                       "apply. Class A equivalent required for unrestricted beneficial use. "
+                       "THP time-temperature conditions expected to achieve this, "
+                       "subject to validation and DES acceptance.",
+        "pfas_note":   "Queensland DES PFAS Management Framework applies. "
+                       "Biosolids from catchments with known PFAS sources require "
+                       "characterisation per DES PFAS guidelines for land application.",
+        "n_discharge": "Queensland DES environmental authority conditions apply. "
+                       "Centrate TN return loads to be assessed against licence headroom "
+                       "and nutrient management plan requirements.",
+        "stockpile":   "Queensland biosolids management requirements apply. "
+                       "Confirm Class A/B land application conditions with DES.",
+    },
     "custom": {
         "label":       "Custom / Specify",
         "class_a_req": "Regulatory requirements to be confirmed with the relevant authority. "
@@ -212,6 +227,7 @@ class Tier1ReportData:
     ps_volume_m3:   float = 0.0
     was_volume_m3:  float = 0.0
     plant_tkn_kgd:  float = 500.0
+    n2o_ef:         float = 0.010  # N2O emission factor kg N2O-N/kg N applied (IPCC default)
 
     # MAD result (single config — from MAD Analyser page)
     mad_result:     Any = None
@@ -264,6 +280,7 @@ def assemble_report_data(ss: dict, report_cfg: dict) -> Tier1ReportData:
     d.ps_volume_m3 = ss.get("cmp_ps_vol", ss.get("mad_psV",   3000.0))
     d.was_volume_m3= ss.get("cmp_was_vol",ss.get("mad_wasV",  1200.0))
     d.plant_tkn_kgd= ss.get("cmp_plant_tkn", 500.0)
+    d.n2o_ef       = float(report_cfg.get("n2o_ef", 0.010))
 
     # MAD result
     d.mad_result  = ss.get("mad_result")
@@ -465,8 +482,8 @@ def narrative_next_steps(d: Tier1ReportData, reg_key: str) -> List[str]:
     )
     steps.append(
         "Commission independent process modelling for pre-THP and SolidStream "
-        "at ETP-specific conditions — Cambi figures are conceptual and require "
-        "Aurecon / independent engineer verification."
+        "at site-specific conditions — vendor figures are conceptual and require "
+        "independent engineer verification."
     )
     steps.append(
         "Assess sidestream NH4-N impact on ETP liquid treatment train — the increase "
@@ -481,22 +498,23 @@ def narrative_next_steps(d: Tier1ReportData, reg_key: str) -> List[str]:
     steps.append(
         "Develop long-term thermal treatment business case — assess fluidised bed "
         "incineration and pyrolysis as the ultimate biosolids endpoint, "
-        "consistent with Melbourne Water net zero Scope 1 by 2030 and methane "
+        "consistent with client net zero objectives."  # "
         "to zero by 2035-2040 strategic objectives."
     )
     steps.append(
-        "Engage EPA Victoria on Class A compliance timeline, requirements, and "
-        "whether THP at 165°C for 20 minutes satisfies the log reduction criteria "
-        "under Publication 891.4 (2004)."
+        f"Engage {d.regulatory.get('label', 'the relevant authority')} on Class A "
+        "compliance timeline, requirements, and whether THP "
+        "at 165\u00b0C for minimum 20 minutes will be accepted. "
+        "Obtain in-principle position before committing to capital."
     )
     if winner_id in ("solidstream", "expansion"):
         steps.append(
-            "Obtain Cambi performance guarantee terms and pre-contract testing "
-            "protocol. Confirm minimum HRT adequacy and digester space for "
-            "9th digester (expansion option) before committing to procurement."
+            "Obtain THP vendor performance guarantee terms and pre-contract testing "
+            "protocol. Confirm minimum HRT adequacy and digester capacity "
+            "before committing to procurement."
         )
     steps.append(
-        "Review driver weightings with Melbourne Water and Aurecon — update "
+        "Review driver weightings with the client and project engineer — update "
         "comparison if priorities change (regulatory deadline, budget, programme)."
     )
     return steps
