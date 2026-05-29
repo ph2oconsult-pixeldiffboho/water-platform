@@ -412,20 +412,35 @@ def _ghg_section(story, S, result):
     def PG(text): return Paragraph(str(text), S["cell"])
     def PGH(text): return Paragraph(str(text), S["cell_b"])
 
-    rows.append([PG("Scope 1 — fugitive CH<sub>4</sub>")] +
-                [PG(fmt_ghg(getattr(cr, 'scope1_ch4_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.85)))
+    # ── Scope 1 — independently calculated emission sources ─────────────────
+    rows.append([PG("Scope 1a — Fugitive CH<sub>4</sub> (biogas leakage)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope1_ch4_kg_co2e_per_d',
+                            cr.scope1_kg_co2e_per_d * 0.85)))
                  for cr in included])
-    rows.append([PG("Scope 1 — N<sub>2</sub>O (land app.)")] +
-                [PG(fmt_ghg(getattr(cr, 'scope1_n2o_kg_co2e_per_d', cr.scope1_kg_co2e_per_d * 0.15)))
+    rows.append([PG("Scope 1b — N<sub>2</sub>O (land application)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope1_n2o_kg_co2e_per_d',
+                            cr.scope1_kg_co2e_per_d * 0.15)))
                  for cr in included])
-    rows.append([PG("Scope 2 — grid electricity (net)")] +
+    rows.append([PGH("Scope 1 Total")] +
+                [PGH(fmt_ghg(cr.scope1_kg_co2e_per_d)) for cr in included])
+
+    # ── Scope 2 — grid electricity (independent of Scope 1) ──────────────────
+    rows.append([PG("Scope 2 — CHP electricity export credit")] +
                 [PG(fmt_ghg(cr.scope2_kg_co2e_per_d)) for cr in included])
-    rows.append([PG("Scope 3 — transport (cake haulage)")] +
-                [PG(fmt_ghg(getattr(cr, 'scope3_transport_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5)))
+
+    # ── Scope 3 ───────────────────────────────────────────────────────────────
+    rows.append([PG("Scope 3a — Biosolids transport (haulage)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope3_transport_kg_co2e_per_d',
+                            cr.scope3_kg_co2e_per_d * 0.5)))
                  for cr in included])
-    rows.append([PG("Scope 3 — polymer (upstream)")] +
-                [PG(fmt_ghg(getattr(cr, 'scope3_polymer_kg_co2e_per_d', cr.scope3_kg_co2e_per_d * 0.5)))
+    rows.append([PG("Scope 3b — Polymer production (upstream)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope3_polymer_kg_co2e_per_d',
+                            cr.scope3_kg_co2e_per_d * 0.5)))
                  for cr in included])
+    rows.append([PGH("Scope 3 Total")] +
+                [PGH(fmt_ghg(cr.scope3_kg_co2e_per_d)) for cr in included])
+
+    # ── Net ───────────────────────────────────────────────────────────────────
     rows.append([PGH("NET GHG (kg CO<sub>2</sub>e/day)")] +
                 [PGH(fmt_ghg(cr.net_ghg_kg_co2e_per_d)) for cr in included])
     rows.append([PGH("NET GHG (t CO<sub>2</sub>e/yr)")] +
@@ -444,7 +459,12 @@ def _ghg_section(story, S, result):
     story.append(tbl)
     story.append(_sp(3))
     story.append(_p(
-        "Scope 2 credits (negative) reflect avoided grid electricity from CHP export. "
+        "Scope 1 fugitive CH<sub>4</sub> scales with biogas production — THP options emit more. "
+        "Scope 2 credit scales with electricity export — THP options earn a larger credit. "
+        "These are independent: fugitive emission controls (flares, gas capture) reduce Scope 1 "
+        "without affecting Scope 2. "
+        "Biogenic CO<sub>2</sub> from combustion excluded (IPCC carbon-neutral convention). "
+        "Fugitive CH<sub>4</sub> rate assumed 1.5% of biogas CH<sub>4</sub> content (screening grade). "
         f"Grid intensity: {result.site.grid_intensity_kg_co2e_per_kwh:.2f} kg CO<sub>2</sub>e/kWh. "
         "Biogenic CO<sub>2</sub> from biogas combustion is excluded (IPCC carbon-neutral convention). "
         "Figures are screening-grade \u00b120%.",
@@ -635,11 +655,21 @@ def _full_comparison_table(story, S, result):
             ("SS treatment req'd?",["Yes" if cr.sidestream_treatment_reqd else "No" for cr in included]),
         ]),
         ("GHG (kg CO<sub>2</sub>e/day)", [
-            ("Scope 1",           [fmt_i(cr.scope1_kg_co2e_per_d) for cr in included]),
-            ("Scope 2",           [fmt_i(cr.scope2_kg_co2e_per_d) for cr in included]),
-            ("Scope 3",           [fmt_i(cr.scope3_kg_co2e_per_d) for cr in included]),
-            ("Net GHG",           [fmt_i(cr.net_ghg_kg_co2e_per_d) for cr in included]),
-            ("Net GHG (t/yr)",    [fmt_f(cr.net_ghg_t_co2e_per_yr) for cr in included]),
+            ("Scope 1a — Fugitive CH4",
+             [fmt_i(getattr(cr,'scope1_ch4_kg_co2e_per_d', cr.scope1_kg_co2e_per_d*0.85))
+              for cr in included]),
+            ("Scope 1b — N2O (land app.)",
+             [fmt_i(getattr(cr,'scope1_n2o_kg_co2e_per_d', cr.scope1_kg_co2e_per_d*0.15))
+              for cr in included]),
+            ("Scope 1 Total",      [fmt_i(cr.scope1_kg_co2e_per_d) for cr in included]),
+            ("Scope 2 — electricity export credit",
+             [fmt_f(cr.scope2_kg_co2e_per_d, dp=1) for cr in included]),
+            ("Scope 3a — transport",[fmt_i(getattr(cr,'scope3_transport_kg_co2e_per_d',
+                                           cr.scope3_kg_co2e_per_d*0.5)) for cr in included]),
+            ("Scope 3b — polymer",  [fmt_i(getattr(cr,'scope3_polymer_kg_co2e_per_d',
+                                           cr.scope3_kg_co2e_per_d*0.5)) for cr in included]),
+            ("Net GHG",             [fmt_i(cr.net_ghg_kg_co2e_per_d) for cr in included]),
+            ("Net GHG (t/yr)",      [fmt_f(cr.net_ghg_t_co2e_per_yr) for cr in included]),
         ]),
         ("Digester Headroom", [
             ("PS HRT (days)",     [fmt_f(cr.hrt_ps_d) for cr in included]),
