@@ -289,6 +289,10 @@ elif _active == "biosolids":
         from apps.biosolids_app.pages import page_09_compare; page_09_compare.render()
     elif page_key == "10_sankey":
         from apps.biosolids_app.pages import page_10_sankey; page_10_sankey.render()
+    elif page_key == "11_report":
+        from apps.biosolids_app.pages import page_11_report; page_11_report.render()
+    elif page_key == "12_separate":
+        from apps.biosolids_app.pages import page_12_separate; page_12_separate.render()
     elif page_key == "06_manual":
         from apps.biosolids_app.pages import page_06_manual; page_06_manual.render()
     _bp_sidebar.markdown("<div class='sb-footer'>BioPoint V1<br>ph2o Consulting</div>", unsafe_allow_html=True)
