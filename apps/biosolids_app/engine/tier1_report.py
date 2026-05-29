@@ -368,7 +368,7 @@ def _executive_decision_matrix(story, S, d: Tier1ReportData, section_num: int):
     # Class A compliance
     row = [P2("EPA Vic Class A compliance")]
     for cr in configs:
-        row.append(tick(cr.class_a))
+        row.append(tick(getattr(cr,"class_a_achieved", getattr(cr,"class_a",False))))
     criteria.append(row)
 
     # HRT compliant
@@ -417,7 +417,7 @@ def _executive_decision_matrix(story, S, d: Tier1ReportData, section_num: int):
     # PFAS resilience (land application eliminated with thermal path)
     row = [P2("PFAS resilience (THP → thermal path)")]
     for cr in configs:
-        row.append(tick(cr.class_a))  # THP options enable thermal treatment
+        row.append(tick(getattr(cr,"class_a_achieved", getattr(cr,"class_a",False))))  # THP options enable thermal treatment
     criteria.append(row)
 
     # Retrofit compatibility
@@ -576,7 +576,7 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
         rows.append([
             Paragraph(("★ " if is_w else "") + cr.config_label, lbl_style),
             P(f"{cr.weighted_score:.0f}", S),
-            P("Class A" if cr.class_a else "Class B", S),
+            P("Class A" if getattr(cr,"class_a_achieved", getattr(cr,"class_a",False)) else "Class B", S),
             P(opex_delta, S),
             _capex_stars(cr.config_id, S),
             P(heat_str, S),
@@ -722,18 +722,18 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
     rows_data = [
         ("Biogas (m³/day)",       [f"{cr.biogas_m3_per_d:,.0f}" for cr in configs]),
         ("Biogas uplift vs base", ["—" if cr.config_id=="base" else
-                                   f"{cr.biogas_uplift_pct:+.1f}%" for cr in configs]),
-        ("PS VS destruction (%)", [fmt(cr.ps_vsr_pct) for cr in configs]),
-        ("WAS VS destruction (%)",[fmt(cr.was_vsr_pct) for cr in configs]),
+                                   f"{getattr(cr,"biogas_uplift_pct",0.0):+.1f}%" for cr in configs]),
+        ("PS VS destruction (%)", [fmt(getattr(cr,"ps_vsr_pct",  cr.vsr_pct)) for cr in configs]),
+        ("WAS VS destruction (%)",[fmt(getattr(cr,"was_vsr_pct", cr.vsr_pct)) for cr in configs]),
         ("CHP gross (kW)",        [f"{cr.elec_gross_kw:,.0f}" for cr in configs]),
         ("Net electricity (kW)",  [f"{cr.elec_net_kw:,.0f}" for cr in configs]),
         ("Net electricity (MWh/yr)",[f"{cr.elec_net_kw * 8760 * result.site.chp_avail_pct/100 /1000:,.0f}"
                                      for cr in configs]),
         ("Cake DS%",              [fmt(cr.cake_ds_pct, dp=0, suffix="%") for cr in configs]),
         ("Wet cake (t/day)",      [fmt(cr.wet_cake_t_per_day) for cr in configs]),
-        ("Pathogen class",        ["Class A" if cr.class_a else "Class B" for cr in configs]),
+        ("Pathogen class",        ["Class A" if getattr(cr,"class_a_achieved", getattr(cr,"class_a",False)) else "Class B" for cr in configs]),
         ("Centrate NH4-N (kg/day)",[fmt(cr.centrate_nh4_kg_per_d, dp=0) for cr in configs]),
-        ("Digester HRT (days)",    [fmt(cr.hrt_days, dp=1) for cr in configs]),
+        ("Digester HRT (days)",    [fmt(getattr(cr,"hrt_days", (getattr(cr,"hrt_ps_d",0)+getattr(cr,"hrt_was_d",0))/2), dp=1) for cr in configs]),
         ("CHP electricity — gross\n(Cambi basis MWhe/yr)",
          [f"{cr.elec_gross_kw * 8760 / 1000:,.0f}" for cr in configs]),
         ("Heat self-sufficient",  [("Yes" if getattr(cr,"heat_self_sufficient",True)
@@ -890,10 +890,10 @@ def _opex_ghg_section(story, S, d: Tier1ReportData, section_num: int):
     opex_rows = [hdr]
     components = [
         ("Polymer",         lambda cr: cr.opex_polymer_per_yr),
-        ("Energy (net)",    lambda cr: cr.opex_energy_per_yr),
+        ("Energy (net)",    lambda cr: getattr(cr,"opex_energy_per_yr",0.0)),
         ("Disposal & transport", lambda cr: cr.opex_disposal_per_yr),
         ("Sidestream N treatment", lambda cr: cr.opex_sidestream_per_yr),
-        ("THP / equip. O&M", lambda cr: cr.opex_thp_om_per_yr),
+        ("THP / equip. O&M", lambda cr: getattr(cr,"opex_thp_om_per_yr", getattr(cr,"opex_thp_maintenance_per_yr",0.0))),
         ("TOTAL ($/yr)",    lambda cr: cr.opex_total_per_yr),
     ]
     for label, fn in components:
