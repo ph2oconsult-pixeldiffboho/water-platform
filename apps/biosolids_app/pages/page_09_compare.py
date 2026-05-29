@@ -1,11 +1,6 @@
 """
 apps/biosolids_app/pages/page_09_compare.py
 BioPoint V1 — MAD Configuration Comparison.
-
-Compares up to four digestion configurations (Base Case, Recuperative Thickening,
-Pre-digestion THP, SolidStream) against eight project drivers with user-defined
-weightings. Outputs heatmap, ranked recommendation, and downloadable report.
-
 ph2o Consulting — BioPoint V1 — v25B02
 """
 import sys
@@ -24,209 +19,252 @@ from engine.mad_compare import (
 )
 from engine.mad_compare_report import generate_comparison_report
 
+HEAT_COLOURS = {4:"#1b5e20", 3:"#558b2f", 2:"#f57f17", 1:"#b71c1c"}
+HEAT_TEXT    = {4:"white",   3:"white",   2:"black",   1:"white"}
 
-# ── Heatmap colours ────────────────────────────────────────────────────────
-HEAT_COLOURS = {
-    4: "#1b5e20",   # dark green
-    3: "#558b2f",   # mid green
-    2: "#f57f17",   # amber
-    1: "#b71c1c",   # dark red
+CONFIG_INFO = {
+    "base": {
+        "icon": "🏭",
+        "title": "Base Case",
+        "subtitle": "Conventional AD",
+        "desc": "No THP, no recup upgrade. Establishes the performance baseline.",
+        "tag": "Lowest risk & cost",
+        "tag_colour": "#546e7a",
+    },
+    "recup": {
+        "icon": "⚡",
+        "title": "Recuperative Thickening",
+        "subtitle": "Feed TS% upgrade",
+        "desc": "Higher feed TS% via centrifuge recirculation. Moderate CAPEX, no Class A.",
+        "tag": "Moderate uplift",
+        "tag_colour": "#0077b6",
+    },
+    "pre_thp": {
+        "icon": "🔥",
+        "title": "Pre-digestion THP",
+        "subtitle": "THP before digesters",
+        "desc": "Cell disintegration before digestion. Highest biogas uplift, Class A biosolids.",
+        "tag": "Best energy",
+        "tag_colour": "#2e7d32",
+    },
+    "solidstream": {
+        "icon": "💧",
+        "title": "SolidStream",
+        "subtitle": "Post-digestion THP",
+        "desc": "THP after existing digesters. Best dewatering (≥38% DS), Class A, retrofit-friendly.",
+        "tag": "Best dewatering",
+        "tag_colour": "#1a3a5c",
+    },
 }
-HEAT_TEXT = {4: "white", 3: "white", 2: "black", 1: "white"}
 
-
-def _heat_cell(score: int, value_str: str = "") -> str:
-    bg   = HEAT_COLOURS.get(score, "#eceff1")
-    text = HEAT_TEXT.get(score, "black")
-    label = {4:"★ Best", 3:"Good", 2:"Fair", 1:"Worst"}.get(score, str(score))
-    return (
-        f'<div style="background:{bg};color:{text};text-align:center;'
-        f'padding:8px 4px;border-radius:4px;font-size:12px;font-weight:bold;">'
-        f'{label}<br/><span style="font-size:10px;opacity:0.85;">{value_str}</span>'
-        f'</div>'
-    )
+def _config_card(cfg_id, selected):
+    info = CONFIG_INFO[cfg_id]
+    border = "2px solid #0077b6" if selected else "1px solid #ddd"
+    bg = "#e8f4f8" if selected else "#fafafa"
+    return f"""
+    <div style="border:{border};border-radius:8px;padding:14px 16px;
+                background:{bg};height:100%;box-sizing:border-box;">
+      <div style="font-size:22px;margin-bottom:4px;">{info['icon']}</div>
+      <div style="font-weight:700;font-size:14px;color:#1a3a5c;">{info['title']}</div>
+      <div style="font-size:11px;color:#546e7a;margin-bottom:6px;">{info['subtitle']}</div>
+      <div style="font-size:12px;color:#333;margin-bottom:8px;">{info['desc']}</div>
+      <span style="background:{info['tag_colour']};color:white;
+                   font-size:10px;padding:2px 8px;border-radius:10px;">
+        {info['tag']}
+      </span>
+    </div>"""
 
 
 def render():
-    st.header("⚖️ MAD Configuration Comparison")
+    st.header("⚖️ Configuration Comparison")
     st.caption(
         "Compare up to four digestion configurations against your project drivers. "
-        "Configure site inputs, set driver priorities, select configurations to compare, "
-        "then run the assessment."
+        "Select options, set priorities, then run."
     )
 
-    # ── SITE INPUTS ────────────────────────────────────────────────────────
-    with st.expander("🏭 Site inputs", expanded=True):
-        st.caption("Shared across all configurations. Base case uses these directly.")
+    # ═══════════════════════════════════════════════════════════════
+    # STEP 1 — SELECT CONFIGURATIONS
+    # ═══════════════════════════════════════════════════════════════
+    st.subheader("Step 1 — Select configurations to compare")
+    st.caption("Click to select or deselect. At least two recommended for a meaningful comparison.")
 
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown("**Feed — Primary Sludge**")
+    cfg_cols = st.columns(4)
+    selections = {}
+    for col, cfg_id in zip(cfg_cols, ALL_CONFIGS):
+        with col:
+            # Checkbox drives selection state
+            default = cfg_id != "recup"   # base, pre_thp, solidstream on by default
+            checked = st.checkbox(
+                CONFIG_INFO[cfg_id]["title"],
+                value=st.session_state.get(f"cmp_inc_{cfg_id}", default),
+                key=f"cmp_inc_{cfg_id}",
+            )
+            selections[cfg_id] = checked
+            st.markdown(_config_card(cfg_id, checked), unsafe_allow_html=True)
+
+    selected_ids = [k for k, v in selections.items() if v]
+    if len(selected_ids) < 2:
+        st.warning("Select at least two configurations to run a comparison.")
+
+    st.divider()
+
+    # ═══════════════════════════════════════════════════════════════
+    # STEP 2 — PROJECT DRIVERS
+    # ═══════════════════════════════════════════════════════════════
+    st.subheader("Step 2 — Set project driver priorities")
+    st.caption("5 = critical for this project. 1 = minor consideration.")
+
+    driver_col1, driver_col2 = st.columns(2)
+    weights = {}
+    driver_list = list(zip(DRIVER_IDS[::2], DRIVER_IDS[1::2]))  # pair them
+
+    for d_left, d_right in driver_list:
+        with driver_col1:
+            weights[d_left] = st.select_slider(
+                DRIVER_LABELS[d_left],
+                options=[1, 2, 3, 4, 5],
+                value=st.session_state.get(f"cmp_w_{d_left}", DEFAULT_WEIGHTS.get(d_left, 3)),
+                key=f"cmp_w_{d_left}",
+                help=DRIVER_DESCRIPTIONS[d_left],
+                format_func=lambda x: {1:"1 — Low", 2:"2", 3:"3 — Medium", 4:"4", 5:"5 — Critical"}[x],
+            )
+        with driver_col2:
+            weights[d_right] = st.select_slider(
+                DRIVER_LABELS[d_right],
+                options=[1, 2, 3, 4, 5],
+                value=st.session_state.get(f"cmp_w_{d_right}", DEFAULT_WEIGHTS.get(d_right, 3)),
+                key=f"cmp_w_{d_right}",
+                help=DRIVER_DESCRIPTIONS[d_right],
+                format_func=lambda x: {1:"1 — Low", 2:"2", 3:"3 — Medium", 4:"4", 5:"Critical (5)"}[x],
+            )
+
+    st.divider()
+
+    # ═══════════════════════════════════════════════════════════════
+    # STEP 3 — SITE INPUTS (collapsed by default)
+    # ═══════════════════════════════════════════════════════════════
+    with st.expander("Step 3 — Site inputs (click to expand)", expanded=False):
+        st.caption("Shared across all configurations. Defaults are suitable for initial screening.")
+
+        si1, si2, si3 = st.columns(3)
+
+        with si1:
+            st.markdown("**Feed flows**")
             ps_ds  = st.number_input("PS dry solids (tDS/day)", 0.5, 500.0,
                 st.session_state.get("cmp_ps_ds", 6.0), step=0.5, key="cmp_ps_ds")
-            ps_ts  = st.number_input("PS feed TS% (base case)", 2.0, 12.0,
-                st.session_state.get("cmp_ps_ts", 4.0), step=0.5, key="cmp_ps_ts")
-            ps_vs  = st.number_input("PS volatile solids (% DS)", 50.0, 90.0,
-                st.session_state.get("cmp_ps_vs", 75.0), step=1.0, key="cmp_ps_vs")
-            ps_n   = st.number_input("PS nitrogen (% DS)", 1.0, 8.0,
-                st.session_state.get("cmp_ps_n", 3.0), step=0.1, key="cmp_ps_n")
-
-            st.markdown("**Feed — WAS**")
             was_ds = st.number_input("WAS dry solids (tDS/day)", 0.5, 500.0,
                 st.session_state.get("cmp_was_ds", 4.0), step=0.5, key="cmp_was_ds")
-            was_ts = st.number_input("WAS feed TS% (base case)", 2.0, 12.0,
-                st.session_state.get("cmp_was_ts", 4.0), step=0.5, key="cmp_was_ts")
+            ps_vs  = st.number_input("PS volatile solids (% DS)", 50.0, 90.0,
+                st.session_state.get("cmp_ps_vs", 75.0), step=1.0, key="cmp_ps_vs")
             was_vs = st.number_input("WAS volatile solids (% DS)", 45.0, 85.0,
                 st.session_state.get("cmp_was_vs", 70.0), step=1.0, key="cmp_was_vs")
+            ps_n   = st.number_input("PS nitrogen (% DS)", 1.0, 8.0,
+                st.session_state.get("cmp_ps_n", 3.0), step=0.1, key="cmp_ps_n")
             was_n  = st.number_input("WAS nitrogen (% DS)", 4.0, 15.0,
                 st.session_state.get("cmp_was_n", 8.5), step=0.1, key="cmp_was_n")
 
-        with c2:
+        with si2:
             st.markdown("**Digester geometry**")
+            ps_ts  = st.number_input("PS feed TS% (base case)", 2.0, 12.0,
+                st.session_state.get("cmp_ps_ts", 4.0), step=0.5, key="cmp_ps_ts")
+            was_ts = st.number_input("WAS feed TS% (base case)", 2.0, 12.0,
+                st.session_state.get("cmp_was_ts", 4.0), step=0.5, key="cmp_was_ts")
             ps_vol  = st.number_input("PS digester volume (m³)", 100.0, 200000.0,
                 st.session_state.get("cmp_ps_vol", 3000.0), step=100.0, key="cmp_ps_vol")
             was_vol = st.number_input("WAS digester volume (m³)", 100.0, 200000.0,
                 st.session_state.get("cmp_was_vol", 1200.0), step=100.0, key="cmp_was_vol")
-
-            st.markdown("**Recuperative thickening (when selected)**")
-            recup_ps_ts  = st.number_input("Recup PS TS% target", 4.0, 12.0,
-                st.session_state.get("cmp_recup_ps_ts", 6.0), step=0.5,
-                key="cmp_recup_ps_ts",
+            st.markdown("**Recup thickening target TS%**")
+            recup_ps_ts  = st.number_input("Recup PS TS%", 4.0, 12.0,
+                st.session_state.get("cmp_recup_ps_ts", 6.0), step=0.5, key="cmp_recup_ps_ts",
                 help="Achievable feed TS% after centrifuge recirculation upgrade")
-            recup_was_ts = st.number_input("Recup WAS TS% target", 3.0, 10.0,
-                st.session_state.get("cmp_recup_was_ts", 5.5), step=0.5,
-                key="cmp_recup_was_ts")
+            recup_was_ts = st.number_input("Recup WAS TS%", 3.0, 10.0,
+                st.session_state.get("cmp_recup_was_ts", 5.5), step=0.5, key="cmp_recup_was_ts")
 
-            st.markdown("**Plant context**")
-            plant_tkn = st.number_input("Plant total TKN (kg N/day)", 50.0, 10000.0,
-                st.session_state.get("cmp_plant_tkn", 500.0), step=50.0,
-                key="cmp_plant_tkn",
-                help="Used to calculate centrate NH₄ return as % of plant TKN")
-
-        with c3:
-            st.markdown("**Economics**")
+        with si3:
+            st.markdown("**Economics & GHG**")
             elec_buy  = st.number_input("Electricity buy ($/kWh)", 0.05, 0.50,
                 st.session_state.get("cmp_elec_buy", 0.18), step=0.01,
                 format="%.2f", key="cmp_elec_buy")
             elec_sell = st.number_input("Electricity sell ($/kWh)", 0.05, 0.30,
                 st.session_state.get("cmp_elec_sell", 0.10), step=0.01,
                 format="%.2f", key="cmp_elec_sell")
-            disposal  = st.number_input("Disposal cost ($/wet tonne)", 20.0, 400.0,
-                st.session_state.get("cmp_disposal", 80.0), step=5.0,
-                key="cmp_disposal")
+            disposal  = st.number_input("Disposal ($/wet tonne)", 20.0, 400.0,
+                st.session_state.get("cmp_disposal", 80.0), step=5.0, key="cmp_disposal")
             transport_km = st.number_input("Transport distance (km)", 5.0, 300.0,
-                st.session_state.get("cmp_transport_km", 50.0), step=5.0,
-                key="cmp_transport_km")
+                st.session_state.get("cmp_transport_km", 50.0), step=5.0, key="cmp_transport_km")
             polymer_cost = st.number_input("Polymer cost ($/kg)", 1.0, 10.0,
                 st.session_state.get("cmp_polymer_cost", 3.50), step=0.25,
                 format="%.2f", key="cmp_polymer_cost")
-
-            st.markdown("**GHG**")
+            plant_tkn = st.number_input("Plant TKN (kg N/day)", 50.0, 10000.0,
+                st.session_state.get("cmp_plant_tkn", 500.0), step=50.0, key="cmp_plant_tkn",
+                help="Used to calculate centrate NH4 return as % of plant TKN")
             grid_i = st.selectbox("Grid state",
-                ["QLD (0.72)", "NSW (0.55)", "VIC (0.60)", "SA (0.25)",
+                ["VIC (0.60)", "NSW (0.55)", "QLD (0.72)", "SA (0.25)",
                  "WA (0.65)", "TAS (0.08)", "NZ (0.12)", "Custom"],
-                index=2, key="cmp_grid_state")
-            if grid_i == "Custom":
-                grid_intensity = st.number_input(
-                    "Custom grid intensity (kgCO₂e/kWh)", 0.0, 1.5,
+                index=0, key="cmp_grid_state")
+            grid_intensity = (
+                st.number_input("Grid intensity (kgCO₂e/kWh)", 0.0, 1.5,
                     st.session_state.get("cmp_grid_custom", 0.55),
                     step=0.01, format="%.3f", key="cmp_grid_custom")
-            else:
-                grid_intensity = float(grid_i.split("(")[1].rstrip(")"))
+                if grid_i == "Custom"
+                else float(grid_i.split("(")[1].rstrip(")"))
+            )
 
-    # ── CONFIGURATIONS TO COMPARE ──────────────────────────────────────────
-    with st.expander("🔀 Configurations to compare", expanded=True):
-        st.caption("Select which configurations to include in the comparison.")
-        cc1, cc2, cc3, cc4 = st.columns(4)
-        with cc1:
-            inc_base = st.checkbox("Base case\n(Conventional AD)",
-                value=True, key="cmp_inc_base")
-            st.caption("No THP, no recup upgrade. Establishes the performance baseline.")
-        with cc2:
-            inc_recup = st.checkbox("Recuperative\nThickening",
-                value=True, key="cmp_inc_recup")
-            st.caption("Higher feed TS% via centrifuge recirculation. Moderate CAPEX.")
-        with cc3:
-            inc_prethp = st.checkbox("Pre-digestion\nTHP",
-                value=True, key="cmp_inc_prethp")
-            st.caption("THP before digesters. Highest biogas uplift, Class A biosolids.")
-        with cc4:
-            inc_ss = st.checkbox("SolidStream\n(Post-THP)",
-                value=True, key="cmp_inc_ss")
-            st.caption("THP after existing digesters. Best dewatering, Class A, retrofit.")
-
-    # ── DRIVER WEIGHTINGS ──────────────────────────────────────────────────
-    with st.expander("🎯 Project driver weightings", expanded=True):
-        st.caption(
-            "Set the importance of each driver for this project. "
-            "5 = critical project driver. 1 = minor consideration. "
-            "Weights determine the heatmap total score."
-        )
-        w_cols = st.columns(4)
-        weights = {}
-        for i, d in enumerate(DRIVER_IDS):
-            with w_cols[i % 4]:
-                weights[d] = st.slider(
-                    DRIVER_LABELS[d],
-                    1, 5,
-                    st.session_state.get(f"cmp_w_{d}", DEFAULT_WEIGHTS.get(d, 3)),
-                    key=f"cmp_w_{d}",
-                    help=DRIVER_DESCRIPTIONS[d],
-                )
-
-    # ── REPORT METADATA ────────────────────────────────────────────────────
+    # ── Report settings ────────────────────────────────────────────
     with st.expander("📄 Report settings", expanded=False):
         rc1, rc2 = st.columns(2)
         with rc1:
-            cmp_project = st.text_input("Project name",
+            st.text_input("Project name",
                 st.session_state.get("cmp_project", "BioPoint Analysis"),
                 key="cmp_project")
         with rc2:
-            cmp_prepby = st.text_input("Prepared by",
+            st.text_input("Prepared by",
                 st.session_state.get("cmp_prepby", "ph2o Consulting"),
                 key="cmp_prepby")
 
-    # ── RUN ────────────────────────────────────────────────────────────────
-    run = st.button("▶ Run Comparison", type="primary")
+    # ═══════════════════════════════════════════════════════════════
+    # RUN
+    # ═══════════════════════════════════════════════════════════════
+    st.divider()
+    run_col, _ = st.columns([2, 5])
+    with run_col:
+        run = st.button("▶ Run Comparison", type="primary",
+                        disabled=len(selected_ids) < 2)
 
     if not run and "cmp_result" not in st.session_state:
-        st.info(
-            "Configure site inputs and driver weightings above, then click "
-            "**▶ Run Comparison**."
-        )
         return
 
     if run:
-        configs_to_run = []
-        if st.session_state.get("cmp_inc_base",   True):  configs_to_run.append("base")
-        if st.session_state.get("cmp_inc_recup",  True):  configs_to_run.append("recup")
-        if st.session_state.get("cmp_inc_prethp", True):  configs_to_run.append("pre_thp")
-        if st.session_state.get("cmp_inc_ss",     True):  configs_to_run.append("solidstream")
-
-        if not configs_to_run:
-            st.error("Select at least one configuration to compare.")
+        if len(selected_ids) < 2:
+            st.error("Select at least two configurations.")
             return
 
+        # Read site inputs — use session state values since expander may be collapsed
         site = ComparisonSiteInputs(
-            ps_ds_tpd=ps_ds, was_ds_tpd=was_ds,
-            ps_ts_pct=ps_ts, was_ts_pct=was_ts,
-            ps_vs_pct=ps_vs, was_vs_pct=was_vs,
-            ps_n_pct=ps_n,   was_n_pct=was_n,
-            ps_volume_m3=ps_vol, was_volume_m3=was_vol,
-            recup_ps_ts_pct=recup_ps_ts, recup_was_ts_pct=recup_was_ts,
-            electricity_buy_per_kwh=elec_buy,
-            electricity_sell_per_kwh=elec_sell,
-            disposal_cost_per_t_wet=disposal,
-            transport_km=transport_km,
-            polymer_cost_per_kg=polymer_cost,
-            grid_intensity_kg_co2e_per_kwh=grid_intensity,
-            plant_tkn_kg_per_d=plant_tkn,
-            project_name=st.session_state.get("cmp_project", "BioPoint Analysis"),
-            prepared_by=st.session_state.get("cmp_prepby", "ph2o Consulting"),
+            ps_ds_tpd  = st.session_state.get("cmp_ps_ds", 6.0),
+            was_ds_tpd = st.session_state.get("cmp_was_ds", 4.0),
+            ps_ts_pct  = st.session_state.get("cmp_ps_ts", 4.0),
+            was_ts_pct = st.session_state.get("cmp_was_ts", 4.0),
+            ps_vs_pct  = st.session_state.get("cmp_ps_vs", 75.0),
+            was_vs_pct = st.session_state.get("cmp_was_vs", 70.0),
+            ps_n_pct   = st.session_state.get("cmp_ps_n",  3.0),
+            was_n_pct  = st.session_state.get("cmp_was_n", 8.5),
+            ps_volume_m3  = st.session_state.get("cmp_ps_vol",  3000.0),
+            was_volume_m3 = st.session_state.get("cmp_was_vol", 1200.0),
+            recup_ps_ts_pct  = st.session_state.get("cmp_recup_ps_ts",  6.0),
+            recup_was_ts_pct = st.session_state.get("cmp_recup_was_ts", 5.5),
+            electricity_buy_per_kwh  = st.session_state.get("cmp_elec_buy",  0.18),
+            electricity_sell_per_kwh = st.session_state.get("cmp_elec_sell", 0.10),
+            disposal_cost_per_t_wet  = st.session_state.get("cmp_disposal",  80.0),
+            transport_km             = st.session_state.get("cmp_transport_km", 50.0),
+            polymer_cost_per_kg      = st.session_state.get("cmp_polymer_cost", 3.50),
+            grid_intensity_kg_co2e_per_kwh = grid_intensity,
+            plant_tkn_kg_per_d = st.session_state.get("cmp_plant_tkn", 500.0),
+            project_name = st.session_state.get("cmp_project", "BioPoint Analysis"),
+            prepared_by  = st.session_state.get("cmp_prepby",  "ph2o Consulting"),
         )
-
-        with st.spinner("Running comparison across configurations..."):
-            result = run_comparison(site, weights, configs_to_run)
+        with st.spinner("Running comparison..."):
+            result = run_comparison(site, weights, selected_ids)
             st.session_state["cmp_result"] = result
             st.session_state.pop("cmp_report_pdf", None)
 
@@ -236,141 +274,108 @@ def render():
 
     included = result.included_ids
 
-    # ── WINNER BANNER ──────────────────────────────────────────────────────
-    st.divider()
+    # ═══════════════════════════════════════════════════════════════
+    # RESULTS
+    # ═══════════════════════════════════════════════════════════════
+
+    # Winner banner
     if result.winner_id:
         wc = result.configs[result.winner_id]
         st.success(
             f"★ **Recommended: {result.winner_label}** "
-            f"(weighted score {wc.weighted_score:.1f}/25)  \n"
+            f"— weighted score {wc.weighted_score:.0f}/100  \n"
             + result.executive_summary
         )
 
-    # ── HEATMAP ────────────────────────────────────────────────────────────
+    st.divider()
+
+    # ── Heatmap ────────────────────────────────────────────────────
     st.subheader("Driver heatmap")
-    st.caption(
-        "🟢 Best performance among compared configurations. "
-        "🔴 Worst. Scores are relative — adding/removing configurations changes rankings."
-    )
+    st.caption("Dark green = best among compared configurations. Dark red = worst. Scores are relative.")
 
-    # Build heatmap as HTML table
     configs = [result.configs[k] for k in included]
-    n = len(configs)
 
-    # Header
-    header_cells = '<th style="text-align:left;padding:8px;background:#1a3a5c;color:white;min-width:140px;">Driver (weight)</th>'
+    header_cells = '<th style="text-align:left;padding:10px 12px;background:#1a3a5c;color:white;min-width:160px;font-size:13px;">Driver</th>'
     for cr in configs:
         star = "★ " if cr.config_id == result.winner_id else ""
         header_cells += (
-            f'<th style="text-align:center;padding:8px;background:#1a3a5c;'
-            f'color:white;min-width:110px;">{star}{cr.config_label}</th>'
+            f'<th style="text-align:center;padding:10px 8px;background:#1a3a5c;'
+            f'color:white;min-width:130px;font-size:12px;">{star}{cr.config_label}</th>'
         )
 
     rows_html = ""
     for d in DRIVER_IDS:
         w = result.driver_weights.get(d, 1)
-        bar = "■" * w + "□" * (5 - w)
         row_html = (
-            f'<td style="padding:6px 8px;background:#e8f4f8;'
-            f'font-weight:bold;font-size:12px;">'
-            f'{DRIVER_LABELS[d]}<br/>'
-            f'<span style="font-weight:normal;font-size:10px;color:#546e7a;">'
-            f'Weight {w}/5 {bar}</span></td>'
+            f'<td style="padding:8px 12px;background:#e8f4f8;font-weight:bold;'
+            f'font-size:12px;border-bottom:1px solid #ddd;">'
+            f'{DRIVER_LABELS.get(d, d)}'
+            f'<br/><span style="font-weight:normal;font-size:10px;color:#546e7a;">'
+            f'Weight: {w}/5</span></td>'
         )
         for cr in configs:
             sc  = cr.driver_scores.get(d, 1)
             raw = cr.driver_raw.get(d, 0)
-
-            # Format raw value for display
             raw_fmt = {
                 "energy":      f"{raw:,.0f} m³/d",
                 "biosolids":   "Class A" if raw >= 4 else "Class B",
                 "dewatering":  f"{raw:.0f}% DS",
-                "return_load": f"{raw:.0f} kg/d",
-                "carbon":      f"{raw:,.0f} kg/d",
+                "return_load": f"{raw:.0f} kg N/d",
+                "carbon":      f"{raw:,.0f} kgCO2e/d",
                 "opex":        f"${raw/1000:,.0f}k/yr",
                 "capex":       f"${raw:.1f}M",
                 "headroom":    f"{raw:.1f}d",
             }.get(d, f"{raw:.1f}")
-
+            bg   = HEAT_COLOURS.get(sc, "#eceff1")
+            text = HEAT_TEXT.get(sc, "black")
+            label = {4:"★ Best", 3:"Good", 2:"Fair", 1:"Worst"}.get(sc, str(sc))
             row_html += (
-                f'<td style="padding:4px;">'
-                + _heat_cell(sc, raw_fmt)
-                + '</td>'
+                f'<td style="padding:4px 6px;border-bottom:1px solid #eee;">'
+                f'<div style="background:{bg};color:{text};text-align:center;'
+                f'padding:8px 4px;border-radius:4px;font-size:12px;font-weight:bold;">'
+                f'{label}<br/><span style="font-size:10px;opacity:0.85;">{raw_fmt}</span>'
+                f'</div></td>'
             )
         rows_html += f"<tr>{row_html}</tr>"
 
-    # Weighted total row
+    # Total row
     wt_row = (
-        '<td style="padding:6px 8px;background:#1a3a5c;color:white;'
-        'font-weight:bold;font-size:12px;">WEIGHTED TOTAL (/25)</td>'
+        '<td style="padding:10px 12px;background:#1a3a5c;color:white;'
+        'font-weight:bold;font-size:13px;border-top:2px solid #fff;">WEIGHTED TOTAL /100</td>'
     )
     for cr in configs:
         is_winner = cr.config_id == result.winner_id
         bg = "#1b5e20" if is_winner else "#1a3a5c"
         wt_row += (
-            f'<td style="padding:6px;text-align:center;background:{bg};'
-            f'color:white;font-weight:bold;font-size:14px;">'
-            f'{cr.weighted_score:.1f}</td>'
+            f'<td style="padding:8px 6px;border-top:2px solid #fff;">'
+            f'<div style="background:{bg};color:white;text-align:center;'
+            f'padding:10px 4px;border-radius:4px;font-size:16px;font-weight:bold;">'
+            f'{cr.weighted_score:.0f}</div></td>'
         )
     rows_html += f"<tr>{wt_row}</tr>"
 
-    html = f"""
+    st.html(f"""
     <div style="overflow-x:auto;margin-bottom:16px;">
-    <table style="border-collapse:collapse;width:100%;font-family:sans-serif;">
+    <table style="border-collapse:collapse;width:100%;font-family:sans-serif;border-radius:8px;overflow:hidden;">
     <thead><tr>{header_cells}</tr></thead>
     <tbody>{rows_html}</tbody>
     </table>
     </div>
-    """
-    st.html(html)
+    """)
 
     st.divider()
 
-    # ── KEY METRICS COMPARISON ─────────────────────────────────────────────
-    st.subheader("Key performance metrics")
-    metrics = [
-        ("Biogas", [f"{r.configs[k].biogas_m3_per_d:,.0f} m³/d" for k in included],
-         [f"{r.configs[k].biogas_uplift_pct:+.1f}%" for k in included]),
-        ("Cake DS%", [f"{r.configs[k].cake_ds_pct:.0f}%" for k in included],
-         [f"{r.configs[k].cake_vol_reduction_pct:+.0f}% vol" for k in included]),
-        ("Net electricity", [f"{r.configs[k].elec_net_kw:,.0f} kW" for k in included],
-         [f"{r.configs[k].elec_annual_mwh:,.0f} MWh/yr" for k in included]),
-        ("Centrate NH₄", [f"{r.configs[k].centrate_nh4_kg_per_d:.0f} kg/d" for k in included],
-         [f"{r.configs[k].centrate_pct_of_plant_tkn:.1f}% plant TKN" for k in included]),
-        ("Pathogen class", [r.configs[k].pathogen_class for k in included],
-         ["✅ Class A" if r.configs[k].class_a_achieved else "⚠️ Class B" for k in included]),
-        ("Net GHG", [f"{r.configs[k].net_ghg_kg_co2e_per_d:,.0f} kg/d" for k in included],
-         [f"{r.configs[k].net_ghg_t_co2e_per_yr:,.0f} t/yr" for k in included]),
-        ("OPEX total", [f"${r.configs[k].opex_total_per_yr/1e6:.2f}M/yr" for k in included],
-         [("—" if k == "base"
-           else f"${r.configs[k].opex_delta_vs_base_per_yr/1e6:+.2f}M vs base")
-          for k in included]),
-        ("CAPEX (mid)", [f"${r.configs[k].capex_mid_m:.1f}M" for k in included],
-         [f"${r.configs[k].capex_low_m:.0f}M – ${r.configs[k].capex_high_m:.0f}M ±30%"
-          for k in included]),
-    ]
-
-    r = result  # alias
-    metric_rows = [["Metric"] + [CONFIG_LABELS_SHORT[k] for k in included]]
-    for label, vals, deltas in metrics:
-        row_vals = [f"{v}\n{d}" for v, d in zip(vals, deltas)]
-        metric_rows.append([label] + row_vals)
-
-    df = pd.DataFrame(metric_rows[1:], columns=metric_rows[0])
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # ── PER-CONFIG DETAIL ──────────────────────────────────────────────────
+    # ── Per-config tabs ────────────────────────────────────────────
     st.subheader("Configuration detail")
-    tabs = st.tabs([CONFIG_LABELS_SHORT[k] for k in included])
-
+    tabs = st.tabs([
+        f"{'★ ' if result.configs[k].config_id == result.winner_id else ''}{CONFIG_LABELS_SHORT[k]}"
+        for k in included
+    ])
     for tab, cfg_id in zip(tabs, included):
         cr = result.configs[cfg_id]
         with tab:
             if cfg_id == result.winner_id:
-                st.success(f"★ **Recommended configuration** — weighted score {cr.weighted_score:.1f}/25")
+                st.success(f"★ Recommended — weighted score {cr.weighted_score:.0f}/100")
 
             st.markdown(cr.recommendation_text)
 
@@ -380,53 +385,47 @@ def render():
                 for b in cr.key_benefits:
                     st.markdown(f"✅ {b}")
             with bc2:
-                st.markdown("**Key risks**")
+                st.markdown("**Key risks / considerations**")
                 for r_item in cr.key_risks:
-                    st.warning(r_item, icon="⚠️")
+                    st.markdown(f"⚠️ {r_item}")
 
             st.markdown("**GHG breakdown (kg CO₂e/day)**")
-            ghg_cols = st.columns(4)
-            ghg_cols[0].metric("Scope 1", f"{cr.scope1_kg_co2e_per_d:,.0f}")
-            ghg_cols[1].metric("Scope 2", f"{cr.scope2_kg_co2e_per_d:,.0f}")
-            ghg_cols[2].metric("Scope 3", f"{cr.scope3_kg_co2e_per_d:,.0f}")
-            ghg_cols[3].metric("Net GHG", f"{cr.net_ghg_kg_co2e_per_d:,.0f}")
+            g1, g2, g3, g4 = st.columns(4)
+            g1.metric("Scope 1", f"{cr.scope1_kg_co2e_per_d:,.0f}")
+            g2.metric("Scope 2", f"{cr.scope2_kg_co2e_per_d:,.0f}")
+            g3.metric("Scope 3", f"{cr.scope3_kg_co2e_per_d:,.0f}")
+            g4.metric("Net GHG", f"{cr.net_ghg_kg_co2e_per_d:,.0f}")
 
-            with st.expander("Equipment list & CAPEX"):
-                st.markdown(
-                    f"**CAPEX estimate:** ${cr.capex_low_m:.1f}M – "
-                    f"${cr.capex_high_m:.1f}M  (mid: ${cr.capex_mid_m:.1f}M, ±30%)")
-                st.caption(cr.capex_note)
+            with st.expander("Equipment scope"):
                 for item in cr.equipment_list:
                     st.markdown(f"• {item}")
 
     st.divider()
 
-    # ── DOWNLOAD ───────────────────────────────────────────────────────────
+    # ── Download ───────────────────────────────────────────────────
     st.subheader("📄 Download report")
-    dl1, dl2 = st.columns([2, 5])
+    dl1, dl2 = st.columns([2, 3])
     with dl1:
         if st.button("Generate comparison report", type="secondary"):
-            with st.spinner("Building report (portrait + landscape appendix)..."):
+            with st.spinner("Building report..."):
                 try:
                     pdf = generate_comparison_report(
                         result,
                         project_name=st.session_state.get("cmp_project", "BioPoint Analysis"),
-                        prepared_by=st.session_state.get("cmp_prepby", "ph2o Consulting"),
+                        prepared_by=st.session_state.get("cmp_prepby",  "ph2o Consulting"),
                     )
                     st.session_state["cmp_report_pdf"] = pdf
-                    st.success("Report ready — click Download.")
+                    st.success("Report ready.")
                 except Exception as ex:
                     st.error(f"Report error: {ex}")
                     st.exception(ex)
     with dl2:
         if "cmp_report_pdf" in st.session_state:
-            proj_safe = st.session_state.get("cmp_project", "MAD").replace(" ", "_")
+            proj = st.session_state.get("cmp_project", "MAD").replace(" ", "_")
             st.download_button(
-                "⬇ Download PDF report",
+                "⬇ Download PDF",
                 data=st.session_state["cmp_report_pdf"],
-                file_name=f"MAD_Comparison_{proj_safe}.pdf",
+                file_name=f"MAD_Comparison_{proj}.pdf",
                 mime="application/pdf",
                 type="primary",
             )
-        else:
-            st.caption("Click Generate above after running the comparison.")
