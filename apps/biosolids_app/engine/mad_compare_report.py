@@ -421,6 +421,9 @@ def _ghg_section(story, S, result):
                 [PG(fmt_ghg(getattr(cr, 'scope1_n2o_kg_co2e_per_d',
                             cr.scope1_kg_co2e_per_d * 0.15)))
                  for cr in included])
+    rows.append([PG("Scope 1c — Supplementary boiler (gas combustion)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope1_boiler_kg_co2e_per_d', 0.0)))
+                 for cr in included])
     rows.append([PGH("Scope 1 Total")] +
                 [PGH(fmt_ghg(cr.scope1_kg_co2e_per_d)) for cr in included])
 
@@ -436,6 +439,9 @@ def _ghg_section(story, S, result):
     rows.append([PG("Scope 3b — Polymer production (upstream)")] +
                 [PG(fmt_ghg(getattr(cr, 'scope3_polymer_kg_co2e_per_d',
                             cr.scope3_kg_co2e_per_d * 0.5)))
+                 for cr in included])
+    rows.append([PG("Scope 3c — Supplementary boiler gas (upstream)")] +
+                [PG(fmt_ghg(getattr(cr, 'scope3_gas_upstream_kg_co2e_per_d', 0.0)))
                  for cr in included])
     rows.append([PGH("Scope 3 Total")] +
                 [PGH(fmt_ghg(cr.scope3_kg_co2e_per_d)) for cr in included])
@@ -472,6 +478,74 @@ def _ghg_section(story, S, result):
 
 
 # ── Disclaimer ─────────────────────────────────────────────────────────────
+
+def _heat_balance_section(story, S, result):
+    """Heat recovery — CHP waste heat vs THP steam + digester demand."""
+    story.append(_p("4. Heat Recovery & Steam Balance", S["h1"]))
+    story.append(_rule())
+    story.append(_p(
+        "CHP waste heat (jacket water + exhaust gas recovery, ~45% of fuel input) "
+        "is assessed against THP steam demand and digester heating requirements. "
+        "If CHP heat is sufficient, no supplementary gas boiler is needed — "
+        "eliminating Scope 1c and Scope 3c GHG. "
+        "SolidStream benefits from hot centrate recycle (~77°C) back to digesters, "
+        "reducing digester heating demand. "
+        "Source: Cambi Melbourne ETP memo 20.05.2026; standard CHP heat recovery literature.",
+        S["body"]))
+
+    included = [result.configs[k] for k in result.included_ids]
+    n        = len(included)
+    cw_label = 70*mm
+    cw_col   = (CONTENT_W_P - cw_label) / n
+    P  = lambda t: Paragraph(str(t), S["cell"])
+    PH = lambda t: Paragraph(str(t), S["cell_b"])
+
+    def fmt_kw(v):
+        return "0 kW" if abs(v) < 1 else f"{v:,.0f} kW"
+
+    chp_eff  = result.site.chp_eff_pct / 100.0
+    ds_total = result.site.ps_ds_tpd + result.site.was_ds_tpd
+
+    rows = [[PH("Heat Balance Component")] + [PH(cr.config_label) for cr in included]]
+    rows.append([P("CHP gross electrical output")] +
+                [P(fmt_kw(cr.elec_gross_kw)) for cr in included])
+    rows.append([P("CHP fuel input (LHV)")] +
+                [P(fmt_kw(cr.elec_gross_kw / max(chp_eff, 0.01))) for cr in included])
+    rows.append([P("CHP heat available (45% of fuel)")] +
+                [P(fmt_kw(cr.elec_gross_kw / max(chp_eff, 0.01) * 0.45)) for cr in included])
+    rows.append([P("THP steam demand")] +
+                [P(fmt_kw(getattr(cr, "thp_steam_demand_kw", 0.0))) for cr in included])
+    rows.append([P("Digester heating demand (gross)")] +
+                [P(fmt_kw(ds_total * 26.7)) for cr in included])
+    rows.append([P("Hot centrate heat credit (SolidStream)")] +
+                [P(fmt_kw(ds_total * 10.5 if cr.config_id == "solidstream" else 0.0))
+                 for cr in included])
+    rows.append([PH("Heat surplus (+) / deficit (-)")] +
+                [PH(fmt_kw(getattr(cr, "heat_surplus_kw", 0.0))) for cr in included])
+
+    suf_row = [PH("Heat self-sufficient?")]
+    for cr in included:
+        sufficient = getattr(cr, "heat_self_sufficient", True)
+        col = SAFE_GREEN if sufficient else WARN_AMBER
+        suf_row.append(Paragraph(
+            "Yes" if sufficient else "No — supplementary boiler required",
+            ParagraphStyle("hs", parent=S["cell_b"], textColor=col)))
+    rows.append(suf_row)
+
+    tbl = Table(rows, colWidths=[cw_label] + [cw_col]*n)
+    ts  = _tbl_style_base()
+    ts.add("WORDWRAP", (0,0), (-1,-1), "LTR")
+    tbl.setStyle(ts)
+    story.append(tbl)
+    story.append(_sp(3))
+    story.append(_p(
+        "At larger plant scales (>30 tDS/day) CHP waste heat almost always covers "
+        "both THP steam and digester heating with surplus remaining. "
+        "At small scales a supplementary boiler may be needed at low loads. "
+        "Surplus heat can be used for drying pre-heat, building services, or sludge pre-warming.",
+        S["small"]))
+
+
 def _disclaimer(story, S):
     story.append(PageBreak())
     story.append(_p("Disclaimer", S["h1"]))
@@ -816,6 +890,8 @@ def generate_comparison_report(result, project_name: str = None,
     _config_narratives(story_p, S, result)
     story_p.append(PageBreak())
     _opex_section(story_p, S, result)
+    story_p.append(PageBreak())
+    _heat_balance_section(story_p, S, result)
     story_p.append(_sp(4))
     _ghg_section(story_p, S, result)
     _disclaimer(story_p, S)
