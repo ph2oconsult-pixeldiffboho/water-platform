@@ -20,6 +20,7 @@ from engine.tier1_report import generate_tier1_report
 REGULATORY_OPTIONS = {
     "epa_vic":      "EPA Victoria",
     "sydney_water": "Sydney Water / NSW EPA",
+    "qld_des":      "Queensland DES / Seqwater / Council",
     "sa_water":     "SA Water / EPA South Australia",
     "wa_water":     "Water Corporation WA / DWER",
     "nz":           "Watercare / NZ EPA",
@@ -103,6 +104,22 @@ def render():
             list(REGULATORY_OPTIONS.keys()),
             format_func=lambda k: REGULATORY_OPTIONS[k],
             key="t1_regulatory")
+
+    with st.expander("Advanced GHG assumptions", expanded=False):
+        n2o_options = {
+            0.010: "IPCC default (0.010 kg N2O-N/kg N) — recommended for screening",
+            0.003: "Conservative (0.003) — well-managed application sites",
+            0.025: "High (0.025) — wet soils, high N loading",
+            0.000: "Zero — incineration / thermal treatment pathway (no land application)",
+        }
+        n2o_ef = st.selectbox("N₂O emission factor basis",
+            options=list(n2o_options.keys()),
+            format_func=lambda k: n2o_options[k],
+            index=0, key="t1_n2o_ef")
+        st.caption(
+            "The N2O emission factor is the single most influential assumption in the "
+            "GHG analysis for land-applied biosolids. Select Zero if the long-term "
+            "pathway is thermal treatment (incineration/pyrolysis) rather than land application.")
 
     with st.expander("Project background (optional)", expanded=False):
         client_context = st.text_area("Brief project description",
