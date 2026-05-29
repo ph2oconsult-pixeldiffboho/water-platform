@@ -19,6 +19,32 @@ from engine.mad_compare import (
 )
 from engine.mad_compare_report import generate_comparison_report
 
+
+def _from_mad(ss, mad_key, cmp_key, default):
+    """
+    Return value for a comparison input, preferring:
+    1. An already-set comparison value (cmp_key in session_state)
+    2. The MAD Analyser value (mad_key in session_state)
+    3. The hardcoded default
+    """
+    if cmp_key in ss and ss[cmp_key] != default:
+        return ss[cmp_key]          # user has already customised comparison inputs
+    if mad_key in ss:
+        return ss[mad_key]          # pull from MAD Analyser
+    return default
+
+
+def _mad_prefill_banner():
+    """Show a banner if comparison inputs were pre-filled from the MAD Analyser."""
+    import streamlit as st
+    mad_keys = ["mad_psV","mad_wasV","mad_psDS","mad_wasDS"]
+    if any(k in st.session_state for k in mad_keys):
+        st.info(
+            "📋 **Site inputs pre-filled from MAD Analyser.** "
+            "Expand Step 3 to review or adjust.",
+            icon=None,
+        )
+
 HEAT_COLOURS = {4:"#1b5e20", 3:"#558b2f", 2:"#f57f17", 1:"#b71c1c"}
 HEAT_TEXT    = {4:"white",   3:"white",   2:"black",   1:"white"}
 
@@ -81,6 +107,7 @@ def render():
         "Compare up to four digestion configurations against your project drivers. "
         "Select options, set priorities, then run."
     )
+    _mad_prefill_banner()
 
     # ═══════════════════════════════════════════════════════════════
     # STEP 1 — SELECT CONFIGURATIONS
@@ -151,28 +178,28 @@ def render():
         with si1:
             st.markdown("**Feed flows**")
             ps_ds  = st.number_input("PS dry solids (tDS/day)", 0.5, 500.0,
-                st.session_state.get("cmp_ps_ds", 6.0), step=0.5, key="cmp_ps_ds")
+                _from_mad(st.session_state,"mad_psDS","cmp_ps_ds",6.0), step=0.5, key="cmp_ps_ds")
             was_ds = st.number_input("WAS dry solids (tDS/day)", 0.5, 500.0,
-                st.session_state.get("cmp_was_ds", 4.0), step=0.5, key="cmp_was_ds")
+                _from_mad(st.session_state,"mad_wasDS","cmp_was_ds",4.0), step=0.5, key="cmp_was_ds")
             ps_vs  = st.number_input("PS volatile solids (% DS)", 50.0, 90.0,
-                st.session_state.get("cmp_ps_vs", 75.0), step=1.0, key="cmp_ps_vs")
+                _from_mad(st.session_state,"mad_psVS","cmp_ps_vs",75.0), step=1.0, key="cmp_ps_vs")
             was_vs = st.number_input("WAS volatile solids (% DS)", 45.0, 85.0,
-                st.session_state.get("cmp_was_vs", 70.0), step=1.0, key="cmp_was_vs")
+                _from_mad(st.session_state,"mad_wasVS","cmp_was_vs",70.0), step=1.0, key="cmp_was_vs")
             ps_n   = st.number_input("PS nitrogen (% DS)", 1.0, 8.0,
-                st.session_state.get("cmp_ps_n", 3.0), step=0.1, key="cmp_ps_n")
+                _from_mad(st.session_state,"mad_psN","cmp_ps_n",3.0), step=0.1, key="cmp_ps_n")
             was_n  = st.number_input("WAS nitrogen (% DS)", 4.0, 15.0,
-                st.session_state.get("cmp_was_n", 8.5), step=0.1, key="cmp_was_n")
+                _from_mad(st.session_state,"mad_wasN","cmp_was_n",8.5), step=0.1, key="cmp_was_n")
 
         with si2:
             st.markdown("**Digester geometry**")
             ps_ts  = st.number_input("PS feed TS% (base case)", 2.0, 12.0,
-                st.session_state.get("cmp_ps_ts", 4.0), step=0.5, key="cmp_ps_ts")
+                _from_mad(st.session_state,"mad_psTS","cmp_ps_ts",4.0), step=0.5, key="cmp_ps_ts")
             was_ts = st.number_input("WAS feed TS% (base case)", 2.0, 12.0,
-                st.session_state.get("cmp_was_ts", 4.0), step=0.5, key="cmp_was_ts")
+                _from_mad(st.session_state,"mad_wasTS","cmp_was_ts",4.0), step=0.5, key="cmp_was_ts")
             ps_vol  = st.number_input("PS digester volume (m³)", 100.0, 200000.0,
-                st.session_state.get("cmp_ps_vol", 3000.0), step=100.0, key="cmp_ps_vol")
+                _from_mad(st.session_state,"mad_psV","cmp_ps_vol",3000.0), step=100.0, key="cmp_ps_vol")
             was_vol = st.number_input("WAS digester volume (m³)", 100.0, 200000.0,
-                st.session_state.get("cmp_was_vol", 1200.0), step=100.0, key="cmp_was_vol")
+                _from_mad(st.session_state,"mad_wasV","cmp_was_vol",1200.0), step=100.0, key="cmp_was_vol")
             st.markdown("**Recup thickening target TS%**")
             recup_ps_ts  = st.number_input("Recup PS TS%", 4.0, 12.0,
                 st.session_state.get("cmp_recup_ps_ts", 6.0), step=0.5, key="cmp_recup_ps_ts",
@@ -215,11 +242,11 @@ def render():
         rc1, rc2 = st.columns(2)
         with rc1:
             st.text_input("Project name",
-                st.session_state.get("cmp_project", "BioPoint Analysis"),
+                _from_mad(st.session_state,"mad_project_name","cmp_project","BioPoint Analysis"),
                 key="cmp_project")
         with rc2:
             st.text_input("Prepared by",
-                st.session_state.get("cmp_prepby", "ph2o Consulting"),
+                _from_mad(st.session_state,"mad_prepared_by","cmp_prepby","ph2o Consulting"),
                 key="cmp_prepby")
 
     # ═══════════════════════════════════════════════════════════════
