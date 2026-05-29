@@ -251,6 +251,7 @@ elif _active == "biosolids":
         "🔬 MAD Analyser":        "07_mad",
         "🌍 Carbon & GHG":         "08_carbon",
         "⚖️ Config Comparison":     "09_compare",
+        "🔀 Mass & Energy Flow":    "10_sankey",
         "📖  User Manual":          "06_manual",
     }
     if st.session_state.get("_app_context") != "biosolids":
@@ -284,6 +285,8 @@ elif _active == "biosolids":
         from apps.biosolids_app.pages import page_08_carbon; page_08_carbon.render()
     elif page_key == "09_compare":
         from apps.biosolids_app.pages import page_09_compare; page_09_compare.render()
+    elif page_key == "10_sankey":
+        from apps.biosolids_app.pages import page_10_sankey; page_10_sankey.render()
     elif page_key == "06_manual":
         from apps.biosolids_app.pages import page_06_manual; page_06_manual.render()
     _bp_sidebar.markdown("<div class='sb-footer'>BioPoint V1<br>ph2o Consulting</div>", unsafe_allow_html=True)
