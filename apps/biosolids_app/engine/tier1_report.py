@@ -20,10 +20,16 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.tableofcontents import TableOfContents
 
-from tier1_data import (
-    Tier1ReportData, CAPEX_BANDS, CAPEX_STARS, narrative_feed,
-    narrative_comparison_executive, narrative_ghg, narrative_next_steps,
-)
+try:
+    from engine.tier1_data import (
+        Tier1ReportData, CAPEX_BANDS, CAPEX_STARS, narrative_feed,
+        narrative_comparison_executive, narrative_ghg, narrative_next_steps,
+    )
+except ImportError:
+    from tier1_data import (
+        Tier1ReportData, CAPEX_BANDS, CAPEX_STARS, narrative_feed,
+        narrative_comparison_executive, narrative_ghg, narrative_next_steps,
+    )
 
 # ── Brand colours ─────────────────────────────────────────────────────────
 PH2O_BLUE   = colors.HexColor("#1a3a5c")
@@ -666,7 +672,10 @@ def _assessment_framework(story, S, d: Tier1ReportData, section_num: int):
     # Driver summary table
     story.append(_p("Project Driver Weightings Applied", S["h2"]))
     if d.cmp_result:
-        from engine.mad_compare import DRIVER_LABELS, DRIVER_DESCRIPTIONS, DRIVER_IDS
+        try:
+            from engine.mad_compare import DRIVER_LABELS, DRIVER_DESCRIPTIONS, DRIVER_IDS
+        except ImportError:
+            from mad_compare import DRIVER_LABELS, DRIVER_DESCRIPTIONS, DRIVER_IDS
         weights = d.cmp_result.driver_weights
         rows = [[PH("Driver", S), PH("Weight", S), PH("Description", S)]]
         for drv in DRIVER_IDS:
