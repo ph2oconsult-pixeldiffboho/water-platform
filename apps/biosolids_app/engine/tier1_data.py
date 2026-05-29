@@ -115,7 +115,13 @@ def check_data_gate(ss: dict) -> GateResult:
     avail    = {}
 
     # ── Mandatory: MAD Analyser ───────────────────────────────────────────
-    mad_run = any(k in ss for k in ["mad_psV", "mad_psDS", "mad_psTS"])
+    # MAD considered run if: widget keys exist (page visited + widgets rendered),
+    # OR mad_result saved, OR cmp_result exists (comparison implies MAD was run)
+    mad_run = (
+        any(k in ss for k in ["mad_psV", "mad_psDS", "mad_psTS", "mad_result",
+                              "mad_inputs"])
+        or "cmp_result" in ss
+    )
     if not mad_run:
         missing.append("MAD Analyser has not been run — navigate to 🔬 MAD Analyser "
                         "and run at least one configuration.")
