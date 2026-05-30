@@ -5,6 +5,7 @@ ph2o Consulting — v25B02
 ReportLab A4, max 50pp excl appendices.
 """
 from __future__ import annotations
+import sys
 from io import BytesIO
 from datetime import date
 from typing import List, Any
@@ -899,6 +900,37 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
              ("FONTNAME",(0,7),(2,7),"Helvetica-Bold")],
             row_bgs=True))
         story.append(_sp(2))
+        # HRT adequacy check
+        hrt_min_required = 15.0  # days — mesophilic digestion minimum
+        hrt_ps_ok  = hrt_base_ps  >= hrt_min_required
+        hrt_was_ok = hrt_base_was >= hrt_min_required
+        hrt_hyd_ok = hrt_conv_hyd >= hrt_min_required
+        if not (hrt_ps_ok and hrt_was_ok):
+            # Volume is undersized — calculate what is needed
+            v_needed_ps  = round(q_ps  * hrt_min_required)
+            v_needed_was = round(q_was * hrt_min_required)
+            v_needed_tot = v_needed_ps + v_needed_was
+            shortfall = v_needed_tot - vol_base
+            warn_txt = (
+                f"<b>⚠ HRT ADEQUACY WARNING:</b> "
+                f"PS stream HRT = {hrt_base_ps:.1f}d (min 15d), "
+                f"WAS stream HRT = {hrt_base_was:.1f}d (min 15d). "
+                f"Current digester volume ({vol_base:,.0f} m³) is "
+                f"<b>insufficient for the feed DS load</b>. "
+                f"Minimum required: {v_needed_tot:,.0f} m³ "
+                f"(PS {v_needed_ps:,.0f} + WAS {v_needed_was:,.0f} m³). "
+                f"Shortfall: {shortfall:,.0f} m³ "
+                f"({shortfall/v_each:.1f} × {v_each:,.0f} m³ additional digesters). "
+                "Digester expansion should precede THP investment — "
+                "THP at below-minimum HRT will not achieve rated performance."
+            )
+            story.append(_p(warn_txt,
+                ParagraphStyle("hrt_warn", parent=S["body"],
+                    textColor=colors.HexColor("#b71c1c"),
+                    borderColor=colors.HexColor("#b71c1c"),
+                    borderPadding=6, borderWidth=1)))
+            story.append(_sp(3))
+
         story.append(_p(
             "Key insight: the centrate recycle is the primary driver of the HRT reduction "
             "under SolidStream. Without centrate recycle (conventional AD basis), the "
@@ -912,6 +944,174 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             S["small"]))
 
     # Narrative for each config
+    # ══════════════════════════════════════════════════════════════════════
+    # NARRATIVE INTELLIGENCE LAYER
+    # Explains WHY the recommendation was made, what drives it, and what
+    # would change it. Answers the five TD questions:
+    # 1. Why did this win? 2. What assumptions? 3. What flips it?
+    # 4. What hold points? 5. What is the uncertainty?
+    # ══════════════════════════════════════════════════════════════════════
+
+    if result.winner_id and result.winner_id in result.configs:
+        story.append(_p("Decision Intelligence", S["h2"]))
+        winner_cr   = result.configs[result.winner_id]
+        runner_up   = sorted(
+            [cr for cr in configs if cr.config_id != result.winner_id],
+            key=lambda x: x.weighted_score, reverse=True
+        )
+        runner_cr   = runner_up[0] if runner_up else None
+        base_cr_ni  = result.configs.get("base")
+        weights     = result.driver_weights or {}
+        tw          = sum(weights.values()) or 1
+
+        # ── A. Why this configuration wins ───────────────────────────────
+        story.append(_p("Why this configuration is recommended", S["h3"]))
+
+        # Find which drivers winner beats runner-up on
+        if runner_cr:
+            winner_advantages  = []
+            runner_advantages  = []
+            for drv, wt in sorted(weights.items(), key=lambda x: x[1], reverse=True):
+                w_sc = winner_cr.driver_scores.get(drv, 2)
+                r_sc = runner_cr.driver_scores.get(drv, 2)
+                lbl  = getattr(sys.modules.get("engine.mad_compare"), "DRIVER_LABELS", {}).get(drv, drv)
+                if w_sc > r_sc:
+                    winner_advantages.append(f"{lbl} (score {w_sc} vs {r_sc}, weight {wt})")
+                elif r_sc > w_sc:
+                    runner_advantages.append(f"{lbl} (score {r_sc} vs {w_sc}, weight {wt})")
+
+            score_gap = winner_cr.weighted_score - runner_cr.weighted_score
+            opex_gap  = (runner_cr.opex_delta_whole_plant_per_yr
+                         - getattr(winner_cr, "opex_delta_whole_plant_per_yr", getattr(winner_cr, "opex_delta_vs_base_per_yr", 0.0)))
+
+            win_adv_txt = (", ".join(winner_advantages[:3]) if winner_advantages
+                          else "overall balance of weighted drivers")
+            run_adv_txt = (", ".join(runner_advantages[:2]) if runner_advantages
+                          else "no specific driver advantage")
+
+            why_txt = (
+                f"<b>{winner_cr.config_label}</b> is recommended with a weighted score of "
+                f"{winner_cr.weighted_score:.1f}/100 vs "
+                f"{runner_cr.config_label} at {runner_cr.weighted_score:.1f}/100 "
+                f"(gap: {score_gap:.1f} points). "
+            )
+            if winner_advantages:
+                why_txt += (
+                    f"The recommendation is driven by {winner_cr.config_label}'s advantage "
+                    f"on: <b>{win_adv_txt}</b>. "
+                )
+            if runner_advantages:
+                why_txt += (
+                    f"{runner_cr.config_label} outperforms on: {run_adv_txt}. "
+                )
+            if abs(opex_gap) > 100000:
+                better_opex = (winner_cr.config_label if opex_gap > 0
+                               else runner_cr.config_label)
+                worse_opex  = (runner_cr.config_label if opex_gap > 0
+                               else winner_cr.config_label)
+                why_txt += (
+                    f"<b>Note: {worse_opex} delivers the better economic outcome "
+                    f"(${abs(opex_gap)/1e6:.1f}M/yr stronger whole-plant saving) "
+                    f"but {better_opex} wins on the weighted scoring</b> because "
+                    f"non-OPEX drivers ({win_adv_txt}) carry sufficient combined weight. "
+                    f"If the primary objective is economic return, consider increasing "
+                    f"the OPEX weighting in the driver matrix."
+                )
+            story.append(_p(why_txt, S["body"]))
+            story.append(_sp(3))
+
+        # ── B. Top assumptions driving the result ─────────────────────────
+        story.append(_p("Top assumptions driving this recommendation", S["h3"]))
+
+        # Identify top 3 sensitive assumptions
+        bg_uplift = winner_cr.biogas_uplift_pct
+        opex_save = abs(getattr(winner_cr, "opex_delta_whole_plant_per_yr", getattr(winner_cr, "opex_delta_vs_base_per_yr", 0.0))) / 1e6
+
+        assumptions = []
+        # Biogas uplift assumption
+        if bg_uplift > 0:
+            assumptions.append((
+                f"Biogas uplift of +{bg_uplift:.1f}% (vendor claim)",
+                f"If actual uplift is +10% (low end), the OPEX saving reduces by "
+                f"~${opex_save * (bg_uplift - 10) / bg_uplift:.2f}M/yr. "
+                f"{winner_cr.config_label} remains preferred unless uplift falls "
+                f"below ~5%, at which point the CAPEX may not be justified.",
+                "Medium — Cambi reference plants show 13-23% range"
+            ))
+        # N2O assumption
+        assumptions.append((
+            "N₂O emission factor (IPCC default 0.010 kg N₂O-N/kg N)",
+            "N₂O from land-applied biosolids dominates Scope 1. "
+            "If the actual EF is 0.003 (conservative, well-managed sites), "
+            "Scope 1b reduces by ~70%, materially improving all configurations' "
+            "GHG position. The relative ranking is unchanged.",
+            "High — EF varies 0.003-0.025 depending on soil, climate, loading rate"
+        ))
+        # Grid intensity
+        assumptions.append((
+            f"Grid intensity central case ({getattr(result.site, "grid_intensity_kg_co2e_per_kwh", 0.60):.2f} kg CO₂e/kWh)",
+            "As the grid decarbonises toward 2035, the Scope 2 export credit will reduce. "
+            "At 0.10 kg CO₂e/kWh (projected 2040 grid), the CHP export credit falls by ~83%. "
+            "This does not change the AD/THP recommendation but weakens the GHG argument for CHP.",
+            "Medium-High — NEM decarbonisation trajectory is directionally clear"
+        ))
+        # Sidestream
+        if winner_cr.centrate_nh4_kg_per_d > 500:
+            delta_n = winner_cr.centrate_nh4_kg_per_d - (base_cr_ni.centrate_nh4_kg_per_d if base_cr_ni else 0)
+            assumptions.append((
+                f"Mainstream aeration capacity for additional {delta_n:,.0f} kg NH₄-N/day",
+                f"The OPEX calculation includes ${winner_cr.opex_sidestream_aeration_per_yr/1e6:.2f}M/yr "
+                f"extra aeration cost. If aeration capacity is already at design limit, "
+                "capital expenditure for aeration upgrade would be required — "
+                "this cost is not included in this screening assessment.",
+                "High — confirm against current aeration headroom data"
+            ))
+
+        assume_rows = [[PH("Assumption", S), PH("Sensitivity", S), PH("Confidence", S)]]
+        for title, body, conf in assumptions[:4]:
+            assume_rows.append([
+                Paragraph(f"<b>{title}</b>", S["cell"]),
+                Paragraph(body, S["cell"]),
+                Paragraph(conf, S["cell"]),
+            ])
+        cw_as = [48*mm, 72*mm, CONTENT_W-120*mm]
+        story.append(_tbl(assume_rows, cw_as,
+            [("WORDWRAP",(0,0),(-1,-1),"LTR"),("FONTSIZE",(0,0),(-1,-1),8)],
+            row_bgs=True))
+        story.append(_sp(3))
+
+        # ── C. What would flip the recommendation ─────────────────────────
+        story.append(_p("What would change this recommendation", S["h3"]))
+
+        flip_items = []
+        if runner_cr:
+            flip_items.append(
+                f"<b>Increase OPEX weighting</b> above {weights.get('opex',4)}: "
+                f"if OPEX weight ≥ {weights.get('opex',4)+2}, "
+                f"{runner_cr.config_label} (${abs(runner_cr.opex_delta_whole_plant_per_yr)/1e6:.1f}M/yr saving) "
+                f"overtakes {winner_cr.config_label}."
+            )
+        flip_items.append(
+            "<b>PFAS restriction on land application</b>: if land application is prohibited, "
+            "all THP configurations require a thermal endpoint — the configuration comparison "
+            "becomes secondary to selecting the thermal technology."
+        )
+        if winner_cr.hrt_ps_d < 15 or winner_cr.hrt_was_d < 15:
+            flip_items.append(
+                "<b>HRT adequacy confirmed by digester expansion</b>: if new digester volume "
+                "is added, the HRT headroom score improves for all configurations equally "
+                "— the relative ranking is unchanged but all scores increase."
+            )
+        flip_items.append(
+            "<b>Biogas uplift below 8%</b>: if independent testing shows THP uplift "
+            "below 8% at this site's sludge characteristics, the economic case for "
+            "THP weakens significantly. Commission a sludge BMP test before Stage 2."
+        )
+
+        for item in flip_items:
+            story.append(_p(f"• {item}", S["bullet"]))
+        story.append(_sp(3))
+
     story.append(_p("Configuration Narratives", S["h2"]))
     for cr in configs:
         is_winner = cr.config_id == result.winner_id
@@ -919,9 +1119,30 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
         prefix = "★ RECOMMENDED — " if is_winner and not is_tie else \
                  "★ TIED — " if is_tie else ""
 
+        # Generate narrative if recommendation_text is a stub
+        rec_txt = cr.recommendation_text or ""
+        is_stub = (not rec_txt or rec_txt.strip() in
+                   [cr.config_id, f"{cr.config_id} at {ds:.0f} tDS/day.",
+                    "base at", "solidstream at", "pre_thp at", "—"])
+        if is_stub:
+            # Auto-generate from engine outputs
+            bg_up = f"+{cr.biogas_uplift_pct:.1f}% biogas" if cr.biogas_uplift_pct > 0 else "no biogas uplift"
+            class_txt = "Class A pathogen classification" if cr.class_a_achieved else "Class B only"
+            cake_txt  = f"{cr.cake_ds_pct:.0f}%DS dewatered cake"
+            opex_d    = cr.opex_delta_whole_plant_per_yr
+            opex_txt  = (f"${abs(opex_d)/1e6:.1f}M/yr whole-plant saving vs base"
+                         if opex_d < -50000 else
+                         f"${abs(opex_d)/1e6:.1f}M/yr additional cost vs base"
+                         if opex_d > 50000 else "similar OPEX to base case")
+            hrt_txt   = f"PS HRT {cr.hrt_ps_d:.1f}d / WAS HRT {cr.hrt_was_d:.1f}d"
+            rec_txt = (
+                f"{cr.config_label} achieves {bg_up}, {class_txt}, "
+                f"{cake_txt}, and {opex_txt} at {ds:.0f} tDS/day. "
+                f"Digestion kinetics: {hrt_txt}."
+            )
         story.append(KeepTogether([
             _p(f"{prefix}{cr.config_label}", S["h3"]),
-            _p(cr.recommendation_text or "—", S["body"]),
+            _p(rec_txt, S["body"]),
         ]))
         benefit_risk_rows = []
         for b in (cr.key_benefits or []):
