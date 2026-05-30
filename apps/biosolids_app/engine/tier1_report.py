@@ -938,15 +938,35 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             v_needed_tot = v_needed_ps + v_needed_was
             shortfall = v_needed_tot - vol_base
             warn_txt = (
-                f"<b>⚠ HRT ADEQUACY WARNING:</b> "
-                f"PS stream HRT = {hrt_base_ps:.1f}d (min 15d), "
-                f"WAS stream HRT = {hrt_base_was:.1f}d (min 15d). "
-                f"Current digester volume ({vol_base:,.0f} m³) is "
+                f"<b>\u26a0 HRT ADEQUACY WARNING:</b> "
+            )
+            if not hrt_ps_ok and not hrt_was_ok:
+                warn_txt += (
+                    f"PS stream HRT = {hrt_base_ps:.1f}d (BELOW 15d minimum) and "
+                    f"WAS stream HRT = {hrt_base_was:.1f}d (BELOW 15d minimum). "
+                    "Both streams require additional digester volume. "
+                )
+            elif not hrt_was_ok:
+                warn_txt += (
+                    f"PS stream HRT = {hrt_base_ps:.1f}d (above 15d minimum). "
+                    f"WAS stream HRT = {hrt_base_was:.1f}d (<b>BELOW 15d minimum "
+                    "— WAS is the controlling constraint</b>). "
+                    "WAS digestion kinetics (k\u22480.12/day) are slower than PS "
+                    "and WAS HRT controls stabilisation quality and pathogen kill. "
+                )
+            else:  # only PS below
+                warn_txt += (
+                    f"WAS stream HRT = {hrt_base_was:.1f}d (above 15d minimum). "
+                    f"PS stream HRT = {hrt_base_ps:.1f}d (<b>BELOW 15d minimum "
+                    "— PS volume requires expansion</b>). "
+                )
+            warn_txt += (
+                f"Current digester volume ({vol_base:,.0f} m\u00b3) is "
                 f"<b>insufficient for the feed DS load</b>. "
-                f"Minimum required: {v_needed_tot:,.0f} m³ "
-                f"(PS {v_needed_ps:,.0f} + WAS {v_needed_was:,.0f} m³). "
-                f"Shortfall: {shortfall:,.0f} m³ "
-                f"({shortfall/v_each:.1f} × {v_each:,.0f} m³ additional digesters). "
+                f"Minimum required: {v_needed_tot:,.0f} m\u00b3 "
+                f"(PS {v_needed_ps:,.0f} + WAS {v_needed_was:,.0f} m\u00b3). "
+                f"Shortfall: {shortfall:,.0f} m\u00b3 "
+                f"({shortfall/v_each:.1f} \u00d7 {v_each:,.0f} m\u00b3 additional digesters). "
                 "Digester expansion should precede THP investment — "
                 "THP at below-minimum HRT will not achieve rated performance."
             )
@@ -1058,12 +1078,31 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             run_adv_txt = (", ".join(runner_advantages[:2]) if runner_advantages
                           else "no specific driver advantage")
 
-            why_txt = (
-                f"<b>{winner_cr.config_label}</b> is recommended with a weighted score of "
-                f"{winner_cr.weighted_score:.1f}/100 vs "
-                f"{runner_cr.config_label} at {runner_cr.weighted_score:.1f}/100 "
-                f"(gap: {score_gap:.1f} points). "
-            )
+            # Build opening: include OPEX trade-off if economic winner differs from scoring winner
+            _w_opex = getattr(winner_cr, "opex_delta_whole_plant_per_yr",
+                              getattr(winner_cr, "opex_delta_vs_base_per_yr", 0))
+            _r_opex = getattr(runner_cr, "opex_delta_whole_plant_per_yr",
+                              getattr(runner_cr, "opex_delta_vs_base_per_yr", 0))
+            _opex_penalty = _w_opex - _r_opex  # positive = winner costs more than runner
+            if _opex_penalty > 200000:  # winner costs >$200k/yr more than runner
+                why_txt = (
+                    f"<b>This recommendation accepts a ${_opex_penalty/1e6:.1f}M/yr "
+                    f"whole-plant OPEX penalty</b> compared with {runner_cr.config_label}, "
+                    f"in exchange for {winner_cr.config_label}'s advantages on "
+                    "biosolids quality, energy recovery, and digester headroom. "
+                    "The Board should confirm this trade-off explicitly. "
+                    f"<b>{winner_cr.config_label}</b> is recommended with a weighted score of "
+                    f"{winner_cr.weighted_score:.1f}/100 vs "
+                    f"{runner_cr.config_label} at {runner_cr.weighted_score:.1f}/100 "
+                    f"(gap: {score_gap:.1f} points). "
+                )
+            else:
+                why_txt = (
+                    f"<b>{winner_cr.config_label}</b> is recommended with a weighted score of "
+                    f"{winner_cr.weighted_score:.1f}/100 vs "
+                    f"{runner_cr.config_label} at {runner_cr.weighted_score:.1f}/100 "
+                    f"(gap: {score_gap:.1f} points). "
+                )
             if winner_advantages:
                 why_txt += (
                     f"The recommendation is driven by {winner_cr.config_label}'s advantage "
@@ -1084,9 +1123,7 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                     f"but {better_opex} wins on the weighted scoring</b> because "
                     f"non-OPEX drivers ({win_adv_txt}) carry sufficient combined weight. "
                     f"If the primary objective is economic return, consider increasing "
-                    f"the OPEX weighting in the driver matrix. "
-                    f"Implied value assigned to non-OPEX advantages: "
-                    f">=${abs(opex_gap)/1e6:.1f}M/yr."
+                    f"the OPEX weighting in the driver matrix."
                 )
             story.append(_p(why_txt, S["body"]))
             story.append(_sp(3))
@@ -1205,15 +1242,38 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
         r_name     = runner_cr.config_label if runner_cr else ""
 
         if not hrt_ok_ec:
+            # Determine which stream(s) are below minimum
+            if not hrt_ps_ok and not hrt_was_ok:
+                _hrt_detail = (
+                    f"PS HRT of {hrt_ps_ec:.1f}d and WAS HRT of {hrt_was_ec:.1f}d "
+                    "are both below the 15-day minimum for stable mesophilic digestion. "
+                    "Digester expansion is required on both streams. "
+                )
+                _hrt_action = "achieve \u226515d HRT on both streams"
+            elif not hrt_was_ok:
+                _hrt_detail = (
+                    f"PS HRT of {hrt_ps_ec:.1f}d exceeds the minimum requirement. "
+                    f"However, <b>WAS HRT of {hrt_was_ec:.1f}d is below the 15-day minimum "
+                    "and is the controlling constraint.</b> "
+                    "WAS hydrolysis kinetics are slower than PS (k\u22480.12/day vs 0.25/day) "
+                    "and WAS HRT sets the performance ceiling for the blended system. "
+                )
+                _hrt_action = "achieve \u226515d WAS HRT (the controlling stream)"
+            else:  # only PS below
+                _hrt_detail = (
+                    f"WAS HRT of {hrt_was_ec:.1f}d exceeds the minimum requirement. "
+                    f"However, <b>PS HRT of {hrt_ps_ec:.1f}d is below the 15-day minimum "
+                    "and risks incomplete primary sludge stabilisation.</b> "
+                )
+                _hrt_action = "achieve \u226515d PS HRT"
             challenge_txt = (
                 "The principal constraint at this plant is not biosolids quality — "
                 "it is <b>inadequate digester retention time</b>. "
-                f"PS HRT of {hrt_ps_ec:.1f}d and WAS HRT of {hrt_was_ec:.1f}d are both "
-                "below the 15-day minimum for stable mesophilic digestion. "
+                + _hrt_detail +
                 "<b>THP investment without digester expansion risks chronic underperformance "
                 "and should not proceed until minimum retention requirements are confirmed.</b> "
-                "Priority action: design digester expansion to achieve "
-                "≥15d HRT on both streams before committing to THP procurement."
+                f"Priority action: design digester expansion to {_hrt_action} "
+                "before committing to THP procurement."
             )
         elif pfas_ec in ("high", "critical"):
             challenge_txt = (
@@ -3014,22 +3074,37 @@ def _executive_dashboard(story, S, d: Tier1ReportData):
     bg_uplift   = getattr(winner, "biogas_uplift_pct", 14.0)
     land_viable = getattr(d, "pfas_land_app_viable", True)
 
-    # Confidence
-    constraints = sum([not hrt_ok, pfas_risk in ("high","critical"), not land_viable])
-    if score_gap >= 10 and constraints == 0:
-        conf_level = "HIGH"; conf_col = colors.HexColor("#1b5e20"); conf_dot = "●○○"
-    elif score_gap >= 5 and constraints <= 1:
+    # Weighted confidence scoring (4 factors x 25%)
+    # Factor 1: Score gap
+    f_score = 3 if score_gap >= 10 else (2 if score_gap >= 5 else 1)
+    # Factor 2: HRT certainty
+    hrt_ps_c  = getattr(winner, "hrt_ps_d",  18.0) >= 14.5
+    hrt_was_c = getattr(winner, "hrt_was_d", 18.0) >= 14.5
+    f_hrt = 3 if (hrt_ps_c and hrt_was_c) else (2 if (hrt_ps_c or hrt_was_c) else 1)
+    # Factor 3: Vendor assumption (biogas uplift range)
+    f_vendor = 3 if bg_uplift < 8 else (2 if bg_uplift <= 18 else 1)
+    # Factor 4: Regulatory / land use certainty
+    if land_viable and pfas_risk in ("unknown", "low"):
+        f_reg = 3
+    elif pfas_risk == "medium" or (land_viable and pfas_risk == "high"):
+        f_reg = 2
+    else:
+        f_reg = 1
+    conf_score = (f_score + f_hrt + f_vendor + f_reg) / 4  # 1.0-3.0
+    if conf_score >= 2.5:
+        conf_level = "HIGH";   conf_col = colors.HexColor("#1b5e20"); conf_dot = "●○○"
+    elif conf_score >= 1.75:
         conf_level = "MEDIUM"; conf_col = colors.HexColor("#e65100"); conf_dot = "○●○"
     else:
-        conf_level = "LOW"; conf_col = colors.HexColor("#b71c1c"); conf_dot = "○○●"
+        conf_level = "LOW";    conf_col = colors.HexColor("#b71c1c"); conf_dot = "○○●"
 
-    # Decision risk
+    # Decision risk (driven by consequences, not just score gap)
     if not hrt_ok or pfas_risk == "critical" or not land_viable:
-        risk_level = "HIGH"; risk_col = colors.HexColor("#b71c1c"); risk_dot = "○○●"
-    elif pfas_risk in ("high", "medium") or not hrt_ok or bg_uplift < 10:
+        risk_level = "HIGH";   risk_col = colors.HexColor("#b71c1c"); risk_dot = "○○●"
+    elif pfas_risk in ("high", "medium") or not (hrt_ps_c and hrt_was_c) or bg_uplift < 10:
         risk_level = "MEDIUM"; risk_col = colors.HexColor("#e65100"); risk_dot = "○●○"
     else:
-        risk_level = "LOW"; risk_col = colors.HexColor("#1b5e20"); risk_dot = "●○○"
+        risk_level = "LOW";    risk_col = colors.HexColor("#1b5e20"); risk_dot = "●○○"
 
     # ── Critical assumptions ranked by impact ─────────────────────────────
     assumptions = []
@@ -3264,6 +3339,178 @@ def _executive_dashboard(story, S, d: Tier1ReportData):
 
 
 
+
+
+def _recommendation_robustness(story, S, d: Tier1ReportData, section_num: int):
+    """Recommendation Robustness Table — how winner changes under different scenarios."""
+    story.append(_p(f"{section_num}. Recommendation Robustness", S["h1"]))
+    story.append(_section_rule())
+    story.append(_p(
+        "The weighted scoring model reflects one set of priorities. "
+        "This section tests how the recommendation changes if key assumptions or "
+        "client priorities differ from the base case. "
+        "A robust recommendation is one that wins across most plausible scenarios.",
+        S["body"]))
+    story.append(_sp(3))
+
+    result  = d.cmp_result
+    if not result:
+        story.append(_p("Comparison data not available.", S["body"]))
+        return
+
+    configs  = {k: v for k, v in result.configs.items() if v.included}
+    weights  = result.driver_weights or {}
+    base_w   = result.winner_id
+
+    def rescore(weight_overrides):
+        """Re-run weighted scoring with modified weights. Returns {config_id: score}."""
+        new_w = {**weights, **weight_overrides}
+        tw    = sum(new_w.values()) or 1
+        scores = {}
+        for cid, cr in configs.items():
+            raw = sum(cr.driver_scores.get(d, 2) * new_w.get(d, 3)
+                      for d in new_w)
+            scores[cid] = round(raw / (4 * tw) * 100, 1)
+        return scores
+
+    def winner_of(scores):
+        return max(scores, key=scores.get)
+
+    # Define scenarios
+    SCENARIOS = [
+        ("Base case (current weights)",
+         {},
+         "Current client priority weighting applied."),
+        ("Low biogas uplift (<10% confirmed by BMP test)",
+         {"energy": max(1, weights.get("energy", 3) - 2)},
+         "If independent BMP testing shows <10% uplift, energy driver weight halved."),
+        ("OPEX priority (CFO / infrastructure fund lens)",
+         {"opex": min(5, weights.get("opex", 4) + 2),
+          "capex": min(5, weights.get("capex", 2) + 1)},
+         "Board prioritises whole-plant cost reduction above all other drivers."),
+        ("PFAS — land application banned (regulatory shock)",
+         {"return_load": min(5, weights.get("return_load", 2) + 2),
+          "biosolids": min(5, weights.get("biosolids", 5))},
+         "If land application is prohibited, return load and biosolids quality become critical."),
+        ("Carbon priority (net zero mandate)",
+         {"carbon": min(5, weights.get("carbon", 3) + 2),
+          "energy": min(5, weights.get("energy", 3) + 1)},
+         "Utility adopts net zero target — GHG and energy recovery weighted more heavily."),
+        ("Headroom priority (high growth catchment)",
+         {"headroom": min(5, weights.get("headroom", 4) + 1),
+          "biosolids": min(5, weights.get("biosolids", 5))},
+         "Catchment projected to grow >20% — digester capacity becomes the primary constraint."),
+    ]
+
+    # Config short labels
+    cfg_labels = {
+        "base":       "Conventional AD",
+        "solidstream":"SolidStream",
+        "pre_thp":    "Pre-THP",
+        "recup":      "Recuperative",
+    }
+
+    P2r  = lambda t: Paragraph(str(t), S["cell"])
+    PH2r = lambda t: Paragraph(str(t), S["cell_b"])
+
+    config_ids = list(configs.keys())
+    hdr = [PH2r("Scenario"), PH2r("Winner")] +           [PH2r(cfg_labels.get(cid, cid)) for cid in config_ids] +           [PH2r("Notes")]
+
+    rows = [hdr]
+    flipped_scenarios = []
+
+    for scenario_label, weight_mod, note in SCENARIOS:
+        scores = rescore(weight_mod)
+        w_id   = winner_of(scores)
+        is_base_winner = (w_id == base_w)
+        if not is_base_winner:
+            flipped_scenarios.append(scenario_label.split('\n')[0])
+
+        winner_col = (colors.HexColor("#1b5e20") if is_base_winner
+                      else colors.HexColor("#b71c1c"))
+        row = [
+            P2r(scenario_label),
+            Paragraph(
+                f"<b>{cfg_labels.get(w_id, w_id)}</b>",
+                ParagraphStyle("wr", parent=S["cell_b"], textColor=winner_col)
+            ),
+        ]
+        for cid in config_ids:
+            sc = scores[cid]
+            is_w = (cid == w_id)
+            row.append(Paragraph(
+                f"<b>{sc:.0f}</b>" if is_w else f"{sc:.0f}",
+                ParagraphStyle("sc", parent=S["cell_b"] if is_w else S["cell"],
+                               textColor=winner_col if is_w else colors.black,
+                               alignment=1)
+            ))
+        row.append(P2r(note))
+        rows.append(row)
+
+    n_configs = len(config_ids)
+    cw_scen  = 42*mm
+    cw_win   = 28*mm
+    cw_score = 18*mm
+    cw_note  = CONTENT_W - cw_scen - cw_win - cw_score * n_configs
+    col_widths = [cw_scen, cw_win] + [cw_score]*n_configs + [cw_note]
+
+    tbl = Table(rows, colWidths=col_widths)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#1a3a5c")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,-1), 8.5),
+        ("WORDWRAP",      (0,0), (-1,-1), "LTR"),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("LEFTPADDING",   (0,0), (-1,-1), 5),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#f5f5f5")]),
+        ("BOX",           (0,0), (-1,-1), 0.5, colors.HexColor("#90a4ae")),
+        ("GRID",          (0,0), (-1,-1), 0.3, colors.HexColor("#cfd8dc")),
+        ("ALIGN",         (2,0), (2+n_configs-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "TOP"),
+        # Highlight base case row
+        ("BACKGROUND",    (0,1), (-1,1), colors.HexColor("#e8f0f8")),
+        ("FONTNAME",      (0,1), (-1,1), "Helvetica-Bold"),
+    ]))
+    story.append(tbl)
+    story.append(_sp(3))
+
+    # Narrative — which scenarios flip the recommendation
+    base_winner_label = cfg_labels.get(base_w, base_w)
+    if not flipped_scenarios:
+        robustness_txt = (
+            f"<b>High robustness:</b> {base_winner_label} wins in all six scenarios tested. "
+            "The recommendation is stable across a wide range of priority weightings and "
+            "assumption changes. Confidence in the recommendation is high."
+        )
+    elif len(flipped_scenarios) <= 2:
+        robustness_txt = (
+            f"<b>Moderate robustness:</b> {base_winner_label} wins in "
+            f"{6 - len(flipped_scenarios)} of 6 scenarios. "
+            f"The recommendation changes under: {', '.join(flipped_scenarios)}. "
+            "These scenarios represent realistic planning conditions and should be "
+            "discussed with the client before committing to procurement."
+        )
+    else:
+        robustness_txt = (
+            f"<b>Low robustness:</b> {base_winner_label} wins in only "
+            f"{6 - len(flipped_scenarios)} of 6 scenarios. "
+            f"The recommendation is sensitive to: {', '.join(flipped_scenarios)}. "
+            "Before committing to procurement, the client should confirm which scenario "
+            "best represents their strategic context."
+        )
+
+    story.append(_p(robustness_txt, S["body"]))
+    story.append(_sp(2))
+    story.append(_p(
+        "Score colour: <b>green = wins this scenario</b>, red = not preferred. "
+        "Scenarios test weight sensitivity only — engine outputs (biogas, OPEX, GHG) are unchanged. "
+        "Scores are relative within each scenario and should not be compared across scenarios.",
+        S["caption"]))
+
+
+
 def generate_tier1_report(d: Tier1ReportData) -> bytes:
     """Generate the full Tier 1 PDF report. Returns bytes."""
 
@@ -3328,6 +3575,10 @@ def generate_tier1_report(d: Tier1ReportData) -> bytes:
 
     # Digester performance (mandatory)
     _mad_performance(story, S, d, sec); sec += 1
+    story.append(PageBreak())
+
+    # Recommendation Robustness
+    _recommendation_robustness(story, S, d, sec); sec += 1
     story.append(PageBreak())
 
     # Sidestream nitrogen impact (mandatory — always material at ETP scale)
