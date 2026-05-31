@@ -8597,6 +8597,7 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
             "Step 5 — Select Digestion Enhancement Configuration",
             "Medium-term (12\u201324 months, after Steps 1\u20133)",
             "#6a1b9a",   # purple
+            [
                 "The recommended Stage 2 validation pathway is "
                 "<b>Separate PS/WAS digestion, with THP as an optional "
                 "addition contingent upon BMP confirmation and WAS HRT "
@@ -8613,6 +8614,7 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
                 "All pathways require WAS HRT resolution to \u226515\u2009d, "
                 "PFAS characterisation, and independent CAPEX verification "
                 "before Stage 2 commitment.",
+            ],
         ),
         (
             "Step 6 — Select Long-Term Thermal Endpoint",
