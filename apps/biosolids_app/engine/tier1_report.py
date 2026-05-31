@@ -4632,6 +4632,9 @@ def _assessment_framework(story, S, d: Tier1ReportData, section_num: int):
     story.append(_section_rule())
     story.append(_p(
         "BioPoint V1 is a screening-grade decision support engine developed by ph2o Consulting. "
+        "<b>BioPoint is designed to identify the controlling system constraint before "
+        "comparing technology options</b> \u2014 the technology comparison that follows is "
+        "conditional on the constraint analysis, not a substitute for it. "
         "It evaluates anaerobic digestion configurations against eight project drivers using "
         "a weighted ranking methodology. All outputs are intended for Stage 1-2 options "
         "analysis and preliminary business case development. They are not suitable for "
@@ -5216,7 +5219,11 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
         story.append(_p("Executive Challenge Statement", S["h3"]))
         hrt_ps_ec  = getattr(winner_cr, "hrt_ps_d",  18.0)
         hrt_was_ec = getattr(winner_cr, "hrt_was_d", 18.0)
-        hrt_ok_ec  = hrt_ps_ec >= 14.5 and hrt_was_ec >= 14.5  # 14.5d practical minimum (15d target)
+        # PS and WAS carry different adopted screening criteria: PS 12–15 d
+        # (faster hydrolysis, k≈0.25/d) vs WAS ≥15 d (slower, rate-limiting).
+        _ps_ok_ec  = hrt_ps_ec  >= 12.0   # within/above adopted PS screening range
+        _was_ok_ec = hrt_was_ec >= 14.5   # at/above adopted WAS criterion (15 d target)
+        hrt_ok_ec  = _ps_ok_ec and _was_ok_ec
         pfas_ec    = getattr(d, "pfas_risk_level", "unknown").lower()
         n_high_ec  = getattr(winner_cr, "centrate_nh4_kg_per_d", 0) > 2000
         opex_win_ec= (runner_cr is not None and
@@ -5235,17 +5242,21 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
 
         if not hrt_ok_ec:
             # Determine which stream(s) are below minimum
-            if not hrt_ps_ok and not hrt_was_ok:
+            if not _ps_ok_ec and not _was_ok_ec:
                 _hrt_detail = (
                     f"PS HRT of {hrt_ps_ec:.1f}d and WAS HRT of {hrt_was_ec:.1f}d "
-                    "are both below BioPoint\u2019s adopted 15-day screening criterion for robust mesophilic digestion. "
+                    "are both below their adopted screening criteria (PS 12\u201315\u2009d, WAS 15\u2009d). "
                     "Digester expansion is required on both streams. "
                 )
                 _hrt_action = "achieve \u226515d HRT on both streams"
-            elif not hrt_was_ok:
+            elif not _was_ok_ec:
+                _ps_ok_phrase = (
+                    f"PS HRT of {hrt_ps_ec:.1f}d meets the adopted PS criterion"
+                    if hrt_ps_ec >= 15 else
+                    f"PS HRT of {hrt_ps_ec:.1f}d falls within the adopted PS screening range (12\u201315\u2009d)")
                 _hrt_detail = (
-                    f"PS HRT of {hrt_ps_ec:.1f}d meets the adopted criterion. "
-                    f"However, <b>WAS HRT of {hrt_was_ec:.1f}d is below the adopted 15-day screening criterion "
+                    f"{_ps_ok_phrase}. "
+                    f"However, <b>WAS HRT of {hrt_was_ec:.1f}d is below the adopted WAS screening criterion (15\u2009d) "
                     "and is the controlling constraint.</b> "
                     "WAS hydrolysis kinetics are slower than PS (k\u22480.12/day vs 0.25/day) "
                     "and WAS HRT sets the performance ceiling for the blended system. "
@@ -5253,8 +5264,8 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                 _hrt_action = "achieve \u226515d WAS HRT (the controlling stream)"
             else:  # only PS below
                 _hrt_detail = (
-                    f"WAS HRT of {hrt_was_ec:.1f}d meets the adopted criterion. "
-                    f"However, <b>PS HRT of {hrt_ps_ec:.1f}d is below the adopted 15-day screening criterion "
+                    f"WAS HRT of {hrt_was_ec:.1f}d meets the adopted WAS criterion (15\u2009d). "
+                    f"However, <b>PS HRT of {hrt_ps_ec:.1f}d is below the adopted PS screening range (12\u201315\u2009d) "
                     "and risks incomplete primary sludge stabilisation.</b> "
                 )
                 _hrt_action = "achieve \u226515d PS HRT"
@@ -8237,7 +8248,7 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
                        else f"\U00002705 Meets criterion \u2014 {_hrt_was:.1f}d \u2265 15d"),
             "rag":    RAG_RED if _hrt_was < 14.5 else RAG_GREEN,
             "impact": "Sets the performance ceiling for ALL configurations. "
-                      "No technology upgrade resolves this constraint.",
+                      "No downstream biosolids technology eliminates insufficient WAS retention time.",
             "action": "Volume redistribution, WAS pre-thickening (Optimised MAD), "
                       "or digester expansion. Measure actual WAS HRT first.",
         },
