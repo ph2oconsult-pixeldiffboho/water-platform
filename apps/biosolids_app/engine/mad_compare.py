@@ -980,7 +980,13 @@ def _weighted_totals(configs: Dict[ConfigID, ConfigResult],
     for cfg_id, cr in included.items():
         wt = sum(cr.driver_scores.get(d, 1) * weights.get(d, 1)
                  for d in DRIVER_IDS)
-        cr.weighted_score = round(wt / (total_weight * 4) * 100, 1)   # scale 0–100 (rank 1-4, max = 4×Σweights)
+        # Normalise by the number of configs actually compared. driver_scores
+        # range 1..N (N = included configs; N = best), so the max attainable
+        # weighted total is N×Σweights. Dividing by that caps the score at 100
+        # for any N. (Previously hard-coded to ×4, which produced >100 scores
+        # whenever more than four configurations were compared.)
+        n_inc = len(included)
+        cr.weighted_score = round(wt / (total_weight * n_inc) * 100, 1)   # scale 0–100
 
     return configs
 
@@ -1210,9 +1216,20 @@ def run_comparison(
         maint_add    = (1500 * ds_total) if sep_id=="separate_thp" else (200 * ds_total)
         opex_total   = base_total - disposal_save - energy_delta + maint_add
 
-        # Scope 1 GHG — approximate (no change to fugitive vs base, land app similar)
-        ghg_day = base_cr_sep.net_ghg_kg_co2e_per_d if base_cr_sep else 0.0
-        ghg_yr  = base_cr_sep.net_ghg_t_co2e_per_yr if base_cr_sep else 0.0
+        # Scope 1/2/3 GHG — computed from THIS config's own biogas, electricity
+        # export and cake, rather than inherited from the base case. Separate
+        # digestion raises biogas (and net export), so both the Scope 2 export
+        # credit and Scope 1a fugitive CH4 differ from base; inheriting base
+        # values left the carbon driver unable to distinguish separate configs.
+        # (Screening-grade caveat: for separate_thp the THP steam draw is not
+        #  added to the heat balance here — a minor under-count of any
+        #  supplementary boiler gas. Acceptable at Tier 1.)
+        sep_elec_net = sr.sep_elec_kw * 0.95
+        (sep_s1, sep_s2, sep_s3, sep_net, *_sep_ghg_rest) = _ghg(
+            sep_id, sr.sep_biogas, sep_elec_net, cake_tpd,
+            centrate_n, site, elec_gross_kw=sr.sep_elec_kw)
+        ghg_day = sep_net
+        ghg_yr  = sep_net * 365 / 1000
 
         # Headroom — separate digestion optimises HRT, so headroom improves significantly
         ps_hrt  = sr.ps.hrt_days
@@ -1243,9 +1260,9 @@ def run_comparison(
             centrate_nh4_kg_per_d= round(centrate_n),
             hrt_ps_d             = round(ps_hrt, 1),
             hrt_was_d            = round(was_hrt, 1),
-            scope1_kg_co2e_per_d = base_cr_sep.scope1_kg_co2e_per_d if base_cr_sep else 0,
-            scope2_kg_co2e_per_d = base_cr_sep.scope2_kg_co2e_per_d if base_cr_sep else 0,
-            scope3_kg_co2e_per_d = base_cr_sep.scope3_kg_co2e_per_d if base_cr_sep else 0,
+            scope1_kg_co2e_per_d = round(sep_s1, 1),
+            scope2_kg_co2e_per_d = round(sep_s2, 1),
+            scope3_kg_co2e_per_d = round(sep_s3, 1),
             net_ghg_kg_co2e_per_d= round(ghg_day),
             net_ghg_t_co2e_per_yr= round(ghg_yr, 1),
             opex_disposal_per_yr = round(base_disposal - disposal_save),
@@ -1310,8 +1327,11 @@ def run_comparison(
         tie_ids      = []
     else:
         top_score  = max(s for _, s in included_scored)
-        # Tie threshold: within 5 points (out of 100) — screening-grade margin
-        tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 5.0]
+        # Tie threshold: within 3 points (out of 100). Matches the report's
+        # "Statistical Tie Zone" badge (≤3.0); gaps of 3–5 pts render as a
+        # "weak preference" rather than a tie, keeping is_tie / tie_ids
+        # consistent with the badge and the per-config ★ TIED prefixes.
+        tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 3.0]
         is_tie     = len(tie_ids) > 1
         winner_id  = tie_ids[0]   # first alphabetically among tied; report flags tie
         winner_label = CONFIG_LABELS_SHORT.get(winner_id, "") if winner_id else ""

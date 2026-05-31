@@ -4365,7 +4365,7 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
                     for cid, cfg in result.configs.items() if cfg.included]
         if _incl_sc:
             _top = max(s for _, s in _incl_sc)
-            _tied = [k for k, s in _incl_sc if abs(s - _top) <= 5.0]
+            _tied = [k for k, s in _incl_sc if abs(s - _top) <= 3.0]
             is_tie = len(_tied) > 1
 
     # Winner badge — preference strength classification
@@ -4632,10 +4632,10 @@ def _assessment_framework(story, S, d: Tier1ReportData, section_num: int):
 
     story.append(_p("Scoring Methodology", S["h2"]))
     story.append(_p(
-        "Each configuration is scored 1-4 against eight drivers, where 4 = best among "
-        "configurations compared and 1 = worst. Drivers are weighted 1-5 (1 = low importance, "
+        "Each configuration is ranked 1 to N against eight drivers (N = number of "
+        "configurations compared; N = best, 1 = worst). Drivers are weighted 1-5 (1 = low importance, "
         "5 = critical project driver). The weighted total score is calculated as: "
-        "Σ(rank × weight) / (4 × Σweights) × 100, giving a range of 25-100. "
+        "Σ(rank × weight) / (N × Σweights) × 100, normalised to a 0–100 scale (100 = best on every driver). "
         "Scores are relative — adding or removing configurations changes the rankings.",
         S["body"]))
     story.append(_sp(3))
@@ -5037,9 +5037,9 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                     drv_rows.append([
                         Paragraph(lbl, S["cell"]),
                         Paragraph(f"{wt}/5", ParagraphStyle("wt", parent=S["cell"], alignment=1)),
-                        Paragraph(f"<b>{w_sc}/4</b>" if w_sc > r_sc else f"{w_sc}/4",
+                        Paragraph(f"<b>{w_sc}/{len(result.included_ids)}</b>" if w_sc > r_sc else f"{w_sc}/{len(result.included_ids)}",
                                   ParagraphStyle("wsc", parent=S["cell"], textColor=w_col, alignment=1)),
-                        Paragraph(f"<b>{r_sc}/4</b>" if r_sc > w_sc else f"{r_sc}/4",
+                        Paragraph(f"<b>{r_sc}/{len(result.included_ids)}</b>" if r_sc > w_sc else f"{r_sc}/{len(result.included_ids)}",
                                   ParagraphStyle("rsc", parent=S["cell"], textColor=r_col, alignment=1)),
                         Paragraph(f"<b>{drv_winner}</b>",
                                   ParagraphStyle("dw", parent=S["cell_b"],
