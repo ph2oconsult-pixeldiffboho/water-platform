@@ -4274,15 +4274,16 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
         _central_finding = (
             "<b>Central finding of this assessment:</b> "
             f"This plant is <b>WAS digestion kinetics-limited</b> "
-            f"(WAS HRT = {_hrt_was_cf:.1f}d, minimum 15d). "
+            f"(WAS HRT = {_hrt_was_cf:.1f}d, below BioPoint\u2019s adopted 15 d screening criterion). "
             "The primary constraint is not digester volume or THP configuration \u2014 "
             "it is that WAS hydrolysis controls system performance. "
-            f"PS HRT = {_hrt_ps_cf:.1f}d (adequate). "
+            f"PS HRT = {_hrt_ps_cf:.1f}d (meets criterion). "
             "Resolving WAS retention time through volume redistribution, "
             "pre-thickening, separate stream configuration, or expansion "
             "is the prerequisite for any advanced treatment investment. "
             "The technology configuration analysis that follows is conditional "
-            "on WAS HRT first being achieved at minimum 15 days."
+            "on WAS HRT first reaching the adopted 15 d criterion (a BioPoint screening "
+            "basis for robust mesophilic digestion, not a universal regulatory requirement)."
         )
     else:
         _central_finding = (
@@ -4332,8 +4333,9 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
                 "33% (published Ozwater\u201917 paper). "
                 "<b>Site-specific BMP testing required to calibrate the "
                 "magnitude at this plant.</b> "
-                "The industry may be significantly underestimating the value of "
-                "<b>digestion configuration relative to digestion technology.</b>",
+                "On the current evidence base, digestion configuration may be "
+                "<b>underappreciated relative to digestion technology</b> \u2014 a "
+                "question this assessment raises that site-specific BMP testing should resolve.",
                 ParagraphStyle("sc", parent=S["body"], fontSize=9,
                                leading=13.5,
                                textColor=colors.HexColor("#1a237e")))]], 
@@ -4412,6 +4414,14 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
     ]))
     story.append(badge)
     story.append(_sp(4))
+    if _bgap <= 3.0 and len(_bsc) > 1:
+        story.append(_p(
+            f"<b>Tie-breaker:</b> {result.winner_label} is carried as the lead option as the "
+            f"highest-scoring configuration ({_bscore1:.0f} vs {_bscore2:.0f}/100). The margin is "
+            "within screening uncertainty, so the preferred option should be confirmed against "
+            "site-specific priorities, CAPEX, and vendor quotation before Stage\u00a02 commitment.",
+            S["body"]))
+        story.append(_sp(2))
 
     # Narrative paragraphs
     story.append(_p(narrative_comparison_executive(d), S["body"]))
@@ -4419,7 +4429,7 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
 
     ds_total = d.ps_ds_tpd + d.was_ds_tpd
     story.append(_p(
-        f"This assessment evaluates four mesophilic anaerobic digestion configurations "
+        f"This assessment evaluates {len(result.included_ids)} mesophilic anaerobic digestion configurations "
         f"for a plant treating {ds_total:.1f} tDS/day across "
         f"{d.ps_volume_m3 + d.was_volume_m3:,.0f} m3 of digester volume. "
         f"The regulatory context is {d.regulatory.get('label','—')}. "
@@ -8215,16 +8225,16 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
     RAG_GREY   = colors.HexColor("#546e7a")   # not assessed
 
     _was_status = RAG_RED if _hrt_was < 14.5 else RAG_GREEN
-    _was_label  = f"\u1f534 Failing ({_hrt_was:.1f}d < 15d minimum)" if _hrt_was < 14.5 \
-                  else f"\u2705 Adequate ({_hrt_was:.1f}d \u2265 15d)"
+    _was_label  = f"\u1f534 Below 15 d criterion ({_hrt_was:.1f}d)" if _hrt_was < 14.5 \
+                  else f"\u2705 Meets 15 d criterion ({_hrt_was:.1f}d)"
 
     constraints = [
         {
             "level": "L1",
             "name":   "WAS Retention Time",
-            "status": (f"\U0001f534 Failing \u2014 {_hrt_was:.1f}d < 15d minimum"
+            "status": (f"\U0001f534 Below screening criterion \u2014 {_hrt_was:.1f}d < 15d adopted target"
                        if _hrt_was < 14.5
-                       else f"\U00002705 Adequate \u2014 {_hrt_was:.1f}d \u2265 15d"),
+                       else f"\U00002705 Meets criterion \u2014 {_hrt_was:.1f}d \u2265 15d"),
             "rag":    RAG_RED if _hrt_was < 14.5 else RAG_GREEN,
             "impact": "Sets the performance ceiling for ALL configurations. "
                       "No technology upgrade resolves this constraint.",
@@ -8243,8 +8253,8 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
                       "Drives the Separate PS/WAS recommendation.",
             "action": "Paired BMP testing quantifies the MAGNITUDE of uplift "
                       "at this site. "
-                      "The mechanism is established; "
-                      "BMP testing is calibration, not validation.",
+                      "The mechanism is evidence-supported; "
+                      "BMP testing calibrates the site-specific magnitude.",
         },
         {
             "level": "L3/L5",
@@ -8313,11 +8323,23 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
 
     story.append(_p(
         "<i>Constraint status is indicative at screening grade. "
-        "Red = failing or non-compliant. "
+        "Red = below adopted criterion or non-compliant. "
         "Amber = unquantified or uncharacterised \u2014 requires investigation. "
         "Yellow = significant but manageable. "
-        "Green = adequate. "
+        "Green = meets criterion. "
         "All constraints should be formally assessed before Stage 2 commitment.</i>",
+        S["caption"]))
+    story.append(_sp(1))
+    story.append(_p(
+        "<i><b>WAS HRT criterion basis:</b> the 15 d WAS HRT threshold used throughout this "
+        "report is BioPoint\u2019s adopted screening criterion for robust mesophilic digestion "
+        "\u2014 an engineering screening basis, not a universal regulatory requirement. "
+        "Regulatory minima are typically lower (often ~10 d via vector-attraction and "
+        "pathogen-reduction rules); many utilities adopt 15\u201320 d as a corporate design "
+        "standard. \u201cBelow criterion\u201d therefore signals reduced VSR, stabilisation margin "
+        "and operational resilience against the adopted target \u2014 not a regulatory breach. "
+        "Where a site has its own digestion design standard, that value should be substituted "
+        "and the recommendation re-tested against it.</i>",
         S["caption"]))
 
 
@@ -8571,7 +8593,8 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
                 "of: (a) PS only; (b) WAS only; (c) blended PS+WAS at current ratio.",
                 "This quantifies the site-specific magnitude of the "
                 "co-digestion suppression effect at this plant "
-                "(established mechanism; literature range 10\u201335%). "
+                "(evidence-supported mechanism; site-specific magnitude unconfirmed; "
+                "literature range 10\u201335%). "
                 "A negative result narrows the options to volume-based solutions.",
                 "BMP testing is the single most cost-effective investment in "
                 "evidence quality available at this stage. "
