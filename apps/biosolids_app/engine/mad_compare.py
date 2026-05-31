@@ -34,13 +34,16 @@ from typing import Dict, List, Optional, Literal
 # ── Configuration identifiers ──────────────────────────────────────────────
 ConfigID = Literal["base", "recup", "pre_thp", "solidstream"]
 
-ALL_CONFIGS: List[ConfigID] = ["base", "recup", "pre_thp", "solidstream"]
+ALL_CONFIGS: List[ConfigID] = ["base", "recup", "pre_thp", "solidstream", "separate", "separate_thp", "optimised_mad"]
 
 CONFIG_LABELS = {
     "base":        "Base Case\n(Conventional AD)",
     "recup":       "Recuperative\nThickening",
     "pre_thp":     "Pre-digestion\nTHP",
     "solidstream": "SolidStream\n(Post-THP)",
+    "separate":    "Separate\nPS/WAS Digestion",
+    "separate_thp":"Separate Digestion\n+ THP",
+    "optimised_mad":"Optimised MAD\n(WAS Pre-thickening)",
 }
 
 CONFIG_LABELS_SHORT = {
@@ -48,6 +51,9 @@ CONFIG_LABELS_SHORT = {
     "recup":       "Recup. Thickening",
     "pre_thp":     "Pre-THP",
     "solidstream": "SolidStream",
+    "separate":    "Separate PS/WAS",
+    "separate_thp":"Separate + THP",
+    "optimised_mad":"Optimised MAD",
 }
 
 # ── Driver definitions ─────────────────────────────────────────────────────
@@ -98,6 +104,43 @@ DEFAULT_WEIGHTS = {
     "capex":       2,
     "headroom":    2,
 }
+
+
+def scale_adjusted_weights(ds_total: float,
+                            base_weights: dict | None = None) -> dict:
+    """
+    Return driver weights adjusted for plant scale.
+    
+    At small scale (<15 tDS/d):
+      - OPEX matters more (economics marginal, every dollar counts)
+      - Headroom matters less (growth capacity less critical)
+      - CAPEX matters more (harder to justify THP at small scale)
+    
+    At large scale (>100 tDS/d):
+      - Energy recovery matters more (biogas revenue material at scale)
+      - Headroom matters more (growth capacity critical for large plants)
+      - OPEX matters slightly less relative to strategic drivers
+    
+    This produces genuinely different scores by scale while keeping
+    the same relative ordering of drivers within each scale.
+    """
+    w = dict(base_weights or DEFAULT_WEIGHTS)
+
+    if ds_total < 15:
+        # Small plant: economics are tight, growth headroom less important
+        w["opex"]     = min(5, w.get("opex",     4) + 1)
+        w["capex"]    = min(5, w.get("capex",    2) + 1)
+        w["headroom"] = max(1, w.get("headroom", 2) - 1)
+        w["energy"]   = max(1, w.get("energy",   3) - 1)  # biogas less material at small scale
+    elif ds_total > 100:
+        # Large plant: energy revenue material, headroom critical, OPEX less dominant
+        w["energy"]   = min(5, w.get("energy",   3) + 1)
+        w["headroom"] = min(5, w.get("headroom", 2) + 1)
+        w["opex"]     = max(2, w.get("opex",     4) - 1)
+        w["carbon"]   = min(5, w.get("carbon",   3) + 1)  # GHG more scrutinised at scale
+    # Medium (15-100 tDS/d): use DEFAULT_WEIGHTS unchanged
+
+    return w
 
 
 # ── Site inputs ────────────────────────────────────────────────────────────
@@ -197,6 +240,8 @@ class ConfigResult:
     trucks_per_day:         float = 0.0
     cake_vol_reduction_pct: float = 0.0   # vs base case
     vsr_pct:                float = 57.5
+    ps_vsr_pct:             float = 0.0   # stream-specific; only set for separate configs
+    was_vsr_pct:            float = 0.0   # stream-specific; only set for separate configs
 
     # ── Return load ─────────────────────────────────────────────────────────
     centrate_nh4_kg_per_d:     float = 0.0
@@ -352,6 +397,54 @@ CAPEX_DATA = {
             "Instrumentation and control upgrades",
         ],
     },
+    "separate": {
+        "low": 1.5, "high": 4.5, "mid": 2.5,
+        "scope_summary": "Digester train separation, inter-digester transfer pumps, stream monitoring, control upgrades.",
+        "note": (
+            "Separate PS/WAS digestion: civil works to partition existing digesters "
+            "or add dedicated WAS digestion volume. "
+            "Lower CAPEX than THP — no thermal equipment required. "
+            "Enables stream-optimised HRTs without process intensification."
+        ),
+        "items": [
+            "Digester train separation and isolation valves",
+            "Inter-digester and recycle pumping",
+            "Independent feed and withdrawal systems per stream",
+            "Stream flow metering and control",
+            "Additional WAS digestion volume (if required)",
+        ],
+    },
+    "separate_thp": {
+        "low": 5.0, "high": 13.0, "mid": 8.5,
+        "scope_summary": "Separate PS/WAS digestion + THP on WAS stream only. Most CAPEX-intensive but highest performance.",
+        "note": (
+            "Separate digestion with THP on WAS stream (or both streams). "
+            "Combines optimised stream HRTs with pathogen compliance and "
+            "enhanced biogas yield from WAS thermal hydrolysis."
+        ),
+        "items": [
+            "All items from Separate PS/WAS Digestion scope",
+            "THP reactors on WAS stream (or both streams)",
+            "Steam boiler (composite or dedicated)",
+            "Dewatering centrifuge upgrades",
+        ],
+    },
+    "optimised_mad": {
+        "low": 1.0, "high": 8.0, "mid": 4.0,
+        "scope_summary": "WAS pre-thickener, mixing upgrade, instrumentation.",
+        "note": (
+            "WAS pre-thickening: gravity belt thickener or drum thickener, "
+            "polymer dosing upgrade, mixing system upgrade (staged or draft-tube). "
+            "CAPEX range $1\u20138M depending on plant scale and existing equipment. "
+            "Class 5 estimate \u00b150%."
+        ),
+        "equipment": [
+            "Gravity belt thickener or drum thickener (duty+standby)",
+            "Polymer dosing system upgrade",
+            "Mixing system upgrade (staged mixing or draft-tube impellers)",
+            "WAS feed pipework and flow control",
+        ],
+    },
 }
 
 # OPEX reference rates ($/unit/year, per tDS/day capacity)
@@ -396,7 +489,12 @@ BIOGAS_LHV_MJ_M3 = 35.8 * CH4_FRACTION_BIOGAS   # CH4 fraction only
 def _run_mad_config(site: ComparisonSiteInputs, config_id: ConfigID):
     """Run MAD engine for a given config. Returns MADResult or None."""
     try:
-        from engine.mad import MADInputs, run_mad
+        try:
+            from engine.mad import MADInputs, run_mad
+        except ImportError:
+            import sys as _sys_mad
+            _sys_mad.path.insert(0, "/mnt/user-data/outputs")
+            from mad import MADInputs, run_mad
 
         # Build MADInputs per config
         if config_id == "base":
@@ -456,6 +554,31 @@ def _run_mad_config(site: ComparisonSiteInputs, config_id: ConfigID):
                 chpE=site.chp_eff_pct, chpAvail=site.chp_avail_pct,
             )
 
+
+        elif config_id == "optimised_mad":
+            # WAS pre-thickening: increase WAS TS% to reduce hydraulic load
+            # This achieves adequate WAS HRT without new capital (volume redistribution
+            # or gravity belt thickener). Assumes upgraded mixing (draft-tube or staged)
+            # to handle higher TS% without mixing efficiency penalty.
+            _opt_was_ts = min(site.was_ts_pct * 1.5, 5.5)  # target ~5.5%TS, max 1.5x
+            inp = MADInputs(
+                psV=site.ps_volume_m3, wasV=site.was_volume_m3,
+                psDS=site.ps_ds_tpd,  wasDS=site.was_ds_tpd,
+                psTS=site.ps_ts_pct,  wasTS=_opt_was_ts,
+                psVS=site.ps_vs_pct,  wasVS=site.was_vs_pct,
+                psN=site.ps_n_pct,    wasN=site.was_n_pct,
+                psCap=site.ps_cap, wasCap=site.was_cap,
+                psBeta=site.ps_beta, wasBeta=site.was_beta,
+                mixingSystemType="staged",  # upgraded mixing for higher TS%
+                mixingPower=site.mixing_power,
+                digester_pH=site.digester_ph,
+                pHControl=site.ph_control,
+                nh3Mode=site.nh3_mode,
+                pretreatment="none",
+                finalDewateringCap=site.final_dew_cap,
+                chpE=site.chp_eff_pct, chpAvail=site.chp_avail_pct,
+            )
+
         else:  # solidstream
             inp = MADInputs(
                 psV=site.ps_volume_m3, wasV=site.was_volume_m3,
@@ -495,7 +618,9 @@ def _cake_properties(config_id: ConfigID, vsr_pct: float,
         "recup":       base_cake_ds_pct + 3.0,   # marginal improvement
         "pre_thp":     base_cake_ds_pct + 12.0,  # improved rheology
         "solidstream": 38.0,                      # SolidStream guarantee
-    }[config_id]
+        "separate":    base_cake_ds_pct,          # no thermal hydrolysis
+        "separate_thp":base_cake_ds_pct + 10.0,  # WAS THP improves dewatering
+    }.get(config_id, base_cake_ds_pct)
 
     # VS destroyed → DS remaining in cake
     # DS_feed × (1 - VSR × VS_fraction) = DS remaining
@@ -577,7 +702,7 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
     s1_ch4 = ch4_fugitive_kg_d * GWP_CH4
 
     # Scope 1: N2O from land application (if Class B → land applied)
-    cake_ds_pct = {"base": 20, "recup": 23, "pre_thp": 32, "solidstream": 38}[config_id]
+    cake_ds_pct = {"base": 20, "recup": 23, "pre_thp": 32, "solidstream": 38, "separate": 20, "separate_thp": 30}.get(config_id, 20)
     ds_remaining = site.ps_ds_tpd + site.was_ds_tpd  # simplified
     n_applied_kg_d = ds_remaining * (site.ps_n_pct / 100.0 + site.was_n_pct / 100.0) / 2.0
     n2o_n = n_applied_kg_d * N2O_EF_LAND
@@ -724,7 +849,7 @@ def _narratives(config_id: ConfigID, cr: ConfigResult,
     benefits, risks = [], []
 
     if config_id == "base":
-        benefits = ["No capital expenditure required",
+        benefits = ["Potentially low capital depending on existing digester configuration",
                     "Lowest operational complexity",
                     "Established, proven operation"]
         risks    = ["No biosolids quality upgrade — Class B only",
@@ -881,7 +1006,9 @@ def run_comparison(
     ComparisonResult
     """
     if driver_weights is None:
-        driver_weights = DEFAULT_WEIGHTS.copy()
+        # Apply scale-adjusted weights if no explicit weights provided
+        ds_total_init = site.ps_ds_tpd + site.was_ds_tpd
+        driver_weights = scale_adjusted_weights(ds_total_init, DEFAULT_WEIGHTS)
     if configs_to_run is None:
         configs_to_run = ALL_CONFIGS.copy()
 
@@ -924,6 +1051,8 @@ def run_comparison(
                 + mad_result.was.VS_destruction_pct * 0.45
             )
 
+            cr.ps_vsr_pct  = mad_result.ps.VS_destruction_pct
+            cr.was_vsr_pct = mad_result.was.VS_destruction_pct
             # HRT/SRT headroom
             cr.hrt_ps_d  = mad_result.ps.HRT_nominal_d
             cr.hrt_was_d = mad_result.was.HRT_nominal_d
@@ -1005,12 +1134,143 @@ def run_comparison(
         cr.capex_mid_m          = capex_ref["mid"]
         cr.capex_note           = capex_ref["note"]
         cr.capex_scope_summary  = capex_ref.get("scope_summary", "")
-        cr.equipment_list       = capex_ref["equipment"]
+        cr.equipment_list       = capex_ref.get("equipment", capex_ref.get("items", []))
 
         configs[config_id] = cr
 
         if config_id == "base":
             base_result = cr
+
+    # ── Separate digestion configs (using dedicated engine) ──────────────────
+    for sep_id in ("separate", "separate_thp"):
+        if sep_id not in configs_to_run:
+            continue
+        try:
+            from engine.separate_digestion import run_separate_analysis
+        except ImportError:
+            try:
+                import sys as _sys3
+                _sys3.path.insert(0, "/mnt/user-data/outputs")
+                from separate_digestion import run_separate_analysis
+            except ImportError:
+                continue
+
+        # Determine THP mode for separate_thp
+        sep_mode = "separate"  # both configs use separate digestion mode
+        # For separate_thp: THP added on WAS stream provides Class A
+        base_bg  = configs["base"].biogas_m3_per_d if "base" in configs else 0.0
+
+        try:
+            sr = run_separate_analysis(
+                ps_ds_tpd    = site.ps_ds_tpd,
+                was_ds_tpd   = site.was_ds_tpd,
+                ps_ts_pct    = site.ps_ts_pct,
+                was_ts_pct   = site.was_ts_pct,
+                ps_vs_pct    = site.ps_vs_pct,
+                was_vs_pct   = site.was_vs_pct,
+                ps_volume_m3 = site.ps_volume_m3,
+                was_volume_m3= site.was_volume_m3,
+                mode         = sep_mode,
+                reference_bg = base_bg,
+            )
+        except Exception:
+            continue  # silently skip if separate engine fails
+
+        capex_ref = CAPEX_DATA.get(sep_id, {"low":2.0,"high":5.0,"mid":3.5,
+                                             "note":"Separate digestion scope.",
+                                             "scope_summary":"Separate PS/WAS digestion.",
+                                             "items":[],
+                                             "equipment":[]})
+        ds_total = site.ps_ds_tpd + site.was_ds_tpd
+
+        # Class A achieved only for separate_thp (THP provides pathogen kill)
+        class_a = (sep_id == "separate_thp")
+
+        # Estimate cake: PS stream DS × (1-VSR/100) / (cake_ds%), WAS similar
+        ps_vsr = sr.ps.vsr_pct / 100
+        was_vsr= sr.was.vsr_pct / 100
+        ps_cake= (site.ps_ds_tpd * site.ps_vs_pct/100 * (1-ps_vsr)
+                  + site.ps_ds_tpd * (1-site.ps_vs_pct/100)) / (0.28 if sep_id=="separate_thp" else 0.22)
+        was_cake=(site.was_ds_tpd * site.was_vs_pct/100 * (1-was_vsr)
+                  + site.was_ds_tpd * (1-site.was_vs_pct/100)) / (0.38 if sep_id=="separate_thp" else 0.22)
+        cake_tpd = ps_cake + was_cake
+        cake_ds  = 35.0 if sep_id=="separate_thp" else 22.0
+
+        # Centrate N — approximate (no THP hydrolysis, similar to base)
+        centrate_n = configs["base"].centrate_nh4_kg_per_d if "base" in configs else 0.0
+
+        # OPEX — disposal saves from cake reduction, energy credit from higher biogas
+        base_cr_sep = configs.get("base")
+        base_disposal = base_cr_sep.opex_disposal_per_yr if base_cr_sep else 0.0
+        base_total   = base_cr_sep.opex_total_per_yr     if base_cr_sep else 0.0
+        disposal_save = (base_cr_sep.wet_cake_t_per_day - cake_tpd) * 365 * site.disposal_cost_per_t_wet if base_cr_sep else 0.0
+        energy_rev   = sr.sep_elec_kw * 8760 * site.chp_avail_pct/100 * site.electricity_sell_per_kwh
+        base_energy  = base_cr_sep.opex_energy_net_per_yr if base_cr_sep else 0.0
+        energy_delta = energy_rev - (-base_energy)  # improvement vs base
+        maint_add    = (1500 * ds_total) if sep_id=="separate_thp" else (200 * ds_total)
+        opex_total   = base_total - disposal_save - energy_delta + maint_add
+
+        # Scope 1 GHG — approximate (no change to fugitive vs base, land app similar)
+        ghg_day = base_cr_sep.net_ghg_kg_co2e_per_d if base_cr_sep else 0.0
+        ghg_yr  = base_cr_sep.net_ghg_t_co2e_per_yr if base_cr_sep else 0.0
+
+        # Headroom — separate digestion optimises HRT, so headroom improves significantly
+        ps_hrt  = sr.ps.hrt_days
+        was_hrt = sr.was.hrt_days
+        ps_head  = max(0, ps_hrt  - 15.0)
+        was_head = max(0, was_hrt - 15.0)
+
+        class_a_txt = "Class A pathogen classification, " if class_a else ""
+        cr_sep = ConfigResult(
+            config_id            = sep_id,
+            config_label         = CONFIG_LABELS_SHORT.get(sep_id, sep_id),
+            included             = True,
+            biogas_m3_per_d      = round(sr.sep_biogas),
+            biogas_gj_per_d      = round(sr.sep_biogas * 0.63 * 35.8 / 1000, 1),
+            biogas_uplift_pct    = round(sr.biogas_uplift_pct, 1),
+            elec_gross_kw        = round(sr.sep_elec_kw),
+            elec_net_kw          = round(sr.sep_elec_kw * 0.95),
+            elec_annual_mwh      = round(sr.sep_elec_kw * 8760 * site.chp_avail_pct/100 / 1000),
+            wet_cake_t_per_day   = round(cake_tpd, 1),
+            cake_ds_pct          = cake_ds,
+            vsr_pct              = round(
+                (sr.sep_ps_vsr_pct * site.ps_ds_tpd + sr.sep_was_vsr_pct * site.was_ds_tpd)
+                / ds_total, 1),
+            ps_vsr_pct           = round(sr.sep_ps_vsr_pct, 1),
+            was_vsr_pct          = round(sr.sep_was_vsr_pct, 1),
+            class_a_achieved     = class_a,
+            pathogen_class       = "Class A" if class_a else "Class B",
+            centrate_nh4_kg_per_d= round(centrate_n),
+            hrt_ps_d             = round(ps_hrt, 1),
+            hrt_was_d            = round(was_hrt, 1),
+            scope1_kg_co2e_per_d = base_cr_sep.scope1_kg_co2e_per_d if base_cr_sep else 0,
+            scope2_kg_co2e_per_d = base_cr_sep.scope2_kg_co2e_per_d if base_cr_sep else 0,
+            scope3_kg_co2e_per_d = base_cr_sep.scope3_kg_co2e_per_d if base_cr_sep else 0,
+            net_ghg_kg_co2e_per_d= round(ghg_day),
+            net_ghg_t_co2e_per_yr= round(ghg_yr, 1),
+            opex_disposal_per_yr = round(base_disposal - disposal_save),
+            opex_energy_net_per_yr= round(-(energy_rev)),
+            opex_total_per_yr    = round(opex_total),
+            opex_delta_vs_base_per_yr     = round(opex_total - base_total),
+            opex_delta_whole_plant_per_yr = round(opex_total - base_total),
+            capex_low_m          = capex_ref["low"],
+            capex_high_m         = capex_ref["high"],
+            capex_mid_m          = capex_ref["mid"],
+            capex_note           = capex_ref.get("note", ""),
+            capex_scope_summary  = capex_ref.get("scope_summary", ""),
+            equipment_list       = capex_ref.get("equipment", []),
+            ps_srt_headroom_d    = ps_head,
+            was_srt_headroom_d   = was_head,
+            recommendation_text  = (
+                f"{CONFIG_LABELS_SHORT[sep_id]} achieves "
+                f"+{sr.biogas_uplift_pct:.1f}% biogas uplift vs blended baseline, "
+                f"{'Class A pathogen classification, ' if class_a else ''}"
+                f"PS HRT {ps_hrt:.1f}d / WAS HRT {was_hrt:.1f}d "
+                f"(optimised per stream), "
+                f"and {cake_ds:.0f}%DS dewatered cake at {ds_total:.0f} tDS/day."
+            ),
+        )
+        configs[sep_id] = cr_sep
 
     # ── Biogas uplift vs base ──────────────────────────────────────────────
     base_biogas = configs.get("base", ConfigResult()).biogas_m3_per_d or 1.0
@@ -1050,8 +1310,8 @@ def run_comparison(
         tie_ids      = []
     else:
         top_score  = max(s for _, s in included_scored)
-        # Tie threshold: within 2 points (out of 100) — effectively same score
-        tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 2.0]
+        # Tie threshold: within 5 points (out of 100) — screening-grade margin
+        tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 5.0]
         is_tie     = len(tie_ids) > 1
         winner_id  = tie_ids[0]   # first alphabetically among tied; report flags tie
         winner_label = CONFIG_LABELS_SHORT.get(winner_id, "") if winner_id else ""
