@@ -890,6 +890,45 @@ def _narratives(config_id: ConfigID, cr: ConfigResult,
                     "Greater operational complexity — steam system, high-pressure vessels",
                     "Longer construction programme"]
 
+    elif config_id == "separate":
+        benefits = [f"Biogas uplift ~{cr.biogas_uplift_pct:.0f}% vs blended baseline — PS and WAS "
+                    "digested at their own optimal HRTs",
+                    "Eliminates co-digestion suppression — WAS no longer slows PS hydrolysis kinetics",
+                    "No thermal equipment — lower CAPEX and complexity than THP",
+                    "Restoring WAS HRT to ≥15d resolves the controlling digestion constraint",
+                    "PS and WAS banks can be isolated independently for maintenance"]
+        risks    = ["Class B biosolids only — no pathogen upgrade without added THP",
+                    "Existing digesters likely plumbed for blended feed — re-piping/valving required",
+                    "WAS HRT headroom can be tight; significant WAS growth needs added WAS volume",
+                    "Site-specific uplift quantum requires paired BMP confirmation "
+                    "(mechanism established; magnitude uncertain)",
+                    "Stream-specific TS% may require mixing-system modification"]
+
+    elif config_id == "separate_thp":
+        benefits = ["Combines stream-optimised HRTs with Class A pathogen classification "
+                    "(THP on the WAS stream)",
+                    f"Biogas uplift ~{cr.biogas_uplift_pct:.0f}% vs blended baseline — separation "
+                    "plus THP hydrolysis",
+                    "Improved dewatering on the THP-treated stream",
+                    "Removes the 3-year stockpiling requirement for Class A compliance (EPA Victoria)",
+                    "Addresses digestion architecture and pathogen quality in one configuration"]
+        risks    = ["Highest CAPEX of the digestion options — separation works plus THP",
+                    "Higher centrate N from THP hydrolysis → larger sidestream return load",
+                    "Greatest operational complexity — separated trains plus steam/pressure systems",
+                    "Requires both WAS HRT resolution to ≥15d and BMP confirmation of separation uplift",
+                    "Longer construction programme"]
+
+    elif config_id == "optimised_mad":
+        benefits = ["Restores adequate WAS HRT via pre-thickening — addresses the controlling "
+                    "constraint without new digester volume",
+                    f"Modest biogas uplift ~{cr.biogas_uplift_pct:.0f}% vs base from improved VS loading",
+                    "Lower CAPEX than THP or separation — thickener and mixing upgrade only",
+                    "Lowest-disruption route to ≥15d WAS HRT where volume redistribution is insufficient"]
+        risks    = ["Class B biosolids only — no pathogen upgrade",
+                    "Higher feed TS% increases mixing demand and NH3/diffusion limitations",
+                    "Biogas and quality gains modest relative to THP or separation",
+                    "Effectiveness depends on achievable WAS thickening at this site"]
+
     else:  # solidstream
         benefits = ["Class A equivalent pathogen kill without thermal drying",
                     f"Dewatered cake ≥38% DS — eliminates or greatly reduces drying",
@@ -922,6 +961,21 @@ def _narratives(config_id: ConfigID, cr: ConfigResult,
         rec += ("Pre-digestion THP delivers the highest energy uplift and Class A "
                 "biosolids. Recommended where land application regulation is tightening "
                 "or where new digester capacity is planned and THP can be sized in.")
+    elif config_id == "separate":
+        rec += ("Separate PS/WAS digestion targets the digestion architecture itself — running "
+                "each stream at its own optimal HRT to remove co-digestion suppression and restore "
+                "WAS retention. Best evaluated first where the controlling constraint is WAS HRT; "
+                "site-specific uplift requires paired BMP confirmation before capital commitment.")
+    elif config_id == "separate_thp":
+        rec += ("Separate digestion with THP on the WAS stream combines stream-optimised retention "
+                "with Class A pathogen compliance. It carries the highest CAPEX and complexity of "
+                "the digestion options and requires both BMP confirmation of the separation uplift "
+                "and WAS HRT resolution to ≥15d.")
+    elif config_id == "optimised_mad":
+        rec += ("Optimised MAD (WAS pre-thickening) is the lowest-disruption route to adequate WAS "
+                "HRT, resolving the controlling constraint without new digester volume or thermal "
+                "equipment. Best where volume redistribution alone cannot achieve ≥15d WAS HRT and "
+                "a Class A upgrade is not yet required.")
     else:
         rec += ("SolidStream is the recommended retrofit pathway for existing AD plants "
                 "where dewatering performance and pathogen compliance are primary drivers "
@@ -1333,7 +1387,13 @@ def run_comparison(
         # consistent with the badge and the per-config ★ TIED prefixes.
         tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 3.0]
         is_tie     = len(tie_ids) > 1
-        winner_id  = tie_ids[0]   # first alphabetically among tied; report flags tie
+        # Winner = the highest-scoring config (deterministic on ties via first
+        # max). Previously this was tie_ids[0], i.e. the first config in list
+        # order among those within the tie band — which could surface a LOWER-
+        # scored config as "recommended" (e.g. Pre-THP 69 over SolidStream 70)
+        # and contradict the robustness analysis. is_tie/tie_ids still flag that
+        # the result is close.
+        winner_id  = max(included_scored, key=lambda kv: kv[1])[0]
         winner_label = CONFIG_LABELS_SHORT.get(winner_id, "") if winner_id else ""
 
     # Store tie info on result for report use

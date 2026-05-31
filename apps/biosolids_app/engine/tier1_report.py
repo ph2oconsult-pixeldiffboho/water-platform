@@ -6299,11 +6299,19 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
     story.append(_tbl(rows, [cw_l] + [cw_c]*n,
         [("WORDWRAP",(0,0),(-1,-1),"LTR")], row_bgs=True))
     story.append(_sp(2))
+    _n_exceed = sum(1 for cr in configs if cr.centrate_nh4_kg_per_d / TN_KGD > 0.10)
+    if _n_exceed == 0:
+        _thr_txt = "No configuration exceeds this threshold at this plant. "
+    elif _n_exceed == len(configs):
+        _thr_txt = "All configurations exceed this threshold. "
+    else:
+        _thr_txt = (f"{_n_exceed} of {len(configs)} configurations exceed this threshold "
+                    "(see the sidestream-treatment row above). ")
     story.append(_p(
         f"Mainstream TN reference: {TN_KGD:,.0f} kg N/day "
         f"({FLOW_MLD:.0f} ML/day estimated plant flow). "
         "Sidestream treatment triggered when centrate exceeds 10% of mainstream TN. "
-        "All configurations exceed this threshold. "
+        f"{_thr_txt}"
         "O2 demand and alkalinity figures represent the additional load from centrate "
         "NH4-N above the conventional AD baseline.",
         S["caption"]))
@@ -6877,7 +6885,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         "separately. PS is dominated by lipids and carbohydrates (rapid hydrolysis, "
         "k\u2248\u200a0.25\u2009/day), while WAS is cell-mass dominated (slow hydrolysis, "
         "k\u2248\u200a0.12\u2009/day). When blended, WAS kinetics suppress PS performance. "
-        "This section quantifies the impact for ETP's existing 8\u2009\u00d7\u20048,000\u2009m3 "
+        "This section quantifies the impact for this plant\u2019s existing "
         "digester configuration, and presents the volume optimisation results.",
         S["body"]))
     story.append(_sp(2))
@@ -7150,7 +7158,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         S["caption"]))
     story.append(_p(
         "<b>Reconciliation note \u2014 uplift figures in this table vs performance table:</b> "
-        "The volume-optimised uplifts above (e.g. +35.6% for 2PS\u200a+\u200a6WAS) are "
+        "The volume-optimised uplifts shown above are "
         "derived from a site-specific kinetic model using this plant\u2019s actual digester "
         "allocation and HRT distribution. "
         "The performance table and scoring model use <b>22.5%</b> \u2014 the "
@@ -7218,9 +7226,9 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         ], row_bgs=False))
         story.append(_sp(2))
         story.append(_p(
-        "Only the 2PS\u200a+\u200a6WAS split fully complies with the WAS 15-day HRT minimum. "
-        "3PS\u200a+\u200a5WAS is shown for comparison but WAS HRT of 14.2 days is "
-        "marginally below the minimum and leaves no growth headroom.",
+        "Splits achieving WAS HRT \u2265 15\u2009d (flagged \u2713 above) are operationally "
+        "compliant; splits below 15\u2009d are shown for comparison only and leave no "
+        "growth headroom for the WAS stream.",
         S["caption"]))
     story.append(_sp(4))
 
@@ -7245,24 +7253,24 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         S["body"]))
     story.append(_sp(2))
     story.append(_p(
-        f"Separate 2PS\u200a+\u200a6WAS \u2014 capacity at minimum HRT constraints "
+        f"Separate {_best_compliant[0]}PS\u200a+\u200a{_best_compliant[1]}WAS \u2014 capacity at minimum HRT constraints "
         f"(PS\u2009=\u200910\u2009d, WAS\u2009=\u200915\u2009d):",
         S["body"]))
 
     cap_rows = [
         [PH2("Stream"), PH2("Digesters"), PH2("Volume (m3)"),
          PH2("Min HRT"), PH2("Max throughput (tDS/yr)"), PH2("Current load"), PH2("Headroom")],
-        [P2("PS"), P2("2\u200a\u00d7\u20048,000"), P2("16,000"),
+        [P2("PS"), P2(f"{_best_compliant[0]}\u200a\u00d7\u2004{V_EACH:,.0f}"), P2(f"{sc2_V_PS:,.0f}"),
          P2("10 days"), P2(f"{ps_max:,.0f}"),
          P2(f"{cur_ps:,.0f}"), P2(f"+{ps_max-cur_ps:,.0f}")],
-        [P2("WAS"), P2("6\u200a\u00d7\u20048,000"), P2("48,000"),
+        [P2("WAS"), P2(f"{_best_compliant[1]}\u200a\u00d7\u2004{V_EACH:,.0f}"), P2(f"{sc2_V_WAS:,.0f}"),
          P2("15 days"), P2(f"{was_max:,.0f}"),
          P2(f"{cur_was:,.0f}"),
          Paragraph(f"+{was_max-cur_was:,.0f}" if was_max>cur_was else
                    f"\u2212{cur_was-was_max:,.0f} DEFICIT",
              ParagraphStyle("hd", parent=S["cell_b"],
                  textColor=SAFE_GREEN if was_max>cur_was else FAIL_RED))],
-        [Paragraph("Bottleneck \u2014 WAS controls: 6 digesters just cover current WAS load",
+        [Paragraph(f"Bottleneck \u2014 WAS controls: {_best_compliant[1]} digesters cover current WAS load",
               ParagraphStyle("bt", parent=S["cell_b"], fontSize=7.5, leading=9, textColor=WARN_AMBER)),
          P2(""), P2(""), P2(""), P2(""), P2(""), P2("")],
     ]
@@ -7272,10 +7280,10 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
          ("SPAN",(0,-1),(-1,-1))], row_bgs=True))
     story.append(_sp(2))
     story.append(_p(
-        "WAS bottleneck: 6 digesters at 17.0\u2009d HRT supports current WAS load "
+        f"WAS bottleneck: {_best_compliant[1]} digesters at {_best_compliant[5]:.1f}\u2009d HRT support current WAS load "
         f"({cur_was:,.0f}\u2009tDS/yr) with moderate headroom. "
         "Any significant WAS catchment growth will require additional WAS digester volume. "
-        "This is the primary operational constraint of separate digestion at ETP.",
+        "This is the primary operational constraint of separate digestion at this plant.",
         S["small"]))
     story.append(_sp(4))
 
@@ -7313,8 +7321,8 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
          ("SPAN",(0,-1),(-1,-1))], row_bgs=True))
             story.append(_sp(2))
             story.append(_p(
-                "Capital cost assumption: $15\u2013$25M per 8,000\u2009m3 digester (Class 5 estimate, \u00b150%). "
-                "Separate digestion enables the same biogas output with 2 fewer digesters "
+                "Capital cost assumption: $15\u2013$25M per 8,000\u2009m3-class digester (Class 5 estimate, \u00b150%; scale to unit size). "
+                "Separate digestion enables the same biogas output with fewer digesters "
                 "by exploiting PS\u2019s faster kinetics and allowing each stream to be "
                 "designed for its own optimal HRT.",
                 S["small"]))
@@ -7322,7 +7330,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_sp(4))
 
     # ── Pros and cons ─────────────────────────────────────────────────────
-    story.append(_p("Pros and Cons \u2014 ETP-Specific Assessment", S["h2"]))
+    story.append(_p("Pros and Cons \u2014 Site-Specific Assessment", S["h2"]))
 
     # Pull 2PS+6WAS numbers
     _best_compliant = next((r for _,r,ok in sc_data if ok), sc_data[0][1] if sc_data else None)
@@ -7333,13 +7341,13 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     uplift_mwh=uplift_kw*8760*0.88/1000
 
     pros = [
-        f"Biogas uplift +{sc2_uplift:.1f}% (2PS+6WAS, only compliant split): "
+        f"Biogas uplift +{sc2_uplift:.1f}% ({_best_compliant[0]}PS+{_best_compliant[1]}WAS, best compliant split): "
         f"+{_best_compliant[8]-BG_CAMBI:,.0f}\u2009Nm3/day \u2192 "
         f"+{uplift_kw:,.0f}\u2009kW gross / +{uplift_mwh:,.0f}\u2009MWh/yr",
         f"PS kinetics accelerated: k_PS=0.25/day vs k_blend=0.13/day; "
         f"PS VSR improves from ~70% (blended) to {_best_compliant[6]:.1f}% (separate)",
         "New build capital avoided: if building new digesters, separate design "
-        f"saves 2\u200a\u00d7\u20048,000\u2009m3 (~$30\u2013$50M) vs blended for same biogas output",
+        "saves digester volume vs blended for the same biogas output",
         "Operational independence: PS and WAS banks can be taken offline "
         "separately for maintenance without shutting whole plant",
         "WAS foam/scum isolation: WAS foaming events do not contaminate PS digesters",
@@ -7347,17 +7355,17 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         "potentially improving pre-dewatering performance before THP",
     ]
     cons = [
-        "CURRENT PLANT CONSTRAINT: existing 8 digesters are almost certainly "
+        f"CURRENT PLANT CONSTRAINT: the existing {N_DIG} digesters are almost certainly "
         "plumbed for blended feed. Separating requires new PS/WAS distribution "
         "pipework, isolation valves, gas manifolding. Estimated: $5\u2013$15M (Class 5)",
-        "WAS HRT IS TIGHT AT 2PS+6WAS: WAS HRT=17.0\u2009d gives moderate headroom. "
+        f"WAS HRT CAN BE TIGHT: at the recommended split WAS HRT={_best_compliant[5]:.1f}\u2009d gives limited headroom. "
         "Any significant WAS load growth requires additional WAS digester volume",
-        "BLENDED HRT ALREADY GOOD: at 18.1\u2009d blended, the plant is well-operated. "
+        "BLENDED HRT ALREADY ADEQUATE: the plant is currently well-operated. "
         f"The uplift (+{sc2_uplift:.1f}%) is real but incremental, not transformational",
         "LITERATURE UNCERTAINTY: 30% PS yield uplift is empirical (range 10\u201335% "
-        "across studies). ETP-specific PS characteristics should be validated",
-        "MIXING COMPLEXITY: PS at 7.5%\u2009TS requires different mixing than "
-        "WAS at 3.5%\u2009TS. Existing mixing systems may need modification",
+        "across studies). Site-specific PS characteristics should be validated",
+        f"MIXING COMPLEXITY: PS at {site.ps_ts_pct:.1f}%\u2009TS requires different mixing than "
+        f"WAS at {site.was_ts_pct:.1f}%\u2009TS. Existing mixing systems may need modification",
         "SOLIDSTREAM INTERFACE: separate digestate streams must recombine "
         "before THP pre-dewatering \u2014 adds hydraulic complexity at the THP interface",
     ]
@@ -7377,7 +7385,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
 
     # ── Verdict box ───────────────────────────────────────────────────────
     verdict = (
-        "<b>Verdict:</b> For the EXISTING ETP plant, separate digestion (2PS\u200a+\u200a6WAS) "
+        f"<b>Verdict:</b> For the existing plant, separate digestion ({_best_compliant[0]}PS\u200a+\u200a{_best_compliant[1]}WAS) "
         f"delivers a genuine +{sc2_uplift:.1f}% biogas uplift (+{uplift_mwh:,.0f}\u2009MWh/yr) "
         "but re-piping cost and tight WAS HRT headroom make it a marginal business case "
         "at current energy prices. <b>For a NEW FACILITY (Stage 2 expansion), "
@@ -9349,6 +9357,7 @@ def _nutrient_recovery_section(story, S, d: Tier1ReportData, section_num: int):
                 "optimisation opportunity rather than an immediate infrastructure need. "
                 "Include in Stage 2 sidestream feasibility assessment.",
                 S["body"]))
+    else:
         story.append(_p(
             f"<b>PN/A is NOT RECOMMENDED at this facility.</b> "
             f"Centrate NH4-N concentration of "
