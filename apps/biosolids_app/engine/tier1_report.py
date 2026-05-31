@@ -4859,7 +4859,7 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             "under SolidStream. Without centrate recycle (conventional AD basis), the "
             f"existing {vol_base:,.0f} m3 gives {vol_base/q_feed:.1f} days HRT. With centrate recycle adding "
             f"{centrate_recycle:,.0f} m3/day of hydraulic load, HRT falls to "
-            f"{vol_base/q_ss:.1f} days — below the 15-day minimum. The additional "
+            f"{vol_base/q_ss:.1f} days \u2014 below the adopted 15-day criterion. The additional "
             f"additional {v_each:,.0f} m3 digester ({vol_exp:,.0f} m3 total) "
             f"would restore hydraulic HRT to {hrt_exp_hyd:.1f} days. "
             "This should be verified with actual centrate volume data from Cambi "
@@ -5238,14 +5238,14 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             if not hrt_ps_ok and not hrt_was_ok:
                 _hrt_detail = (
                     f"PS HRT of {hrt_ps_ec:.1f}d and WAS HRT of {hrt_was_ec:.1f}d "
-                    "are both below the 15-day minimum for stable mesophilic digestion. "
+                    "are both below BioPoint\u2019s adopted 15-day screening criterion for robust mesophilic digestion. "
                     "Digester expansion is required on both streams. "
                 )
                 _hrt_action = "achieve \u226515d HRT on both streams"
             elif not hrt_was_ok:
                 _hrt_detail = (
-                    f"PS HRT of {hrt_ps_ec:.1f}d exceeds the minimum requirement. "
-                    f"However, <b>WAS HRT of {hrt_was_ec:.1f}d is below the 15-day minimum "
+                    f"PS HRT of {hrt_ps_ec:.1f}d meets the adopted criterion. "
+                    f"However, <b>WAS HRT of {hrt_was_ec:.1f}d is below the adopted 15-day screening criterion "
                     "and is the controlling constraint.</b> "
                     "WAS hydrolysis kinetics are slower than PS (k\u22480.12/day vs 0.25/day) "
                     "and WAS HRT sets the performance ceiling for the blended system. "
@@ -5253,8 +5253,8 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                 _hrt_action = "achieve \u226515d WAS HRT (the controlling stream)"
             else:  # only PS below
                 _hrt_detail = (
-                    f"WAS HRT of {hrt_was_ec:.1f}d exceeds the minimum requirement. "
-                    f"However, <b>PS HRT of {hrt_ps_ec:.1f}d is below the 15-day minimum "
+                    f"WAS HRT of {hrt_was_ec:.1f}d meets the adopted criterion. "
+                    f"However, <b>PS HRT of {hrt_ps_ec:.1f}d is below the adopted 15-day screening criterion "
                     "and risks incomplete primary sludge stabilisation.</b> "
                 )
                 _hrt_action = "achieve \u226515d PS HRT"
@@ -5278,7 +5278,7 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                     + _hrt_detail +
                     "<b>THP investment without adequate WAS digestion capacity risks chronic "
                     "underperformance and should not proceed to detailed design until WAS HRT "
-                    "is confirmed at minimum 15d.</b> "
+                    "is confirmed at the adopted 15-day criterion.</b> "
                     f"Priority action: achieve {_hrt_action} through operational "
                     "changes, volume redistribution, or physical expansion "
                     "before committing to THP procurement."
