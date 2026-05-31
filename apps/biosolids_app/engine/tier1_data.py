@@ -295,6 +295,28 @@ def assemble_report_data(ss: dict, report_cfg: dict) -> Tier1ReportData:
     # Comparison result
     d.cmp_result  = ss.get("cmp_result")
 
+    # ── Single source of truth ────────────────────────────────────────────
+    # Reconcile the report's plant inputs to the comparison the engine actually
+    # ran on. Without this, plant scale can diverge between sections: the exec
+    # summary / project context read d.* (set above from session state, with
+    # 3,000/1,200 m3 defaults) while engine-driven sections read
+    # d.cmp_result.site directly. If session state is incomplete the two
+    # disagree — e.g. a 64,000 m3 plant rendering "4,200 m3" in the summary.
+    # The comparison's site is authoritative, so derive d.* from it.
+    _site = getattr(d.cmp_result, "site", None) if d.cmp_result else None
+    if _site is not None:
+        d.ps_ds_tpd     = _site.ps_ds_tpd
+        d.was_ds_tpd    = _site.was_ds_tpd
+        d.ps_ts_pct     = _site.ps_ts_pct
+        d.was_ts_pct    = _site.was_ts_pct
+        d.ps_vs_pct     = _site.ps_vs_pct
+        d.was_vs_pct    = _site.was_vs_pct
+        d.ps_n_pct      = _site.ps_n_pct
+        d.was_n_pct     = _site.was_n_pct
+        d.ps_volume_m3  = _site.ps_volume_m3
+        d.was_volume_m3 = _site.was_volume_m3
+        d.plant_tkn_kgd = _site.plant_tkn_kg_per_d
+
     # Optional
     d.pathway_results = ss.get("pathway_results")
     d.drying_result   = ss.get("drying_result")
