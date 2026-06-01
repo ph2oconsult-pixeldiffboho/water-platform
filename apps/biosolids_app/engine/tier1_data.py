@@ -228,6 +228,18 @@ class Tier1ReportData:
     was_volume_m3:  float = 0.0
     plant_tkn_kgd:  float = 500.0
     n2o_ef:         float = 0.010  # N2O emission factor kg N2O-N/kg N applied (IPCC default)
+
+    # ── Digestion HRT design criterion (configurable screening basis) ──────
+    # The HRT thresholds below which a stream is flagged "below criterion".
+    # This is an ADOPTED SCREENING BASIS, not a universal/regulatory requirement.
+    # mode is a label only; the numeric values drive the assessment, so a
+    # reviewer can substitute their own utility standard and re-run.
+    hrt_criterion_mode:     str   = "Utility standard"   # Regulatory minimum / Utility standard / User-defined / Performance-based
+    was_hrt_criterion_d:    float = 15.0   # adopted WAS HRT criterion (the controlling stream)
+    ps_hrt_lo_d:            float = 12.0   # adopted PS screening range, lower bound (faster kinetics)
+    ps_hrt_hi_d:            float = 15.0   # adopted PS screening range, upper bound
+    hrt_regulatory_min_d:   float = 10.0   # typical regulatory minimum (VAR/pathogen) — reference only
+    hrt_utility_standard_d: float = 15.0   # typical utility corporate standard — reference only
     # PFAS site characterisation inputs
     pfas_risk_level:      str   = "unknown"  # unknown / low / medium / high / critical
     pfas_land_app_viable: bool  = True       # can biosolids still be land-applied?
@@ -286,6 +298,18 @@ def assemble_report_data(ss: dict, report_cfg: dict) -> Tier1ReportData:
     d.was_volume_m3= ss.get("cmp_was_vol",ss.get("mad_wasV",  1200.0))
     d.plant_tkn_kgd= ss.get("cmp_plant_tkn", 500.0)
     d.n2o_ef       = float(report_cfg.get("n2o_ef", 0.010))
+
+    # Digestion HRT design criterion (configurable; defaults preserve prior behaviour).
+    # Accept either a nested report_cfg["hrt_criterion"] dict or flat keys.
+    _hc = report_cfg.get("hrt_criterion", {})
+    if not isinstance(_hc, dict):
+        _hc = {}
+    d.hrt_criterion_mode     = _hc.get("mode", report_cfg.get("hrt_criterion_mode", "Utility standard"))
+    d.was_hrt_criterion_d    = float(_hc.get("was_d",  report_cfg.get("was_hrt_criterion_d", 15.0)))
+    d.ps_hrt_lo_d            = float(_hc.get("ps_lo_d", report_cfg.get("ps_hrt_lo_d", 12.0)))
+    d.ps_hrt_hi_d            = float(_hc.get("ps_hi_d", report_cfg.get("ps_hrt_hi_d", 15.0)))
+    d.hrt_regulatory_min_d   = float(_hc.get("regulatory_min_d",   report_cfg.get("hrt_regulatory_min_d", 10.0)))
+    d.hrt_utility_standard_d = float(_hc.get("utility_standard_d", report_cfg.get("hrt_utility_standard_d", 15.0)))
 
     # MAD result
     d.mad_result  = ss.get("mad_result")
