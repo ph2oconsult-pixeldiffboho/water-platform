@@ -238,6 +238,8 @@ class ConfigResult:
     wet_cake_t_per_day:     float = 0.0
     wet_cake_t_per_year:    float = 0.0
     trucks_per_day:         float = 0.0
+    eps_factor:             float = 0.0   # mad_v2 only; 0.0 = unset
+    polymer_kg_per_tds:     float = 0.0   # mad_v2 only; 0.0 = use site default dose
     cake_vol_reduction_pct: float = 0.0   # vs base case
     vsr_pct:                float = 57.5
     ps_vsr_pct:             float = 0.0   # stream-specific; only set for separate configs
@@ -627,9 +629,11 @@ def _madv2_to_madresult(v2, site, config_id):
     # WAS_CONVENTIONAL 8.5%) and ignores the site's ps_n_pct / was_n_pct. Rescale
     # to the site nitrogen basis so user N inputs are honoured. nh4 is linear in
     # feed N (nh4 = total_n * n_release), so this rescale is exact, not an
-    # approximation. NOTE: the release FRACTION model itself (mad_v2 ~40% vs
-    # mad.py ~70% of feed N) is a separate, unresolved calibration question that
-    # needs a measured centrate-N anchor; it is deliberately NOT changed here.
+    # approximation. NOTE: the release FRACTION model itself was validated in A22
+    # against measured Mangere/Malabar centrate NH4-N (implied 32-43% of feed N;
+    # mad_v2 predicts 41-47%, accurate; mad.py predicted ~63%, inflated ~1.6x).
+    # The fraction is therefore left as mad_v2 computes it — only the N basis is
+    # corrected here.
     v2_basis_kg = (site.ps_ds_tpd * N_FRACTION[SludgeType.PRIMARY]
                    + site.was_ds_tpd * N_FRACTION[SludgeType.WAS_CONVENTIONAL]) * 1000.0
     site_basis_kg = (site.ps_ds_tpd * site.ps_n_pct / 100.0
@@ -899,7 +903,7 @@ def _heat_balance(config_id: str, elec_gross_kw: float,
 
 def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
          centrate_n_kg_d, site: ComparisonSiteInputs,
-         elec_gross_kw: float = 0.0):
+         elec_gross_kw: float = 0.0, polymer_kg_per_tds: float = None):
     """Scope 1/2/3 GHG calculation including heat recovery assessment."""
     # Scope 1: fugitive CH4
     ch4_fugitive_kg_d = (biogas_m3_d * CH4_FRACTION_BIOGAS
@@ -931,11 +935,15 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
     s3_transport = transport_t_km * TRANSPORT_EF
 
     # Scope 3: polymer upstream — scales with DS load + dewatering type
-    poly_kg_d = (site.ps_ds_tpd + site.was_ds_tpd) * site.polymer_dose_kg_per_tds
-    if config_id == "solidstream":
-        poly_kg_d *= 1.5   # higher polymer for hot centrifuge dewatering
-    elif config_id == "pre_thp":
-        poly_kg_d *= 1.2   # pre-dewatering + final dewatering — two centrifuge stages
+    if polymer_kg_per_tds is not None and polymer_kg_per_tds > 0:
+        # mad_v2 physics polymer demand (already EPS/hydrolysis/tech adjusted)
+        poly_kg_d = (site.ps_ds_tpd + site.was_ds_tpd) * polymer_kg_per_tds
+    else:
+        poly_kg_d = (site.ps_ds_tpd + site.was_ds_tpd) * site.polymer_dose_kg_per_tds
+        if config_id == "solidstream":
+            poly_kg_d *= 1.5   # higher polymer for hot centrifuge dewatering
+        elif config_id == "pre_thp":
+            poly_kg_d *= 1.2   # pre-dewatering + final dewatering — two centrifuge stages
     s3_polymer = poly_kg_d * POLYMER_EF
 
     # Scope 3c: supplementary boiler gas — only if CHP waste heat insufficient
@@ -961,12 +969,15 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
 
 def _opex(config_id, elec_net_kw, wet_cake_tpy,
           centrate_n_kg_d, ds_total, site: ComparisonSiteInputs,
-          base_centrate_n_kg_d: float = 0.0):
+          base_centrate_n_kg_d: float = 0.0, polymer_kg_per_tds: float = None):
     """Annual OPEX breakdown."""
     # Polymer
-    poly_dose = site.polymer_dose_kg_per_tds
-    if config_id == "solidstream":
-        poly_dose *= 1.5
+    if polymer_kg_per_tds is not None and polymer_kg_per_tds > 0:
+        poly_dose = polymer_kg_per_tds   # mad_v2 physics polymer demand
+    else:
+        poly_dose = site.polymer_dose_kg_per_tds
+        if config_id == "solidstream":
+            poly_dose *= 1.5
     poly_cost = ds_total * 365 * poly_dose * site.polymer_cost_per_kg
 
     # Energy net (positive = cost, negative = revenue)
@@ -1270,14 +1281,26 @@ def run_comparison(
 
         # ── Dewatering / cake ──────────────────────────────────────────────
         ds_total = site.ps_ds_tpd + site.was_ds_tpd
-        _hrt_for_cake = getattr(cr, "hrt_was_d",
-                                getattr(cr, "hrt_ps_d", 15.0))
-        cake_ds, wet_tpd, wet_tpy, trucks = _cake_properties(
-            config_id, cr.vsr_pct, ds_total, hrt_d=_hrt_for_cake)
-        cr.cake_ds_pct         = cake_ds
-        cr.wet_cake_t_per_day  = wet_tpd
-        cr.wet_cake_t_per_year = wet_tpy
-        cr.trucks_per_day      = trucks
+        _v2res = getattr(mad_result, "_v2", None)
+        if _v2res is not None:
+            # mad_v2 cutover: cake DS, wet cake, EPS and polymer demand from the
+            # physics dewatering model (EPS water-binding + hydrolysis effects).
+            _dew = _v2res.dewatering
+            cr.cake_ds_pct         = _dew.cake_ds_pct
+            cr.wet_cake_t_per_day  = _dew.wet_cake_tpd
+            cr.wet_cake_t_per_year = _dew.wet_cake_tpy
+            cr.trucks_per_day      = _dew.wet_cake_tpd / 40.0
+            cr.eps_factor          = _dew.eps_factor
+            cr.polymer_kg_per_tds  = _dew.polymer_kg_per_tds
+        else:
+            _hrt_for_cake = getattr(cr, "hrt_was_d",
+                                    getattr(cr, "hrt_ps_d", 15.0))
+            cake_ds, wet_tpd, wet_tpy, trucks = _cake_properties(
+                config_id, cr.vsr_pct, ds_total, hrt_d=_hrt_for_cake)
+            cr.cake_ds_pct         = cake_ds
+            cr.wet_cake_t_per_day  = wet_tpd
+            cr.wet_cake_t_per_year = wet_tpy
+            cr.trucks_per_day      = trucks
 
         # Hydrolysis factor, OLR, controlling constraint, complexity, reference count
         try:
@@ -1372,7 +1395,8 @@ def run_comparison(
          s3_gas_upstream, s1_boiler, heat_bal) = _ghg(
             config_id, cr.biogas_m3_per_d, cr.elec_net_kw,
             cr.wet_cake_t_per_day, cr.centrate_nh4_kg_per_d, site,
-            elec_gross_kw=cr.elec_gross_kw)
+            elec_gross_kw=cr.elec_gross_kw,
+            polymer_kg_per_tds=(cr.polymer_kg_per_tds or None))
         cr.scope1_kg_co2e_per_d  = s1
         cr.scope1_ch4_kg_co2e_per_d = s1_ch4
         cr.scope1_n2o_kg_co2e_per_d = s1_n2o
@@ -1392,7 +1416,8 @@ def run_comparison(
         _base_centrate = base_result.centrate_nh4_kg_per_d if base_result else 0.0
         opex = _opex(config_id, cr.elec_net_kw, cr.wet_cake_t_per_year,
                      cr.centrate_nh4_kg_per_d, ds_total, site,
-                     base_centrate_n_kg_d=_base_centrate)
+                     base_centrate_n_kg_d=_base_centrate,
+                     polymer_kg_per_tds=(cr.polymer_kg_per_tds or None))
         cr.opex_polymer_per_yr                = opex["polymer"]
         cr.opex_energy_net_per_yr             = opex["energy"]
         cr.opex_disposal_per_yr               = opex["disposal"]
