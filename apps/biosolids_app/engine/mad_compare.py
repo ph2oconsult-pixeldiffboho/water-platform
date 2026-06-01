@@ -1112,7 +1112,7 @@ def _narratives(config_id: ConfigID, cr: ConfigResult,
                     f"~{cr.cake_vol_reduction_pct:.0f}% reduction in wet cake volume vs base",
                     f"~{cr.biogas_uplift_pct:.0f}% biogas uplift from COD centrate recycle",
                     "Retrofit of existing digesters — no new digester volume required",
-                    "Eliminates 3-year stockpiling requirement (EPA Victoria)"]
+                    "Removes stockpiling requirement for Class A compliance"]
         risks    = ["Minimum 15d HRT required — check digester volume adequacy",
                     "Performance is vendor-estimated (pre-contract) — verify at detailed design",
                     "Higher centrate N load than base case",
