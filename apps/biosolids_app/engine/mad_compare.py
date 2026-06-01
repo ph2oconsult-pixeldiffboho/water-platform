@@ -509,7 +509,7 @@ BIOGAS_LHV_MJ_M3 = 35.8 * CH4_FRACTION_BIOGAS   # CH4 fraction only
 # (base, recup, pre_thp, solidstream, optimised_mad) through mad_v2.
 # The separate / separate_thp configs always use separate_digestion.py and are
 # unaffected by this flag.
-USE_MAD_V2 = False
+USE_MAD_V2 = True
 
 # Kinetics calibration preset for mad_v2 ("spec" matches mad.py biogas to <0.1%
 # at ETP; "mangere" is the plant-anchored variant).
