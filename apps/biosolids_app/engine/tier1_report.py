@@ -7032,6 +7032,85 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         S["small"]))
     story.append(_sp(4))
 
+    # ── THP Performance Trade-off Table ─────────────────────────────────
+    story.append(_p("THP Configuration Performance Comparison", S["h2"]))
+    story.append(_p(
+        "The following table shows how VSR, biogas, cake DS, and steam demand "
+        "vary across THP configurations at the ETP digester volume (64,000 m\u00b3) "
+        "and feed load (219.5 tDS/d). Values are screening-grade (±15%).",
+        S["body"]))
+    story.append(_sp(2))
+
+    # Build performance table using site data from comparison result
+    _site_r = d.cmp_result
+    if _site_r:
+        from math import exp as _mexp
+
+        def _thp_perf_row(label, mode_label, vsr_pct, hrt_d, cake_fn_id,
+                          biogas_uplift_pct, steam_kw_per_tds, base_ds):
+            from tier1_data import THP_HRT_SATURATION
+            _k   = THP_HRT_SATURATION["k_thp"]
+            _max = THP_HRT_SATURATION["base_vsr_max"]
+            _ds_total = d.ps_ds_tpd + d.was_ds_tpd
+            # Cake DS from HRT model
+            if cake_fn_id == "solidstream":
+                _cds = max(36.0, min(43.0, 42.0 - max(0.0, hrt_d - 10.0) * 0.12))
+            elif cake_fn_id in ("pre_thp", "separate_thp"):
+                _loss = 16.5 * (1 - _mexp(-0.28 * hrt_d))
+                _cds  = max(28.0, min(36.0, 46.0 - _loss + (2.0 if cake_fn_id == "separate_thp" else 0)))
+            else:
+                _cds = 22.0
+            # Steam demand
+            _steam_kw = steam_kw_per_tds * _ds_total
+            _steam_kgh = _steam_kw / 0.63
+            return [
+                P(label, S),
+                P(f"~{vsr_pct:.0f}%", S),
+                P(f"+{biogas_uplift_pct:.0f}%", S),
+                P(f"~{_cds:.0f}%", S),
+                P(f"{_steam_kgh:,.0f} kg/h", S),
+                P(mode_label, S),
+            ]
+
+        # Base HRT from comparison result
+        _base_cfg = _site_r.configs.get("base")
+        _hrt_base = getattr(_base_cfg, "hrt_was_d", 12.0) if _base_cfg else 12.0
+        _hrt_thp  = 18.0   # THP with 10% feed DS reduces flow, extends HRT
+
+        perf_rows = [
+            [PH("Configuration", S), PH("VSR", S), PH("Biogas vs base", S),
+             PH("Cake DS", S), PH("Steam demand", S), PH("Category", S)],
+            _thp_perf_row("Conv AD (base)", "Baseline",
+                          44.0, _hrt_base, "base", 0.0, 0.0, 20.0),
+            _thp_perf_row("Pre-THP (full)", "Performance",
+                          56.0, _hrt_thp, "pre_thp", 22.0, 21.2, 20.0),
+            _thp_perf_row("WAS-only THP (SolidStream)", "Performance",
+                          54.0, _hrt_thp, "solidstream", 18.0, 10.5, 20.0),
+            _thp_perf_row("Separate PS/WAS (no THP)", "Architecture",
+                          49.0, 17.0, "base", 13.0, 0.0, 20.0),
+            _thp_perf_row("Separate+THP (WAS hydrolysis)", "Arch+Performance",
+                          57.0, _hrt_thp, "separate_thp", 29.0, 10.5, 20.0),
+        ]
+        cw_perf = [52*mm, 16*mm, 22*mm, 18*mm, 26*mm, CONTENT_W-134*mm]
+        story.append(_tbl(perf_rows, cw_perf,
+            [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8.5)],
+            row_bgs=True))
+        story.append(_sp(2))
+        story.append(_p(
+            "Note: Cake DS now varies with THP mode and digestion HRT "
+            "(Mangere saturation model). Pre-THP at 18d HRT: ~30% DS (vs 32% "
+            "in previous fixed-value model). SolidStream at 18d HRT: ~38% DS "
+            "(hot centrate recycle maintains dewaterability). "
+            "Separate digestion (no THP) at 17d HRT: ~22% DS (conventional). "
+            "Separate+THP: ~32% DS from improved WAS-stream dewaterability. "
+            "Steam demand shown for ETP total DS load (219.5 tDS/d). "
+            "All values screening-grade (±15%). "
+            "Key trade-off: THP benefits (VSR, cake DS, Class A) peak at ~10-12d "
+            "HRT. Operating at 18-20d HRT captures minimal additional VSR "
+            "at significant capital cost.",
+            S["caption"]))
+        story.append(_sp(5))
+
     # ── Calibration Anchors table ─────────────────────────────────────────
     story.append(_p("Full-Scale Calibration Anchors", S["h2"]))
     story.append(_p(
@@ -9728,6 +9807,7 @@ def _nutrient_recovery_section(story, S, d: Tier1ReportData, section_num: int):
                 "optimisation opportunity rather than an immediate infrastructure need. "
                 "Include in Stage 2 sidestream feasibility assessment.",
                 S["body"]))
+    else:
         story.append(_p(
             f"<b>PN/A is NOT RECOMMENDED at this facility.</b> "
             f"Centrate NH4-N concentration of "

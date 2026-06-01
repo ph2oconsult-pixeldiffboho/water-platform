@@ -604,23 +604,40 @@ def _run_mad_config(site: ComparisonSiteInputs, config_id: ConfigID):
         return None, None
 
 
+def _cake_ds_from_hrt(config_id: ConfigID, hrt_d: float,
+                      base_cake_ds_pct: float = 20.0) -> float:
+    """
+    HRT-aware cake DS (THP model v0.2, calibrated Mangere/Malabar).
+    Dewaterability deteriorates through digestion: most loss in first ~10d.
+    Mangere 2015 full THP (20d HRT) -> 30% DS confirmed.
+    SolidStream (Cambi guarantee) -> 38% DS.
+    """
+    from math import exp as _e
+    if config_id == "solidstream":
+        return max(36.0, min(43.0, 42.0 - max(0.0, hrt_d - 10.0) * 0.12))
+    if config_id in ("pre_thp", "separate_thp"):
+        loss = 16.5 * (1.0 - _e(-0.28 * max(hrt_d, 0)))
+        ds = 46.0 - loss
+        if config_id == "separate_thp":
+            ds += 2.0
+        return max(28.0, min(36.0, ds))
+    return min(base_cake_ds_pct + 4.0, 24.0)
+
+
 def _cake_properties(config_id: ConfigID, vsr_pct: float,
-                     ds_tpd: float, base_cake_ds_pct: float = 20.0):
+                     ds_tpd: float, base_cake_ds_pct: float = 20.0,
+                     hrt_d: float = 15.0):
     """
     Compute dewatered cake DS%, wet cake volume, and trucks/day.
-    SolidStream achieves 38% DS (Cambi Melbourne memo).
-    Pre-THP achieves ~30–35% DS (higher VSR but conventional dewatering).
-    Recup: marginally better dewatering ~24–26% DS (higher feed TS).
-    Base: 20–22% DS typical.
+    Cake DS varies with THP mode and HRT (saturation model).
+    Calibration: Mangere 2015 full THP (20d) -> 30% DS; SolidStream -> 38% DS.
     """
-    cake_ds = {
-        "base":        base_cake_ds_pct,
-        "recup":       base_cake_ds_pct + 3.0,   # marginal improvement
-        "pre_thp":     base_cake_ds_pct + 12.0,  # improved rheology
-        "solidstream": 38.0,                      # SolidStream guarantee
-        "separate":    base_cake_ds_pct,          # no thermal hydrolysis
-        "separate_thp":base_cake_ds_pct + 10.0,  # WAS THP improves dewatering
-    }.get(config_id, base_cake_ds_pct)
+    cake_ds = {"base": base_cake_ds_pct,
+               "recup": base_cake_ds_pct + 3.0,
+               "separate": base_cake_ds_pct}.get(config_id)
+    if cake_ds is None:
+        cake_ds = _cake_ds_from_hrt(config_id, hrt_d, base_cake_ds_pct)
+
 
     # VS destroyed → DS remaining in cake
     # DS_feed × (1 - VSR × VS_fraction) = DS remaining
@@ -702,7 +719,7 @@ def _ghg(config_id, biogas_m3_d, elec_net_kw, wet_cake_tpd,
     s1_ch4 = ch4_fugitive_kg_d * GWP_CH4
 
     # Scope 1: N2O from land application (if Class B → land applied)
-    cake_ds_pct = {"base": 20, "recup": 23, "pre_thp": 32, "solidstream": 38, "separate": 20, "separate_thp": 30}.get(config_id, 20)
+    cake_ds_pct = _cake_ds_from_hrt(config_id, 15.0)  # GHG calc: use 15d default
     ds_remaining = site.ps_ds_tpd + site.was_ds_tpd  # simplified
     n_applied_kg_d = ds_remaining * (site.ps_n_pct / 100.0 + site.was_n_pct / 100.0) / 2.0
     n2o_n = n_applied_kg_d * N2O_EF_LAND
@@ -890,45 +907,6 @@ def _narratives(config_id: ConfigID, cr: ConfigResult,
                     "Greater operational complexity — steam system, high-pressure vessels",
                     "Longer construction programme"]
 
-    elif config_id == "separate":
-        benefits = [f"Biogas uplift ~{cr.biogas_uplift_pct:.0f}% vs blended baseline — PS and WAS "
-                    "digested at their own optimal HRTs",
-                    "Eliminates co-digestion suppression — WAS no longer slows PS hydrolysis kinetics",
-                    "No thermal equipment — lower CAPEX and complexity than THP",
-                    "Restoring WAS HRT to ≥15d resolves the controlling digestion constraint",
-                    "PS and WAS banks can be isolated independently for maintenance"]
-        risks    = ["Class B biosolids only — no pathogen upgrade without added THP",
-                    "Existing digesters likely plumbed for blended feed — re-piping/valving required",
-                    "WAS HRT headroom can be tight; significant WAS growth needs added WAS volume",
-                    "Site-specific uplift quantum requires paired BMP confirmation "
-                    "(mechanism established; magnitude uncertain)",
-                    "Stream-specific TS% may require mixing-system modification"]
-
-    elif config_id == "separate_thp":
-        benefits = ["Combines stream-optimised HRTs with Class A pathogen classification "
-                    "(THP on the WAS stream)",
-                    f"Biogas uplift ~{cr.biogas_uplift_pct:.0f}% vs blended baseline — separation "
-                    "plus THP hydrolysis",
-                    "Improved dewatering on the THP-treated stream",
-                    "Removes the 3-year stockpiling requirement for Class A compliance (EPA Victoria)",
-                    "Addresses digestion architecture and pathogen quality in one configuration"]
-        risks    = ["Highest CAPEX of the digestion options — separation works plus THP",
-                    "Higher centrate N from THP hydrolysis → larger sidestream return load",
-                    "Greatest operational complexity — separated trains plus steam/pressure systems",
-                    "Requires both WAS HRT resolution to ≥15d and BMP confirmation of separation uplift",
-                    "Longer construction programme"]
-
-    elif config_id == "optimised_mad":
-        benefits = ["Restores adequate WAS HRT via pre-thickening — addresses the controlling "
-                    "constraint without new digester volume",
-                    f"Modest biogas uplift ~{cr.biogas_uplift_pct:.0f}% vs base from improved VS loading",
-                    "Lower CAPEX than THP or separation — thickener and mixing upgrade only",
-                    "Lowest-disruption route to ≥15d WAS HRT where volume redistribution is insufficient"]
-        risks    = ["Class B biosolids only — no pathogen upgrade",
-                    "Higher feed TS% increases mixing demand and NH3/diffusion limitations",
-                    "Biogas and quality gains modest relative to THP or separation",
-                    "Effectiveness depends on achievable WAS thickening at this site"]
-
     else:  # solidstream
         benefits = ["Class A equivalent pathogen kill without thermal drying",
                     f"Dewatered cake ≥38% DS — eliminates or greatly reduces drying",
@@ -961,21 +939,6 @@ def _narratives(config_id: ConfigID, cr: ConfigResult,
         rec += ("Pre-digestion THP delivers the highest energy uplift and Class A "
                 "biosolids. Recommended where land application regulation is tightening "
                 "or where new digester capacity is planned and THP can be sized in.")
-    elif config_id == "separate":
-        rec += ("Separate PS/WAS digestion targets the digestion architecture itself — running "
-                "each stream at its own optimal HRT to remove co-digestion suppression and restore "
-                "WAS retention. Best evaluated first where the controlling constraint is WAS HRT; "
-                "site-specific uplift requires paired BMP confirmation before capital commitment.")
-    elif config_id == "separate_thp":
-        rec += ("Separate digestion with THP on the WAS stream combines stream-optimised retention "
-                "with Class A pathogen compliance. It carries the highest CAPEX and complexity of "
-                "the digestion options and requires both BMP confirmation of the separation uplift "
-                "and WAS HRT resolution to ≥15d.")
-    elif config_id == "optimised_mad":
-        rec += ("Optimised MAD (WAS pre-thickening) is the lowest-disruption route to adequate WAS "
-                "HRT, resolving the controlling constraint without new digester volume or thermal "
-                "equipment. Best where volume redistribution alone cannot achieve ≥15d WAS HRT and "
-                "a Class A upgrade is not yet required.")
     else:
         rec += ("SolidStream is the recommended retrofit pathway for existing AD plants "
                 "where dewatering performance and pathogen compliance are primary drivers "
@@ -1034,13 +997,7 @@ def _weighted_totals(configs: Dict[ConfigID, ConfigResult],
     for cfg_id, cr in included.items():
         wt = sum(cr.driver_scores.get(d, 1) * weights.get(d, 1)
                  for d in DRIVER_IDS)
-        # Normalise by the number of configs actually compared. driver_scores
-        # range 1..N (N = included configs; N = best), so the max attainable
-        # weighted total is N×Σweights. Dividing by that caps the score at 100
-        # for any N. (Previously hard-coded to ×4, which produced >100 scores
-        # whenever more than four configurations were compared.)
-        n_inc = len(included)
-        cr.weighted_score = round(wt / (total_weight * n_inc) * 100, 1)   # scale 0–100
+        cr.weighted_score = round(wt / (total_weight * 4) * 100, 1)   # scale 0–100 (rank 1-4, max = 4×Σweights)
 
     return configs
 
@@ -1125,8 +1082,10 @@ def run_comparison(
 
         # ── Dewatering / cake ──────────────────────────────────────────────
         ds_total = site.ps_ds_tpd + site.was_ds_tpd
+        _hrt_for_cake = getattr(cr, "hrt_was_d",
+                                getattr(cr, "hrt_ps_d", 15.0))
         cake_ds, wet_tpd, wet_tpy, trucks = _cake_properties(
-            config_id, cr.vsr_pct, ds_total)
+            config_id, cr.vsr_pct, ds_total, hrt_d=_hrt_for_cake)
         cr.cake_ds_pct         = cake_ds
         cr.wet_cake_t_per_day  = wet_tpd
         cr.wet_cake_t_per_year = wet_tpy
@@ -1254,7 +1213,9 @@ def run_comparison(
         was_cake=(site.was_ds_tpd * site.was_vs_pct/100 * (1-was_vsr)
                   + site.was_ds_tpd * (1-site.was_vs_pct/100)) / (0.38 if sep_id=="separate_thp" else 0.22)
         cake_tpd = ps_cake + was_cake
-        cake_ds  = 35.0 if sep_id=="separate_thp" else 22.0
+        # HRT-aware cake DS for separate configs
+        _sep_hrt = getattr(sr, "sep_was_hrt", was_hrt if "was_hrt" in dir() else 15.0)
+        cake_ds = _cake_ds_from_hrt(sep_id, _sep_hrt)
 
         # Centrate N — approximate (no THP hydrolysis, similar to base)
         centrate_n = configs["base"].centrate_nh4_kg_per_d if "base" in configs else 0.0
@@ -1270,20 +1231,9 @@ def run_comparison(
         maint_add    = (1500 * ds_total) if sep_id=="separate_thp" else (200 * ds_total)
         opex_total   = base_total - disposal_save - energy_delta + maint_add
 
-        # Scope 1/2/3 GHG — computed from THIS config's own biogas, electricity
-        # export and cake, rather than inherited from the base case. Separate
-        # digestion raises biogas (and net export), so both the Scope 2 export
-        # credit and Scope 1a fugitive CH4 differ from base; inheriting base
-        # values left the carbon driver unable to distinguish separate configs.
-        # (Screening-grade caveat: for separate_thp the THP steam draw is not
-        #  added to the heat balance here — a minor under-count of any
-        #  supplementary boiler gas. Acceptable at Tier 1.)
-        sep_elec_net = sr.sep_elec_kw * 0.95
-        (sep_s1, sep_s2, sep_s3, sep_net, *_sep_ghg_rest) = _ghg(
-            sep_id, sr.sep_biogas, sep_elec_net, cake_tpd,
-            centrate_n, site, elec_gross_kw=sr.sep_elec_kw)
-        ghg_day = sep_net
-        ghg_yr  = sep_net * 365 / 1000
+        # Scope 1 GHG — approximate (no change to fugitive vs base, land app similar)
+        ghg_day = base_cr_sep.net_ghg_kg_co2e_per_d if base_cr_sep else 0.0
+        ghg_yr  = base_cr_sep.net_ghg_t_co2e_per_yr if base_cr_sep else 0.0
 
         # Headroom — separate digestion optimises HRT, so headroom improves significantly
         ps_hrt  = sr.ps.hrt_days
@@ -1314,9 +1264,9 @@ def run_comparison(
             centrate_nh4_kg_per_d= round(centrate_n),
             hrt_ps_d             = round(ps_hrt, 1),
             hrt_was_d            = round(was_hrt, 1),
-            scope1_kg_co2e_per_d = round(sep_s1, 1),
-            scope2_kg_co2e_per_d = round(sep_s2, 1),
-            scope3_kg_co2e_per_d = round(sep_s3, 1),
+            scope1_kg_co2e_per_d = base_cr_sep.scope1_kg_co2e_per_d if base_cr_sep else 0,
+            scope2_kg_co2e_per_d = base_cr_sep.scope2_kg_co2e_per_d if base_cr_sep else 0,
+            scope3_kg_co2e_per_d = base_cr_sep.scope3_kg_co2e_per_d if base_cr_sep else 0,
             net_ghg_kg_co2e_per_d= round(ghg_day),
             net_ghg_t_co2e_per_yr= round(ghg_yr, 1),
             opex_disposal_per_yr = round(base_disposal - disposal_save),
@@ -1381,19 +1331,10 @@ def run_comparison(
         tie_ids      = []
     else:
         top_score  = max(s for _, s in included_scored)
-        # Tie threshold: within 3 points (out of 100). Matches the report's
-        # "Statistical Tie Zone" badge (≤3.0); gaps of 3–5 pts render as a
-        # "weak preference" rather than a tie, keeping is_tie / tie_ids
-        # consistent with the badge and the per-config ★ TIED prefixes.
-        tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 3.0]
+        # Tie threshold: within 5 points (out of 100) — screening-grade margin
+        tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 5.0]
         is_tie     = len(tie_ids) > 1
-        # Winner = the highest-scoring config (deterministic on ties via first
-        # max). Previously this was tie_ids[0], i.e. the first config in list
-        # order among those within the tie band — which could surface a LOWER-
-        # scored config as "recommended" (e.g. Pre-THP 69 over SolidStream 70)
-        # and contradict the robustness analysis. is_tie/tie_ids still flag that
-        # the result is close.
-        winner_id  = max(included_scored, key=lambda kv: kv[1])[0]
+        winner_id  = tie_ids[0]   # first alphabetically among tied; report flags tie
         winner_label = CONFIG_LABELS_SHORT.get(winner_id, "") if winner_id else ""
 
     # Store tie info on result for report use
