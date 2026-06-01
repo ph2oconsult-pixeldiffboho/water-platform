@@ -656,7 +656,7 @@ def _compute_thickening_uplift(d: "Tier1ReportData",
     gas_yield_nm3_kgVS= 0.995   # Nm³/kg VS destroyed (Mangere calibration)
 
     def _was_hrt(was_ts_pct: float) -> float:
-        """WAS kinetic HRT at a given feed TS%."""
+        """WAS hydrolysis HRT at a given feed TS%."""
         was_flow_m3d = (d.was_ds_tpd / (was_ts_pct / 100)) * 1000 / 1000
         # was_ds_tpd in t/d, TS% fraction → volume in m³/d
         was_flow_m3d = d.was_ds_tpd / (was_ts_pct / 100)
@@ -758,7 +758,7 @@ def build_constraint_chain(d: "Tier1ReportData") -> ConstraintChain:
         if ts_is_root_cause:
             root = "WAS Feed Concentration (TS%) Driving HRT Deficiency"
             root_det = (
-                f"WAS kinetic HRT ({hrt_was:.1f} d) is below the 15 d minimum — but "
+                f"WAS hydrolysis HRT ({hrt_was:.1f} d) is below the 15 d minimum — but "
                 f"the root cause is WAS feed concentration, not digester volume. "
                 f"At {d.was_ts_pct:.1f}%TS, the WAS volumetric flow is "
                 f"{d.was_ds_tpd/(d.was_ts_pct/100):,.0f} m³/d, consuming digester volume "
@@ -847,7 +847,7 @@ def build_constraint_chain(d: "Tier1ReportData") -> ConstraintChain:
     else:
         root = "Digestion Configuration Sub-optimal"
         root_det = (
-            f"WAS kinetic HRT ({hrt_was:.1f} d) meets the minimum criterion. "
+            f"WAS hydrolysis HRT ({hrt_was:.1f} d) meets the minimum criterion. "
             f"The primary constraint is digestion architecture — PS and WAS are "
             f"co-digested despite having fundamentally different hydrolysis kinetics, "
             f"suppressing overall system performance."

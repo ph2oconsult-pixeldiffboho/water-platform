@@ -664,14 +664,15 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
             "The primary constraint is not digester volume or THP configuration \u2014 "
             "it is that WAS hydrolysis is likely rate-limiting system performance. "
             f"PS HRT = {_hrt_ps_cf:.1f}d (adequate). "
-            f"OLR = {(_hrt_was_cf and 0 or 0):.2f} kgVS/m\u00b3/d \u2014 well within conventional limits. "
-            "The 15d criterion is a BioPoint screening threshold for conventional MAD, "
+            "The 15d criterion is a BioPoint screening threshold for conventional MAD \u2014 "
             "not a regulatory minimum. THP facilities routinely operate at 10\u201312d. "
-            "The constraint requires verification through BMP testing and operational data "
-            "before conclusions are drawn. "
-            "Resolving WAS retention time through volume redistribution, "
-            "pre-thickening, or separate stream configuration "
-            "is the recommended first step before any advanced treatment investment."
+            "The key question for Melbourne Water is: "
+            "<b>Are we confident the current digesters are extracting all "
+            "economically recoverable value from WAS?</b> "
+            "If not, WAS hydrolysis HRT, separation, THP, and PN/A "
+            "are part of the same strategic conversation \u2014 not sequential decisions. "
+            "BMP testing (PS-only, WAS-only, blended) is the single most important "
+            "validation step before any capital commitment."
         )
     else:
         _central_finding = (
@@ -1257,22 +1258,22 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             )
             if not hrt_ps_ok and not hrt_was_ok:
                 warn_txt += (
-                    f"PS stream HRT = {hrt_base_ps:.1f}d (BELOW 15d minimum) and "
-                    f"WAS stream HRT = {hrt_base_was:.1f}d (BELOW 15d minimum). "
+                    f"PS hydrolysis HRT = {hrt_base_ps:.1f}d (BELOW 15d minimum) and "
+                    f"WAS hydrolysis HRT = {hrt_base_was:.1f}d (BELOW 15d minimum). "
                     "Both streams require additional digester volume. "
                 )
             elif not hrt_was_ok:
                 warn_txt += (
-                    f"PS stream HRT = {hrt_base_ps:.1f}d (above 15d minimum). "
-                    f"WAS stream HRT = {hrt_base_was:.1f}d (<b>BELOW 15d minimum "
+                    f"PS hydrolysis HRT = {hrt_base_ps:.1f}d (above 15d minimum). "
+                    f"WAS hydrolysis HRT = {hrt_base_was:.1f}d (<b>BELOW 15d minimum "
                     "— WAS is the controlling constraint</b>). "
                     "WAS digestion kinetics (k\u22480.12/day) are slower than PS "
                     "and WAS HRT controls stabilisation quality and pathogen kill. "
                 )
             else:  # only PS below
                 warn_txt += (
-                    f"WAS stream HRT = {hrt_base_was:.1f}d (above 15d minimum). "
-                    f"PS stream HRT = {hrt_base_ps:.1f}d (<b>BELOW 15d minimum "
+                    f"WAS hydrolysis HRT = {hrt_base_was:.1f}d (above 15d minimum). "
+                    f"PS hydrolysis HRT = {hrt_base_ps:.1f}d (<b>BELOW 15d minimum "
                     "— PS volume requires expansion</b>). "
                 )
             # Check if total volume is actually adequate (stream allocation issue)
@@ -1332,13 +1333,13 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
     PH2m = lambda t: Paragraph(str(t), S["cell_b"])
     method_rows = [
         [PH2m("HRT type"), PH2m("Formula"), PH2m("What it governs"), PH2m("Design target")],
-        [P2m("PS stream HRT (kinetics)"),
+        [P2m("PS hydrolysis HRT"),
          P2m(f"V_PS ÷ (DS_PS ÷ TS_PS%)\n= {site.ps_volume_m3:,.0f}m3 ÷ {q_ps:,.0f}m3/day"),
          P2m("Digestion kinetics: VSR, biogas yield, pathogen kill. "
              "Engine uses this to model biogas production for each stream independently."),
          P2m("≥15d mesophilic. PS target 12–15d "
              "due to faster PS hydrolysis kinetics (k≈0.25/day).")],
-        [P2m("WAS stream HRT (kinetics)"),
+        [P2m("WAS hydrolysis HRT"),
          P2m(f"V_WAS ÷ (DS_WAS ÷ TS_WAS%)\n= {site.was_volume_m3:,.0f}m3 ÷ {q_was:,.0f}m3/day"),
          P2m("WAS digestion kinetics. WAS hydrolysis is slower than PS "
              "(k≈0.12/day vs 0.25/day). WAS HRT controls stabilisation quality."),
@@ -3990,7 +3991,7 @@ def _cover(story, S, d: Tier1ReportData, date_str):
         _cv_banner = Table(
             [[Paragraph(
                 f"\u26a0\u2002<b>WAS HRT below screening criterion:</b> "
-                f"WAS kinetic HRT = {_cv_hrt:.1f}\u202fd "
+                f"WAS hydrolysis HRT = {_cv_hrt:.1f}\u202fd "
                 f"(BioPoint screening criterion: 15\u202fd for conventional MAD). "
                 "OLR is within conventional limits. "
                 "Constraint is kinetic \u2014 verify via BMP testing and plant data.",
@@ -4281,14 +4282,15 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
             "The primary constraint is not digester volume or THP configuration \u2014 "
             "it is that WAS hydrolysis is likely rate-limiting system performance. "
             f"PS HRT = {_hrt_ps_cf:.1f}d (adequate). "
-            f"OLR = {(_hrt_was_cf and 0 or 0):.2f} kgVS/m\u00b3/d \u2014 well within conventional limits. "
-            "The 15d criterion is a BioPoint screening threshold for conventional MAD, "
+            "The 15d criterion is a BioPoint screening threshold for conventional MAD \u2014 "
             "not a regulatory minimum. THP facilities routinely operate at 10\u201312d. "
-            "The constraint requires verification through BMP testing and operational data "
-            "before conclusions are drawn. "
-            "Resolving WAS retention time through volume redistribution, "
-            "pre-thickening, or separate stream configuration "
-            "is the recommended first step before any advanced treatment investment."
+            "The key question for Melbourne Water is: "
+            "<b>Are we confident the current digesters are extracting all "
+            "economically recoverable value from WAS?</b> "
+            "If not, WAS hydrolysis HRT, separation, THP, and PN/A "
+            "are part of the same strategic conversation \u2014 not sequential decisions. "
+            "BMP testing (PS-only, WAS-only, blended) is the single most important "
+            "validation step before any capital commitment."
         )
     else:
         _central_finding = (
@@ -4883,13 +4885,13 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
     PH2m = lambda t: Paragraph(str(t), S["cell_b"])
     method_rows = [
         [PH2m("HRT type"), PH2m("Formula"), PH2m("What it governs"), PH2m("Design target")],
-        [P2m("PS stream HRT (kinetics)"),
+        [P2m("PS hydrolysis HRT"),
          P2m(f"V_PS ÷ (DS_PS ÷ TS_PS%)\n= {site.ps_volume_m3:,.0f}m3 ÷ {q_ps:,.0f}m3/day"),
          P2m("Digestion kinetics: VSR, biogas yield, pathogen kill. "
              "Engine uses this to model biogas production for each stream independently."),
          P2m("≥15d mesophilic. PS target 12–15d "
              "due to faster PS hydrolysis kinetics (k≈0.25/day).")],
-        [P2m("WAS stream HRT (kinetics)"),
+        [P2m("WAS hydrolysis HRT"),
          P2m(f"V_WAS ÷ (DS_WAS ÷ TS_WAS%)\n= {site.was_volume_m3:,.0f}m3 ÷ {q_was:,.0f}m3/day"),
          P2m("WAS digestion kinetics. WAS hydrolysis is slower than PS "
              "(k≈0.12/day vs 0.25/day). WAS HRT controls stabilisation quality."),
@@ -7372,9 +7374,9 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
             _hax.text(_x1+0.18,y-0.12,gov+_ic,ha="left",va="center",
                 fontsize=7.5,fontweight="bold",
                 color=_WC if warn else col)
-        _hbar(7.55,_hrt_ps,"PS Kinetic HRT","Primary Sludge only",
+        _hbar(7.55,_hrt_ps,"PS Hydrolysis HRT","Primary Sludge only",
               _PC,"PS VSR and biogas yield")
-        _hbar(6.1, _hrt_was,"WAS Kinetic HRT","Waste Activated Sludge only",
+        _hbar(6.1, _hrt_was,"WAS Hydrolysis HRT","Waste Activated Sludge only",
               _WC,"System stability \u2014 CONTROLLING",warn=True)
         _hbar(4.65,_hrt_hyd,"Overall Hydraulic HRT","Blended PS+WAS",
               _HC,"Capacity sizing and capex")
@@ -7385,8 +7387,8 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
             arrowprops=dict(arrowstyle="->",color=_WC,lw=1),
             bbox=dict(boxstyle="round,pad=0.25",fc="#ffebee",ec=_WC,alpha=0.9))
         for _i,(_col,_txt) in enumerate([
-            (_PC,"PS Kinetic HRT\n= V_PS / Q_PS\nFast hydrolysis (k~0.25/d)\nPS well-optimised. Not the constraint."),
-            (_WC,"WAS Kinetic HRT\n= V_WAS / Q_WAS\nSlow hydrolysis (k~0.12/d)\n10.2d < 15d minimum. CONTROLS stability."),
+            (_PC,"PS Hydrolysis HRT\n= V_PS / Q_PS\nFast hydrolysis (k~0.25/d)\nPS well-optimised. Not the constraint."),
+            (_WC,"WAS Hydrolysis HRT\n= V_WAS / Q_WAS\nSlow hydrolysis (k~0.12/d)\n10.2d < 15d minimum. CONTROLS stability."),
             (_HC,"Hydraulic HRT\n= V_total / Q_total\nCapacity sizing metric\n14.4d masks WAS constraint."),
         ]):
             _xc=2.0+_i*2.95
@@ -7401,7 +7403,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         from reportlab.platypus import Image as _RLI
         story.append(_RLI(_hbuf,width=165*mm,height=84*mm,kind="proportional"))
         story.append(_p(
-            "<i>Three HRT concepts, each governing a different design parameter. PS kinetic HRT (21.9d) governs PS biogas yield and is adequate. WAS kinetic HRT (10.2d) governs system stability and is below the 15d minimum \u2014 this is the controlling constraint. Overall hydraulic HRT (14.4d) governs capacity sizing but masks the WAS deficit. All technology comparisons are conditional on resolving this constraint first.</i>",
+            "<i>Three distinct metrics, each measuring a different aspect of digester performance. PS hydrolysis HRT (21.9d) governs PS biogas yield and VS conversion \u2014 adequate (Da=2.7, HU=93%). WAS hydrolysis HRT (10.2d) governs WAS kinetic completeness \u2014 below the 15d BioPoint screening criterion (Da=0.57, HU=43%). Hydraulic HRT (14.4d) governs capacity sizing and stability \u2014 within limits, but masks the WAS hydrolysis constraint. These are not the same metric. Using a single \u201cHRT\u201d figure obscures which aspect of performance is actually constraining value creation.</i>",
             S["caption"]))
         story.append(_sp(3))
         _hrt_ok = True
@@ -7860,7 +7862,7 @@ def _recommendation(story, S, d: Tier1ReportData, section_num: int):
              P(f"{tu.was_ts_target_pct:.1f}%TS", S),
              P(f"+{tu.was_ts_target_pct - tu.was_ts_current_pct:.1f} pp "
                f"(≤ thickening optimisation)", S)],
-            [P("WAS kinetic HRT", S),
+            [P("WAS hydrolysis HRT", S),
              P(f"{tu.was_hrt_current_d:.1f} d", S),
              P(f"{tu.was_hrt_target_d:.1f} d", S),
              P(f"{'Meets' if tu.ts_meets_criterion else 'Still below'} "
@@ -9092,7 +9094,7 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
             ha="center",va="center",fontsize=8.5,color="#546e7a",style="italic")
         _hlvls = [
             ("L1","Is WAS retention adequate?",
-             "Measure WAS kinetic HRT. Target \u226515d.\n"
+             "Measure WAS hydrolysis HRT. Target \u226515d.\n"
              "If NO: Optimised MAD (pre-thickening, mixing) is the first step.",
              "#1565c0","#e3f2fd","Decisions 1\u20132"),
             ("L2","Should PS and WAS be digested separately?",
