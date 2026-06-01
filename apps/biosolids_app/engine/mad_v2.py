@@ -641,10 +641,14 @@ def _nutrient_release(streams: List[StreamInput],
     """
     total_n = sum(s.n_kg_d for s in streams)
     total_p = sum(s.p_kg_d for s in streams)
-    # N release fraction
-    n_release = 0.30 + 0.22 * overall_vsr
+    # N release fraction. Recalibrated against measured Mangere/Malabar centrate
+    # NH4-N anchors (A25): the prior 0.30 + 0.22*VSR (+0.04 THP) ran ~10-13% high
+    # versus measured. Lowering the intercept to 0.27 and the THP solubilisation
+    # adder to 0.02 centres the two directly-runnable anchors (Mangere
+    # conventional, Mangere 2015 full THP) to within ~2% of measured.
+    n_release = 0.27 + 0.22 * overall_vsr
     if cfg.thp_mode != THPMode.NONE:
-        n_release += 0.04   # THP extra solubilisation
+        n_release += 0.02   # THP extra solubilisation (measured effect is small)
     n_release = _clip(n_release, 0.25, 0.72)
     nh4_kg_d  = total_n * n_release
     # P release — reduced for AGS sludge
@@ -884,7 +888,14 @@ def run_mad_v2(streams: List[StreamInput],
 
     # Nutrients
     nh4, sol_p = _nutrient_release(streams, overall_vsr, hydrolysis, cfg)
-    reject_flow = residual_ds / max(dew.cake_ds_pct / 100.0, 1e-9) * 0.5
+    # Centrate (dewatering liquor) flow = sludge-to-dewatering flow minus the
+    # dewatered cake volume. Previously this used half the wet-CAKE mass as the
+    # liquid flow, which made the concentration ~10x too high (cake ~= 1 t/m3,
+    # and the cake stream is far smaller than the centrate stream). Use the
+    # digested-sludge throughput (total_flow_m3d, already THP-adjusted) minus the
+    # cake volume, floored to avoid blow-up at extreme dewatering.
+    wet_cake_m3d = residual_ds / max(dew.cake_ds_pct / 100.0, 1e-9)   # cake ~1 t/m3
+    reject_flow = max(total_flow_m3d - wet_cake_m3d, total_flow_m3d * 0.1)
     centrate_nh4 = nh4 * 1000 / max(reject_flow, 1e-9)
 
     # Diagnostics
