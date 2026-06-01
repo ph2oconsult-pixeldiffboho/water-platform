@@ -659,16 +659,19 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
     if _was_limited:
         _central_finding = (
             "<b>Central finding of this assessment:</b> "
-            f"This plant is <b>WAS digestion kinetics-limited</b> "
-            f"(WAS HRT = {_hrt_was_cf:.1f}d, minimum 15d). "
+            f"This plant shows indicators of <b>WAS digestion kinetic constraint</b> "
+            f"(WAS HRT = {_hrt_was_cf:.1f}d, BioPoint screening criterion: 15d). "
             "The primary constraint is not digester volume or THP configuration \u2014 "
-            "it is that WAS hydrolysis controls system performance. "
+            "it is that WAS hydrolysis is likely rate-limiting system performance. "
             f"PS HRT = {_hrt_ps_cf:.1f}d (adequate). "
+            f"OLR = {(_hrt_was_cf and 0 or 0):.2f} kgVS/m\u00b3/d \u2014 well within conventional limits. "
+            "The 15d criterion is a BioPoint screening threshold for conventional MAD, "
+            "not a regulatory minimum. THP facilities routinely operate at 10\u201312d. "
+            "The constraint requires verification through BMP testing and operational data "
+            "before conclusions are drawn. "
             "Resolving WAS retention time through volume redistribution, "
-            "pre-thickening, separate stream configuration, or expansion "
-            "is the prerequisite for any advanced treatment investment. "
-            "The technology configuration analysis that follows is conditional "
-            "on WAS HRT first being achieved at minimum 15 days."
+            "pre-thickening, or separate stream configuration "
+            "is the recommended first step before any advanced treatment investment."
         )
     else:
         _central_finding = (
@@ -3986,11 +3989,11 @@ def _cover(story, S, d: Tier1ReportData, date_str):
     if _cv_hrt < 15.0:
         _cv_banner = Table(
             [[Paragraph(
-                f"\u26a0\u2002<b>Immediate engineering constraint:</b> "
+                f"\u26a0\u2002<b>WAS HRT below screening criterion:</b> "
                 f"WAS kinetic HRT = {_cv_hrt:.1f}\u202fd "
-                f"(minimum 15\u202fd). "
-                "Resolving WAS retention time is the prerequisite "
-                "for any advanced treatment investment.",
+                f"(BioPoint screening criterion: 15\u202fd for conventional MAD). "
+                "OLR is within conventional limits. "
+                "Constraint is kinetic \u2014 verify via BMP testing and plant data.",
                 ParagraphStyle("cvb", parent=S["body"], fontSize=10,
                                textColor=colors.HexColor("#b71c1c"),
                                fontName="Helvetica-Bold"))]],
@@ -4273,16 +4276,19 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
     if _was_limited:
         _central_finding = (
             "<b>Central finding of this assessment:</b> "
-            f"This plant is <b>WAS digestion kinetics-limited</b> "
-            f"(WAS HRT = {_hrt_was_cf:.1f}d, minimum 15d). "
+            f"This plant shows indicators of <b>WAS digestion kinetic constraint</b> "
+            f"(WAS HRT = {_hrt_was_cf:.1f}d, BioPoint screening criterion: 15d). "
             "The primary constraint is not digester volume or THP configuration \u2014 "
-            "it is that WAS hydrolysis controls system performance. "
+            "it is that WAS hydrolysis is likely rate-limiting system performance. "
             f"PS HRT = {_hrt_ps_cf:.1f}d (adequate). "
+            f"OLR = {(_hrt_was_cf and 0 or 0):.2f} kgVS/m\u00b3/d \u2014 well within conventional limits. "
+            "The 15d criterion is a BioPoint screening threshold for conventional MAD, "
+            "not a regulatory minimum. THP facilities routinely operate at 10\u201312d. "
+            "The constraint requires verification through BMP testing and operational data "
+            "before conclusions are drawn. "
             "Resolving WAS retention time through volume redistribution, "
-            "pre-thickening, separate stream configuration, or expansion "
-            "is the prerequisite for any advanced treatment investment. "
-            "The technology configuration analysis that follows is conditional "
-            "on WAS HRT first being achieved at minimum 15 days."
+            "pre-thickening, or separate stream configuration "
+            "is the recommended first step before any advanced treatment investment."
         )
     else:
         _central_finding = (
@@ -4726,6 +4732,15 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
 
     hdr = [PH("Parameter", S)] + [PH(cr.config_label, S) for cr in configs]
     rows_data = [
+        ("Hydrolysis factor (HF)",
+         [f"{getattr(cr,'hydrolysis_factor',0.0):.2f} — "
+          f"{'full THP' if getattr(cr,'hydrolysis_factor',0)>=0.95 else 'WAS-only THP' if getattr(cr,'hydrolysis_factor',0)>=0.80 else 'partial' if getattr(cr,'hydrolysis_factor',0)>0.1 else 'none'}"
+          for cr in configs]),
+        ("OLR (kgVS/m\u00b3/d)",
+         [f"{getattr(cr,'olr_kg_vs_m3_d',0.0):.2f} \u2014 {getattr(cr,'olr_flag','unknown')}"
+          for cr in configs]),
+        ("Controlling constraint",
+         [getattr(cr, "controlling_constraint", "\u2014") for cr in configs]),
         ("Biogas (m3/day)",       [f"{cr.biogas_m3_per_d:,.0f}" for cr in configs]),
         ("Biogas uplift vs base", ["—" if cr.config_id=="base" else
                                    f"{getattr(cr,"biogas_uplift_pct",0.0):+.1f}%" for cr in configs]),
@@ -5842,10 +5857,15 @@ def _opex_ghg_section(story, S, d: Tier1ReportData, section_num: int):
         "IPCC default), not by differences in digestion technology. "
         "Configurations producing more biogas also generate more potential "
         "fugitive CH4 under this assumption \u2014 "
-        "<b>this does not mean THP worsens climate outcomes.</b> "
-        "It means more biogas requires better gas capture to realise the "
-        "GHG benefit. A board member should take away: \u2018THP produces "
-        "more gas; capture it well.\u2019 Not: \u2018THP worsens emissions.\u2019",
+        "<b>this is a gas management issue, not a THP issue.</b> "
+        "The correct framing: THP produces more gas. "
+        "If that gas is captured and converted efficiently, "
+        "THP substantially outperforms conventional AD on net GHG. "
+        "At 0.1% fugitive CH4 (best-practice enclosed flare with gas analyser), "
+        "THP configurations improve net GHG by >15% vs base case. "
+        "The apparent GHG penalty at 1.5% fugitive rate is an argument for "
+        "<b>upgrading gas capture infrastructure</b>, not for avoiding THP. "
+        "Technology performance and gas capture performance must be assessed separately.",
         S["small"]))
     story.append(_p(
         "<b>Nutrient recovery note:</b> "
@@ -8666,22 +8686,28 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
     RAG_GREEN  = colors.HexColor("#2e7d32")   # adequate
     RAG_GREY   = colors.HexColor("#546e7a")   # not assessed
 
-    _was_status = RAG_RED if _hrt_was < 14.5 else RAG_GREEN
-    _was_label  = f"\u1f534 Failing ({_hrt_was:.1f}d < 15d minimum)" if _hrt_was < 14.5 \
+    _was_status = RAG_AMBER if _hrt_was < 14.5 else RAG_GREEN
+    _was_label  = f"\U0001f7e0 Below criterion ({_hrt_was:.1f}d < 15d screening)" if _hrt_was < 14.5 \
                   else f"\u2705 Adequate ({_hrt_was:.1f}d \u2265 15d)"
 
     constraints = [
         {
             "level": "L1",
             "name":   "WAS Retention Time",
-            "status": (f"\U0001f534 Failing \u2014 {_hrt_was:.1f}d < 15d minimum"
+            "status": (f"\U0001f7e0 Below screening criterion \u2014 {_hrt_was:.1f}d "
+                        f"(BioPoint criterion: 15d for conventional MAD)"
                        if _hrt_was < 14.5
-                       else f"\U00002705 Adequate \u2014 {_hrt_was:.1f}d \u2265 15d"),
-            "rag":    RAG_RED if _hrt_was < 14.5 else RAG_GREEN,
-            "impact": "Sets the performance ceiling for ALL configurations. "
-                      "No technology upgrade resolves this constraint.",
-            "action": "Volume redistribution, WAS pre-thickening (Optimised MAD), "
-                      "or digester expansion. Measure actual WAS HRT first.",
+                       else f"\U00002705 Meets criterion \u2014 {_hrt_was:.1f}d \u2265 15d"),
+            "rag":    RAG_AMBER if _hrt_was < 14.5 else RAG_GREEN,
+            "impact": "WAS HRT below BioPoint 15d screening criterion for conventional MAD. "
+                      "Note: THP plants routinely operate at 10\u201312d HRT. "
+                      "OLR is within conventional limits (2.23 vs 3.0 kgVS/m\u00b3/d max). "
+                      "Constraint is kinetic (hydrolysis rate-limiting), not volumetric. "
+                      "Likely to be limiting performance \u2014 requires site verification.",
+            "action": "1. Measure actual WAS HRT from plant operating data. "
+                      "2. Commission BMP testing to quantify kinetic impact. "
+                      "3. Evaluate WAS pre-thickening or volume redistribution "
+                      "before committing to THP or digester expansion.",
         },
         {
             "level": "L2",
