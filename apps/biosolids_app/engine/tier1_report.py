@@ -2897,13 +2897,32 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
 
     P2 = lambda t: Paragraph(str(t), S["cell"])
     PH2 = lambda t: Paragraph(str(t), S["cell_b"])
+    # Thermal-drying comparison computed from the plant's own cake (dry to 70%DS).
+    # Previously hardcoded ETP figures (22%/38% DS, 148,566 MWh/yr) shown for every
+    # plant; now derived from the base (conventional) and SolidStream configs.
+    _cfgs = d.cmp_result.configs if d.cmp_result else {}
+    _TARGET_DS = 0.70
+    _EVAP_MWH_PER_T = 1.0   # evaporation energy incl. dryer inefficiency (MWh/t water)
+
+    def _dry_metrics(cfg, ds_default, wet_default):
+        ds = (getattr(cfg, "cake_ds_pct", None) or ds_default) / 100.0
+        wet = getattr(cfg, "wet_cake_t_per_day", None) or wet_default
+        evap_d = max(wet * (1.0 - ds / _TARGET_DS), 0.0)
+        return {"ds": ds * 100.0, "evap_h": evap_d / 24.0,
+                "gas": evap_d * 365.0 * _EVAP_MWH_PER_T,
+                "dried": wet * ds / _TARGET_DS * 365.0}
+
+    _cv = _dry_metrics(_cfgs.get("base"), 22.0, 595.0)
+    _sv = _dry_metrics(_cfgs.get("solidstream"), 38.0, 195.0)
+    _sav = lambda c, s: f"{(s / c - 1.0) * 100:+.0f}%" if c else "—"
+
     drying_rows = [
         [PH2("Parameter"), PH2("Conventional AD"), PH2("SolidStream THP"), PH2("Saving")],
-        [P2("Cake DS% (pre-drying)"), P2("22%"), P2("38%"), P2("—")],
-        [P2("Water evaporation (t/h)"), P2("17.0"), P2("5.6"), P2("-67%")],
-        [P2("Natural gas demand (MWh LHV/yr)"), P2("148,566"), P2("48,895"), P2("-67%")],
-        [P2("Dryer size (relative)"), P2("100%"), P2("33%"), P2("-67%")],
-        [P2("Dried cake volume (t/yr at 70%DS)"), P2("68,093"), P2("58,063"), P2("-15%")],
+        [P2("Cake DS% (pre-drying)"), P2(f"{_cv['ds']:.0f}%"), P2(f"{_sv['ds']:.0f}%"), P2("—")],
+        [P2("Water evaporation (t/h)"), P2(f"{_cv['evap_h']:.1f}"), P2(f"{_sv['evap_h']:.1f}"), P2(_sav(_cv['evap_h'], _sv['evap_h']))],
+        [P2("Natural gas demand (MWh LHV/yr)"), P2(f"{_cv['gas']:,.0f}"), P2(f"{_sv['gas']:,.0f}"), P2(_sav(_cv['gas'], _sv['gas']))],
+        [P2("Dryer size (relative)"), P2("100%"), P2(f"{_sv['evap_h'] / _cv['evap_h'] * 100:.0f}%" if _cv['evap_h'] else "—"), P2(_sav(_cv['evap_h'], _sv['evap_h']))],
+        [P2("Dried cake volume (t/yr at 70%DS)"), P2(f"{_cv['dried']:,.0f}"), P2(f"{_sv['dried']:,.0f}"), P2(_sav(_cv['dried'], _sv['dried']))],
     ]
     cw = [65*mm, 38*mm, 38*mm, CONTENT_W - 141*mm]
     story.append(_tbl(drying_rows, cw,
@@ -2963,7 +2982,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p("Option B — Pyrolysis", S["h2"]))
     story.append(_p(
         "Pyrolysis (thermal decomposition at 500-700°C in the absence of oxygen) converts "
-        "biosolids to biochar, pyrolysis oil, and syngas. At ETP scale it merits serious "
+        "biosolids to biochar, pyrolysis oil, and syngas. At this scale it merits serious "
         "consideration alongside incineration for four reasons:",
         S["body"]))
     for bullet in [
@@ -4965,6 +4984,8 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
         _da_15   = _k_was * 15.0
         _hu_curr = _hu(_hrt_was_c, _tau_was)
         _hu_15   = _hu(15.0, _tau_was)
+        _da_ps   = _k_ps * _hrt_ps_c          # PS Damköhler (plant-specific)
+        _hu_ps   = _hu(_hrt_ps_c, _tau_ps)    # PS hydrolysis utilisation
         _olr_val = _was_ds * site.was_vs_pct / 100.0 * 1000.0 / \
                    max(site.ps_volume_m3 + site.was_volume_m3, 1.0)
 
@@ -4976,10 +4997,11 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             "using the <b>Damk\u00f6hler number</b>: Da = k\u2091\u209c\u1d33 \u00d7 HRT, "
             f"where k_WAS = 1/\u03c4_WAS = 1/18d = {_k_was:.4f}/d (spec kinetics). "
             "When Da \u2248 1.0, the reactor approaches adequate hydrolysis. "
-            f"At ETP WAS HRT = {_hrt_was_c:.1f}d: Da = {_da_curr:.2f} "
+            f"At this site, WAS HRT = {_hrt_was_c:.1f}d: Da = {_da_curr:.2f} "
             f"\u2014 only {_hu_curr*100:.0f}% of WAS hydrolysis potential is realised. "
             f"At 15d criterion: Da = {_da_15:.2f} \u2014 {_hu_15*100:.0f}% realised. "
-            "PS is not constrained (21.9d, Da=2.7, HU=93%). "
+            f"PS is {'not ' if _da_ps >= 1.0 else ''}constrained "
+            f"({_hrt_ps_c:.1f}d, Da={_da_ps:.1f}, HU={_hu_ps*100:.0f}%). "
             "The constraint is kinetic, not volumetric.",
             S["body"]))
         story.append(_sp(2))
@@ -5063,7 +5085,7 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             "WAS HRT governs kinetic completeness (hydrolysis extent, VSR). "
             "A digester can be stable and within OLR limits while "
             "simultaneously failing to complete WAS hydrolysis. "
-            "This is the ETP situation: digesters are not overloaded, "
+            "This is the situation at this site: digesters are not overloaded, "
             "but WAS residence time is insufficient for hydrolysis completion "
             f"(Da = {_da_curr:.2f}, HU = {_hu_curr*100:.0f}%).",
             S["body"]))
@@ -6888,13 +6910,32 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
 
     P2 = lambda t: Paragraph(str(t), S["cell"])
     PH2 = lambda t: Paragraph(str(t), S["cell_b"])
+    # Thermal-drying comparison computed from the plant's own cake (dry to 70%DS).
+    # Previously hardcoded ETP figures (22%/38% DS, 148,566 MWh/yr) shown for every
+    # plant; now derived from the base (conventional) and SolidStream configs.
+    _cfgs = d.cmp_result.configs if d.cmp_result else {}
+    _TARGET_DS = 0.70
+    _EVAP_MWH_PER_T = 1.0   # evaporation energy incl. dryer inefficiency (MWh/t water)
+
+    def _dry_metrics(cfg, ds_default, wet_default):
+        ds = (getattr(cfg, "cake_ds_pct", None) or ds_default) / 100.0
+        wet = getattr(cfg, "wet_cake_t_per_day", None) or wet_default
+        evap_d = max(wet * (1.0 - ds / _TARGET_DS), 0.0)
+        return {"ds": ds * 100.0, "evap_h": evap_d / 24.0,
+                "gas": evap_d * 365.0 * _EVAP_MWH_PER_T,
+                "dried": wet * ds / _TARGET_DS * 365.0}
+
+    _cv = _dry_metrics(_cfgs.get("base"), 22.0, 595.0)
+    _sv = _dry_metrics(_cfgs.get("solidstream"), 38.0, 195.0)
+    _sav = lambda c, s: f"{(s / c - 1.0) * 100:+.0f}%" if c else "—"
+
     drying_rows = [
         [PH2("Parameter"), PH2("Conventional AD"), PH2("SolidStream THP"), PH2("Saving")],
-        [P2("Cake DS% (pre-drying)"), P2("22%"), P2("38%"), P2("—")],
-        [P2("Water evaporation (t/h)"), P2("17.0"), P2("5.6"), P2("-67%")],
-        [P2("Natural gas demand (MWh LHV/yr)"), P2("148,566"), P2("48,895"), P2("-67%")],
-        [P2("Dryer size (relative)"), P2("100%"), P2("33%"), P2("-67%")],
-        [P2("Dried cake volume (t/yr at 70%DS)"), P2("68,093"), P2("58,063"), P2("-15%")],
+        [P2("Cake DS% (pre-drying)"), P2(f"{_cv['ds']:.0f}%"), P2(f"{_sv['ds']:.0f}%"), P2("—")],
+        [P2("Water evaporation (t/h)"), P2(f"{_cv['evap_h']:.1f}"), P2(f"{_sv['evap_h']:.1f}"), P2(_sav(_cv['evap_h'], _sv['evap_h']))],
+        [P2("Natural gas demand (MWh LHV/yr)"), P2(f"{_cv['gas']:,.0f}"), P2(f"{_sv['gas']:,.0f}"), P2(_sav(_cv['gas'], _sv['gas']))],
+        [P2("Dryer size (relative)"), P2("100%"), P2(f"{_sv['evap_h'] / _cv['evap_h'] * 100:.0f}%" if _cv['evap_h'] else "—"), P2(_sav(_cv['evap_h'], _sv['evap_h']))],
+        [P2("Dried cake volume (t/yr at 70%DS)"), P2(f"{_cv['dried']:,.0f}"), P2(f"{_sv['dried']:,.0f}"), P2(_sav(_cv['dried'], _sv['dried']))],
     ]
     cw = [65*mm, 38*mm, 38*mm, CONTENT_W - 141*mm]
     story.append(_tbl(drying_rows, cw,
@@ -6954,7 +6995,7 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p("Option B — Pyrolysis", S["h2"]))
     story.append(_p(
         "Pyrolysis (thermal decomposition at 500-700°C in the absence of oxygen) converts "
-        "biosolids to biochar, pyrolysis oil, and syngas. At ETP scale it merits serious "
+        "biosolids to biochar, pyrolysis oil, and syngas. At this scale it merits serious "
         "consideration alongside incineration for four reasons:",
         S["body"]))
     for bullet in [
@@ -7393,8 +7434,8 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
             bbox=dict(boxstyle="round,pad=0.25",fc="#ffebee",ec=_WC,alpha=0.9))
         for _i,(_col,_txt) in enumerate([
             (_PC,"PS Hydrolysis HRT\n= V_PS / Q_PS\nFast hydrolysis (k~0.25/d)\nPS well-optimised. Not the constraint."),
-            (_WC,"WAS Hydrolysis HRT\n= V_WAS / Q_WAS\nSlow hydrolysis (k~0.12/d)\n10.2d < 15d minimum. CONTROLS stability."),
-            (_HC,"Hydraulic HRT\n= V_total / Q_total\nCapacity sizing metric\n14.4d masks WAS constraint."),
+            (_WC,f"WAS Hydrolysis HRT\n= V_WAS / Q_WAS\nSlow hydrolysis (k~0.12/d)\n{_hrt_was:.1f}d {'<' if _hrt_was < 15 else '\u2265'} 15d minimum. CONTROLS stability."),
+            (_HC,f"Hydraulic HRT\n= V_total / Q_total\nCapacity sizing metric\n{_hrt_hyd:.1f}d masks WAS constraint."),
         ]):
             _xc=2.0+_i*2.95
             _hax.add_patch(_FBP((_xc-1.3,0.25),2.4,2.0,
@@ -7407,8 +7448,20 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         _plt.close(_hfig); _hbuf.seek(0)
         from reportlab.platypus import Image as _RLI
         story.append(_RLI(_hbuf,width=165*mm,height=84*mm,kind="proportional"))
+        from math import exp as _ehu3
+        _da_ps3 = _hrt_ps / 8.0;  _hu_ps3 = 1 - _ehu3(-_hrt_ps / 8.0)
+        _da_was3 = _hrt_was / 18.0; _hu_was3 = 1 - _ehu3(-_hrt_was / 18.0)
         story.append(_p(
-            "<i>Three distinct metrics, each measuring a different aspect of digester performance. PS hydrolysis HRT (21.9d) governs PS biogas yield and VS conversion \u2014 adequate (Da=2.7, HU=93%). WAS hydrolysis HRT (10.2d) governs WAS kinetic completeness \u2014 below the 15d BioPoint screening criterion (Da=0.57, HU=43%). Hydraulic HRT (14.4d) governs capacity sizing and stability \u2014 within limits, but masks the WAS hydrolysis constraint. These are not the same metric. Using a single \u201cHRT\u201d figure obscures which aspect of performance is actually constraining value creation.</i>",
+            f"<i>Three distinct metrics, each measuring a different aspect of digester "
+            f"performance. PS hydrolysis HRT ({_hrt_ps:.1f}d) governs PS biogas yield and VS "
+            f"conversion \u2014 {'adequate' if _da_ps3 >= 1.0 else 'constrained'} "
+            f"(Da={_da_ps3:.1f}, HU={_hu_ps3*100:.0f}%). WAS hydrolysis HRT ({_hrt_was:.1f}d) "
+            f"governs WAS kinetic completeness \u2014 {'below' if _hrt_was < 15 else 'at or above'} "
+            f"the 15d BioPoint screening criterion (Da={_da_was3:.2f}, HU={_hu_was3*100:.0f}%). "
+            f"Hydraulic HRT ({_hrt_hyd:.1f}d) governs capacity sizing and stability \u2014 within "
+            f"limits, but masks the WAS hydrolysis constraint. These are not the same metric. "
+            f"Using a single \u201cHRT\u201d figure obscures which aspect of performance is actually "
+            f"constraining value creation.</i>",
             S["caption"]))
         story.append(_sp(3))
         _hrt_ok = True
@@ -9067,7 +9120,7 @@ def _thp_strategic_value(story, S, d: "Tier1ReportData", section_num: int):
     story.append(_p(
         "THP disrupts extracellular polymeric substances (EPS) that bind 4\u20135 g water "
         "per gram of WAS. This directly improves centrifuge performance, raising cake DS% "
-        "and reducing wet cake mass. At ETP scale, even a 10 percentage point improvement "
+        "and reducing wet cake mass. At this scale, even a 10 percentage point improvement "
         "in cake DS produces significant disposal cost savings.",
         S["body"]))
     story.append(_sp(2))
