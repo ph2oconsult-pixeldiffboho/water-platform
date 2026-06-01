@@ -592,9 +592,9 @@ def _madv2_to_madresult(v2, site, config_id):
     from mad_v2 diagnostics onto mad.py's StatusLiteral.
     """
     try:
-        from engine.mad_v2 import SludgeType
+        from engine.mad_v2 import SludgeType, N_FRACTION
     except ImportError:
-        from mad_v2 import SludgeType
+        from mad_v2 import SludgeType, N_FRACTION
     from types import SimpleNamespace
 
     def _find(*types_):
@@ -623,11 +623,20 @@ def _madv2_to_madresult(v2, site, config_id):
     else:
         status = "SAFE"
 
-    # cake N = total influent N − centrate (soluble) N. Not consumed by
-    # run_comparison, populated for completeness / parity with MADResult.
-    total_n = (site.ps_ds_tpd * site.ps_n_pct / 100.0
-               + site.was_ds_tpd * site.was_n_pct / 100.0) * 1000.0
-    centrate_n = v2.nh4_n_kg_d
+    # mad_v2 computes NH4-N off built-in N_FRACTION defaults (PRIMARY 3.0%,
+    # WAS_CONVENTIONAL 8.5%) and ignores the site's ps_n_pct / was_n_pct. Rescale
+    # to the site nitrogen basis so user N inputs are honoured. nh4 is linear in
+    # feed N (nh4 = total_n * n_release), so this rescale is exact, not an
+    # approximation. NOTE: the release FRACTION model itself (mad_v2 ~40% vs
+    # mad.py ~70% of feed N) is a separate, unresolved calibration question that
+    # needs a measured centrate-N anchor; it is deliberately NOT changed here.
+    v2_basis_kg = (site.ps_ds_tpd * N_FRACTION[SludgeType.PRIMARY]
+                   + site.was_ds_tpd * N_FRACTION[SludgeType.WAS_CONVENTIONAL]) * 1000.0
+    site_basis_kg = (site.ps_ds_tpd * site.ps_n_pct / 100.0
+                     + site.was_ds_tpd * site.was_n_pct / 100.0) * 1000.0
+    n_scale = site_basis_kg / v2_basis_kg if v2_basis_kg > 1e-9 else 1.0
+    centrate_n = v2.nh4_n_kg_d * n_scale
+    total_n = site_basis_kg
     cake_n = max(0.0, total_n - centrate_n)
 
     return SimpleNamespace(
