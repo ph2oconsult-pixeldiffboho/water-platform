@@ -1257,3 +1257,703 @@ THP_HRT_SATURATION = {
         "The optimal THP HRT is typically 8-12d, not the 15-20d assumed for conventional MAD."
     ),
 }
+
+
+# ── THP Configuration Library ──────────────────────────────────────────────
+# Full-scale reference KPIs per THP configuration mode.
+# Sources: Thames Water, United Utilities, DC Water, Davyhulme, Ringsend, Mangere.
+
+THP_CONFIG_LIBRARY = {
+    "conventional_mad": {
+        "label":              "Conventional MAD",
+        "description":        "Blended PS/WAS mesophilic anaerobic digestion. No pre-treatment.",
+        "reference_count":    "10,000+",
+        "confidence":         "very_high",
+        "vsr_range_pct":      (42, 55),
+        "cake_ds_range_pct":  (20, 25),
+        "steam_kg_per_tds":   0,
+        "methane_nm3_per_tds":180,    # typical range 150-220
+        "electricity_mwh_per_tds": 0.45,
+        "olr_max_kg_vs_m3_d": 3.0,
+        "complexity_score":   2,
+        "complexity_factors": [
+            "Standard mesophilic digesters",
+            "No specialist systems required",
+            "Well-understood O&M",
+        ],
+        "opex_premium_pct":   0,      # baseline
+        "capex_premium_pct":  0,
+    },
+    "was_only_thp": {
+        "label":              "WAS-only THP (SolidStream)",
+        "description":        "Thermal hydrolysis of secondary stream only. PS bypasses THP.",
+        "reference_count":    "5-10",
+        "confidence":         "medium",
+        "vsr_range_pct":      (52, 60),
+        "cake_ds_range_pct":  (30, 35),
+        "steam_kg_per_tds":   450,    # lower than full THP — WAS fraction only
+        "methane_nm3_per_tds":210,
+        "electricity_mwh_per_tds": 0.61,
+        "olr_max_kg_vs_m3_d": 5.0,
+        "complexity_score":   7,
+        "complexity_factors": [
+            "THP pressure vessels on WAS stream",
+            "Hot centrate recycle system",
+            "Boiler / steam generation",
+            "Specialist O&M for thermal pressure systems",
+        ],
+        "opex_premium_pct":   25,
+        "capex_premium_pct":  35,
+    },
+    "full_thp": {
+        "label":              "Full THP (Conventional)",
+        "description":        "All feed pre-dewatered and thermally hydrolysed before digestion.",
+        "reference_count":    "100+",
+        "confidence":         "high",
+        "vsr_range_pct":      (52, 65),
+        "cake_ds_range_pct":  (28, 35),
+        "steam_kg_per_tds":   861,    # Davyhulme validated: 861 kg/tDS
+        "methane_nm3_per_tds":259,    # Davyhulme validated: 259 Nm³/tDS
+        "electricity_mwh_per_tds": 0.68,
+        "olr_max_kg_vs_m3_d": 6.0,
+        "complexity_score":   8,
+        "complexity_factors": [
+            "Full-stream pressure vessels and autoclave",
+            "Steam boiler (gas-fired)",
+            "High-pressure safety systems",
+            "Specialist THP operators required",
+            "Significant maintenance overhead",
+        ],
+        "opex_premium_pct":   35,
+        "capex_premium_pct":  60,
+        "calibration_anchor": "Davyhulme WWTP (United Utilities, UK): "
+                              "steam 861 kg/tDS, methane 259 Nm³/tDS, cake 31.3%DS. "
+                              "Thames Water fleet: VSR 52-65%, cake DS 35-45%.",
+    },
+    "intermediate_thp": {
+        "label":              "Intermediate THP",
+        "description":        "THP applied between two digestion stages. Higher VSR potential.",
+        "reference_count":    "2-5",
+        "confidence":         "low",
+        "vsr_range_pct":      (60, 70),
+        "cake_ds_range_pct":  (30, 36),
+        "steam_kg_per_tds":   600,
+        "methane_nm3_per_tds":280,
+        "electricity_mwh_per_tds": 0.78,
+        "olr_max_kg_vs_m3_d": 6.0,
+        "complexity_score":   9,
+        "complexity_factors": [
+            "Two-stage digestion train",
+            "Interstage THP pressure vessels",
+            "Complex hydraulic routing",
+            "Very limited reference plant experience",
+        ],
+        "opex_premium_pct":   45,
+        "capex_premium_pct":  80,
+    },
+    "separate_digestion": {
+        "label":              "Separate PS/WAS Digestion",
+        "description":        "PS and WAS digested in separate dedicated digesters. No THP.",
+        "reference_count":    "10-30",
+        "confidence":         "medium",   # limited full-scale separate digestion data
+        "vsr_range_pct":      (48, 58),
+        "cake_ds_range_pct":  (20, 25),
+        "steam_kg_per_tds":   0,
+        "methane_nm3_per_tds":210,        # higher than blended due to PS optimisation
+        "electricity_mwh_per_tds": 0.52,
+        "olr_max_kg_vs_m3_d": 3.0,
+        "complexity_score":   3,
+        "complexity_factors": [
+            "Two separate digestion trains",
+            "Separate thickening for each stream",
+            "Volume redistribution or new digesters",
+        ],
+        "opex_premium_pct":   10,
+        "capex_premium_pct":  15,
+    },
+}
+
+# ── Operational Complexity Scores ──────────────────────────────────────────
+# Based on: boilers, pressure vessels, automation, maintenance, specialist ops.
+# Scale: 1 (simple, standard O&M) to 10 (specialist, high-risk, complex).
+# Sources: Thames Water O&M experience, Ringsend reports, industry consensus.
+
+OPERATIONAL_COMPLEXITY = {
+    "base":         {
+        "score": 2,
+        "label": "Low",
+        "factors": ["Standard mesophilic digesters", "No specialist systems", "Well-understood O&M"],
+        "note":  "Benchmark technology. Available skill sets in most utilities.",
+    },
+    "recup":        {
+        "score": 3,
+        "label": "Low-Moderate",
+        "factors": ["Centrifuge upgrade", "Additional polymer dosing", "No new pressure systems"],
+        "note":  "Marginal increase. Same operator competency as base case.",
+    },
+    "pre_thp":      {
+        "score": 8,
+        "label": "High",
+        "factors": [
+            "Full-stream pressure vessels and autoclaves",
+            "Gas-fired steam boiler",
+            "High-pressure safety systems (PED/PSSR compliance)",
+            "Specialist THP maintenance regime",
+            "Dedicated operator training programme required",
+        ],
+        "note":  "Thames Water and United Utilities report this as a major "
+                 "operational step-change requiring 2-3 years to embed.",
+    },
+    "solidstream":  {
+        "score": 7,
+        "label": "High",
+        "factors": [
+            "WAS-stream THP pressure vessels",
+            "Hot centrate recycle system",
+            "Boiler / steam generation",
+            "Specialist thermal system O&M",
+        ],
+        "note":  "Lower than full THP (PS stream bypasses). "
+                 "Still requires specialist operators and safety systems.",
+    },
+    "separate":     {
+        "score": 3,
+        "label": "Low-Moderate",
+        "factors": ["Two-train digestion management", "Separate stream monitoring"],
+        "note":  "No new specialist technology. Manageable with existing operator competency.",
+    },
+    "separate_thp": {
+        "score": 7,
+        "label": "High",
+        "factors": [
+            "Separation infrastructure complexity",
+            "WAS-stream THP pressure vessels",
+            "Combined train management",
+        ],
+        "note":  "Combined complexity of separation and THP systems.",
+    },
+    "optimised_mad":{
+        "score": 3,
+        "label": "Low-Moderate",
+        "factors": ["WAS pre-thickening equipment", "Polymer dosing optimisation"],
+        "note":  "No new pressure systems. Lowest complexity uplift of any option.",
+    },
+}
+
+# ── Digester Capacity Value Calculator ─────────────────────────────────────
+# THP's primary benefit for most utilities is capacity intensification,
+# not methane production. This is the most commonly cited THP justification
+# in full-scale case studies (Thames, United Utilities, DC Water).
+
+def compute_capacity_value(
+    ds_total_tpd: float,
+    ps_ts_pct: float,
+    was_ts_pct: float,
+    ps_ds_tpd: float,
+    was_ds_tpd: float,
+    digester_vol_m3: float,
+    thp_feed_ds_pct: float = 10.0,
+    target_hrt_conv_d: float = 18.0,
+    target_hrt_thp_d: float = 20.0,
+    capex_per_m3: float = 2000.0,
+    growth_factor: float = 1.0,
+) -> dict:
+    """
+    Compute digester capacity value from THP.
+
+    Three outputs:
+    1. Capacity intensification: additional tDS/day the existing digesters
+       can handle at THP feed concentration vs conventional.
+    2. Avoided digester volume: volume that would be needed at conv. AD feed
+       concentration to achieve target HRT at current + growth DS load.
+    3. Avoided CAPEX: financial value of avoided digester construction.
+
+    References: Thames Water fleet, DC Water Blue Plains, United Utilities.
+    """
+    # Current hydraulic loading (conv AD feed concentration)
+    q_ps_conv   = ps_ds_tpd  / max(ps_ts_pct  / 100.0, 1e-9)
+    q_was_conv  = was_ds_tpd / max(was_ts_pct / 100.0, 1e-9)
+    q_conv      = q_ps_conv + q_was_conv
+
+    # THP hydraulic loading (all feed pre-dewatered to thp_feed_ds_pct)
+    q_thp = ds_total_tpd / max(thp_feed_ds_pct / 100.0, 1e-9)
+
+    # Current HRTs
+    hrt_conv = digester_vol_m3 / max(q_conv, 1e-9)
+    hrt_thp  = digester_vol_m3 / max(q_thp,  1e-9)
+
+    # Capacity intensification: max DS at THP concentration for target HRT
+    max_flow_thp   = digester_vol_m3 / target_hrt_thp_d
+    max_ds_thp     = max_flow_thp * (thp_feed_ds_pct / 100.0)
+    capacity_uplift_tpd = max(0.0, max_ds_thp - ds_total_tpd)
+
+    # Growth scenario: volume needed at conv AD to handle ds * growth_factor
+    ds_future = ds_total_tpd * growth_factor
+    q_conv_future = (ds_future * ps_ds_tpd / max(ds_total_tpd,1) / max(ps_ts_pct/100,1e-9)
+                    + ds_future * was_ds_tpd / max(ds_total_tpd,1) / max(was_ts_pct/100,1e-9))
+    vol_needed_conv = q_conv_future * target_hrt_conv_d
+
+    # Volume needed at THP for same growth
+    q_thp_future    = ds_future / max(thp_feed_ds_pct / 100.0, 1e-9)
+    vol_needed_thp  = q_thp_future * target_hrt_thp_d
+
+    avoided_vol_m3  = max(0.0, vol_needed_conv - vol_needed_thp)
+    avoided_vol_m3  = max(0.0, avoided_vol_m3 - max(0.0, vol_needed_thp - digester_vol_m3))
+    # More precisely: additional volume THP avoids building vs conv AD
+    extra_vol_conv  = max(0.0, vol_needed_conv - digester_vol_m3)
+    extra_vol_thp   = max(0.0, vol_needed_thp  - digester_vol_m3)
+    avoided_build_m3 = max(0.0, extra_vol_conv - extra_vol_thp)
+
+    avoided_capex   = avoided_build_m3 * capex_per_m3
+
+    # Equivalent digesters avoided (8,000m³ each as ETP reference)
+    digester_unit_m3 = 8000.0
+    digesters_avoided = avoided_build_m3 / digester_unit_m3
+
+    return {
+        "hrt_conv_d":             round(hrt_conv, 1),
+        "hrt_thp_d":              round(hrt_thp,  1),
+        "capacity_uplift_tpd":    round(capacity_uplift_tpd, 0),
+        "capacity_uplift_pct":    round(capacity_uplift_tpd / max(ds_total_tpd,1) * 100, 0),
+        "vol_needed_conv_m3":     round(vol_needed_conv, 0),
+        "vol_needed_thp_m3":      round(vol_needed_thp,  0),
+        "avoided_build_m3":       round(avoided_build_m3, 0),
+        "digesters_avoided":      round(digesters_avoided, 1),
+        "avoided_capex_aud":      round(avoided_capex, 0),
+        "growth_factor":          growth_factor,
+        "note": (
+            "Capacity value is the primary THP justification at most full-scale "
+            "plants (Thames Water, United Utilities, DC Water Blue Plains). "
+            "Methane uplift is secondary. This calculation uses hydraulic intensification "
+            f"from pre-dewatering ({thp_feed_ds_pct:.0f}%DS vs {(ps_ts_pct+was_ts_pct)/2:.1f}%DS "
+            "blended feed) to show additional throughput capacity in existing digesters."
+        ),
+    }
+
+
+# ── THP Configuration Library ─────────────────────────────────────────────
+# Full-scale operating KPIs by THP mode.
+# Source: Thames Water, United Utilities, DC Water, Davyhulme, Mangere, Ringsend.
+# Use these for calibration and reference plant confidence scoring.
+
+THP_CONFIG_LIBRARY = {
+    "full_thp": {
+        "label":         "Full THP (Cambi / Lysotherm)",
+        "description":   "All feed thermally hydrolysed. Highest VSR and dewatering. "
+                         "Highest steam demand and capital cost.",
+        "hydrolysis_factor": 1.00,
+        "vsr_range_pct": (52, 65),
+        "cake_ds_range_pct": (28, 35),
+        "steam_kg_per_tds": 861,        # Davyhulme reference
+        "ch4_nm3_per_tds": 259,         # Davyhulme reference (WAS-heavy)
+        "elec_mwh_per_tds": 0.68,       # Thames Water reference
+        "olr_max_kg_vs_m3_d": 6.0,
+        "capex_relative": 4,            # 1=lowest, 4=highest
+        "references": [
+            "Mangere WWTP NZ (20d HRT, 55.7% VSR, 63,151 Nm³/d)",
+            "Davyhulme WWTW UK (steam 861 kg/tDS, CH4 259 Nm³/tDS, cake 31.3%)",
+            "Thames Water Long Reach (cake 35-45% DS)",
+            "DC Water Blue Plains (cake >29% DS)",
+            "Ringsend WWTP IE (12%DS feed, 62% VSR, 34% cake DS)",
+        ],
+        "n_references": 100,
+        "maturity": "Commercial — 100+ installations worldwide",
+        "confidence": "high",
+    },
+    "was_only": {
+        "label":         "WAS-only THP (Secondary stream)",
+        "description":   "Secondary sludge only hydrolysed. PS bypasses THP. "
+                         "Lower steam demand. Suitable where PS fraction is dominant.",
+        "hydrolysis_factor": 0.88,
+        "vsr_range_pct": (52, 60),
+        "cake_ds_range_pct": (28, 33),
+        "steam_kg_per_tds": 450,        # ~50% of full THP (WAS fraction only)
+        "ch4_nm3_per_tds": None,        # site-specific
+        "elec_mwh_per_tds": 0.61,       # Thames Water reference
+        "olr_max_kg_vs_m3_d": 5.0,
+        "capex_relative": 3,
+        "references": [
+            "Mangere 2040 WAS-only scenario (19.5d HRT, 56.7% VSR)",
+            "Malabar WWTP Sydney (WAS-only, 51% VSR, 30% cake)",
+        ],
+        "n_references": 5,
+        "maturity": "Commercial — limited references (3-5 full-scale)",
+        "confidence": "medium",
+    },
+    "solidstream": {
+        "label":         "SolidStream (WAS-only THP, hot centrate recycle)",
+        "description":   "Cambi SolidStream: WAS hydrolysed, hot centrate recycled "
+                         "to digester inlet for heat integration. Highest cake DS.",
+        "hydrolysis_factor": 0.88,
+        "vsr_range_pct": (54, 62),
+        "cake_ds_range_pct": (36, 43),
+        "steam_kg_per_tds": 420,
+        "ch4_nm3_per_tds": None,
+        "elec_mwh_per_tds": 0.65,
+        "olr_max_kg_vs_m3_d": 5.0,
+        "capex_relative": 3,
+        "references": [
+            "Amperverband WWTP Germany (40-43% cake DS confirmed)",
+            "Cambi vendor data (38% DS guarantee basis)",
+        ],
+        "n_references": 3,
+        "maturity": "Commercial — emerging (3 full-scale references)",
+        "confidence": "medium",
+    },
+    "none": {
+        "label":         "Conventional MAD",
+        "description":   "Mesophilic anaerobic digestion, no pre-treatment. "
+                         "Lowest capital and operational complexity.",
+        "hydrolysis_factor": 0.0,
+        "vsr_range_pct": (40, 55),
+        "cake_ds_range_pct": (18, 25),
+        "steam_kg_per_tds": 0,
+        "ch4_nm3_per_tds": 220,         # typical range
+        "elec_mwh_per_tds": 0.45,
+        "olr_max_kg_vs_m3_d": 3.0,
+        "capex_relative": 1,
+        "references": ["10,000+ installations worldwide"],
+        "n_references": 10000,
+        "maturity": "Fully mature — universal reference base",
+        "confidence": "high",
+    },
+}
+
+
+# ── Operational Complexity Score ──────────────────────────────────────────
+# Score 1–10 based on: boilers, pressure vessels, automation,
+# maintenance frequency, specialist operator requirements, safety systems.
+# Source: Thames Water operational assessment, Panter (AD fundamentals).
+
+OPERATIONAL_COMPLEXITY = {
+    "base":         {"score": 2, "label": "Low",
+                     "notes": "Standard mesophilic AD. Proven technology, standard O&M."},
+    "recup":        {"score": 3, "label": "Low-moderate",
+                     "notes": "Centrifuge upgrade. Slightly higher polymer and maintenance."},
+    "pre_thp":      {"score": 7, "label": "High",
+                     "notes": "Steam boiler, pressure vessels (165°C/6 bar), "
+                               "specialist operators required. Safety-critical systems. "
+                               "Significant maintenance and compliance overhead."},
+    "solidstream":  {"score": 7, "label": "High",
+                     "notes": "Same as pre-THP plus hot centrate recycle management. "
+                               "Additional heat integration complexity."},
+    "separate":     {"score": 4, "label": "Moderate",
+                     "notes": "Separate digestion trains. More complex but proven configuration. "
+                               "Higher instrumentation and control requirements."},
+    "separate_thp": {"score": 8, "label": "High-very high",
+                     "notes": "Separate digestion PLUS THP steam systems. "
+                               "Highest operational complexity of standard configurations. "
+                               "Requires significant operator capability uplift."},
+    "optimised_mad":{"score": 3, "label": "Low-moderate",
+                     "notes": "WAS pre-thickening. Incremental complexity increase only."},
+}
+
+
+# ── THP Capacity Value Calculator ────────────────────────────────────────
+
+# ── THP Configuration Library ──────────────────────────────────────────────
+# Full-scale reference KPIs per THP configuration mode.
+# Sources: Thames Water, United Utilities, DC Water, Davyhulme, Ringsend, Mangere.
+
+THP_CONFIG_LIBRARY = {
+    "conventional_mad": {
+        "label":              "Conventional MAD",
+        "description":        "Blended PS/WAS mesophilic anaerobic digestion. No pre-treatment.",
+        "reference_count":    "10,000+",
+        "confidence":         "very_high",
+        "vsr_range_pct":      (42, 55),
+        "cake_ds_range_pct":  (20, 25),
+        "steam_kg_per_tds":   0,
+        "methane_nm3_per_tds":180,    # typical range 150-220
+        "electricity_mwh_per_tds": 0.45,
+        "olr_max_kg_vs_m3_d": 3.0,
+        "complexity_score":   2,
+        "complexity_factors": [
+            "Standard mesophilic digesters",
+            "No specialist systems required",
+            "Well-understood O&M",
+        ],
+        "opex_premium_pct":   0,      # baseline
+        "capex_premium_pct":  0,
+    },
+    "was_only_thp": {
+        "label":              "WAS-only THP (SolidStream)",
+        "description":        "Thermal hydrolysis of secondary stream only. PS bypasses THP.",
+        "reference_count":    "5-10",
+        "confidence":         "medium",
+        "vsr_range_pct":      (52, 60),
+        "cake_ds_range_pct":  (30, 35),
+        "steam_kg_per_tds":   450,    # lower than full THP — WAS fraction only
+        "methane_nm3_per_tds":210,
+        "electricity_mwh_per_tds": 0.61,
+        "olr_max_kg_vs_m3_d": 5.0,
+        "complexity_score":   7,
+        "complexity_factors": [
+            "THP pressure vessels on WAS stream",
+            "Hot centrate recycle system",
+            "Boiler / steam generation",
+            "Specialist O&M for thermal pressure systems",
+        ],
+        "opex_premium_pct":   25,
+        "capex_premium_pct":  35,
+    },
+    "full_thp": {
+        "label":              "Full THP (Conventional)",
+        "description":        "All feed pre-dewatered and thermally hydrolysed before digestion.",
+        "reference_count":    "100+",
+        "confidence":         "high",
+        "vsr_range_pct":      (52, 65),
+        "cake_ds_range_pct":  (28, 35),
+        "steam_kg_per_tds":   861,    # Davyhulme validated: 861 kg/tDS
+        "methane_nm3_per_tds":259,    # Davyhulme validated: 259 Nm³/tDS
+        "electricity_mwh_per_tds": 0.68,
+        "olr_max_kg_vs_m3_d": 6.0,
+        "complexity_score":   8,
+        "complexity_factors": [
+            "Full-stream pressure vessels and autoclave",
+            "Steam boiler (gas-fired)",
+            "High-pressure safety systems",
+            "Specialist THP operators required",
+            "Significant maintenance overhead",
+        ],
+        "opex_premium_pct":   35,
+        "capex_premium_pct":  60,
+        "calibration_anchor": "Davyhulme WWTP (United Utilities, UK): "
+                              "steam 861 kg/tDS, methane 259 Nm³/tDS, cake 31.3%DS. "
+                              "Thames Water fleet: VSR 52-65%, cake DS 35-45%.",
+    },
+    "intermediate_thp": {
+        "label":              "Intermediate THP",
+        "description":        "THP applied between two digestion stages. Higher VSR potential.",
+        "reference_count":    "2-5",
+        "confidence":         "low",
+        "vsr_range_pct":      (60, 70),
+        "cake_ds_range_pct":  (30, 36),
+        "steam_kg_per_tds":   600,
+        "methane_nm3_per_tds":280,
+        "electricity_mwh_per_tds": 0.78,
+        "olr_max_kg_vs_m3_d": 6.0,
+        "complexity_score":   9,
+        "complexity_factors": [
+            "Two-stage digestion train",
+            "Interstage THP pressure vessels",
+            "Complex hydraulic routing",
+            "Very limited reference plant experience",
+        ],
+        "opex_premium_pct":   45,
+        "capex_premium_pct":  80,
+    },
+    "separate_digestion": {
+        "label":              "Separate PS/WAS Digestion",
+        "description":        "PS and WAS digested in separate dedicated digesters. No THP.",
+        "reference_count":    "10-30",
+        "confidence":         "medium",   # limited full-scale separate digestion data
+        "vsr_range_pct":      (48, 58),
+        "cake_ds_range_pct":  (20, 25),
+        "steam_kg_per_tds":   0,
+        "methane_nm3_per_tds":210,        # higher than blended due to PS optimisation
+        "electricity_mwh_per_tds": 0.52,
+        "olr_max_kg_vs_m3_d": 3.0,
+        "complexity_score":   3,
+        "complexity_factors": [
+            "Two separate digestion trains",
+            "Separate thickening for each stream",
+            "Volume redistribution or new digesters",
+        ],
+        "opex_premium_pct":   10,
+        "capex_premium_pct":  15,
+    },
+}
+
+# ── Operational Complexity Scores ──────────────────────────────────────────
+# Based on: boilers, pressure vessels, automation, maintenance, specialist ops.
+# Scale: 1 (simple, standard O&M) to 10 (specialist, high-risk, complex).
+# Sources: Thames Water O&M experience, Ringsend reports, industry consensus.
+
+OPERATIONAL_COMPLEXITY = {
+    "base":         {
+        "score": 2,
+        "label": "Low",
+        "factors": ["Standard mesophilic digesters", "No specialist systems", "Well-understood O&M"],
+        "note":  "Benchmark technology. Available skill sets in most utilities.",
+    },
+    "recup":        {
+        "score": 3,
+        "label": "Low-Moderate",
+        "factors": ["Centrifuge upgrade", "Additional polymer dosing", "No new pressure systems"],
+        "note":  "Marginal increase. Same operator competency as base case.",
+    },
+    "pre_thp":      {
+        "score": 8,
+        "label": "High",
+        "factors": [
+            "Full-stream pressure vessels and autoclaves",
+            "Gas-fired steam boiler",
+            "High-pressure safety systems (PED/PSSR compliance)",
+            "Specialist THP maintenance regime",
+            "Dedicated operator training programme required",
+        ],
+        "note":  "Thames Water and United Utilities report this as a major "
+                 "operational step-change requiring 2-3 years to embed.",
+    },
+    "solidstream":  {
+        "score": 7,
+        "label": "High",
+        "factors": [
+            "WAS-stream THP pressure vessels",
+            "Hot centrate recycle system",
+            "Boiler / steam generation",
+            "Specialist thermal system O&M",
+        ],
+        "note":  "Lower than full THP (PS stream bypasses). "
+                 "Still requires specialist operators and safety systems.",
+    },
+    "separate":     {
+        "score": 3,
+        "label": "Low-Moderate",
+        "factors": ["Two-train digestion management", "Separate stream monitoring"],
+        "note":  "No new specialist technology. Manageable with existing operator competency.",
+    },
+    "separate_thp": {
+        "score": 7,
+        "label": "High",
+        "factors": [
+            "Separation infrastructure complexity",
+            "WAS-stream THP pressure vessels",
+            "Combined train management",
+        ],
+        "note":  "Combined complexity of separation and THP systems.",
+    },
+    "optimised_mad":{
+        "score": 3,
+        "label": "Low-Moderate",
+        "factors": ["WAS pre-thickening equipment", "Polymer dosing optimisation"],
+        "note":  "No new pressure systems. Lowest complexity uplift of any option.",
+    },
+}
+
+# ── Digester Capacity Value Calculator ─────────────────────────────────────
+# THP's primary benefit for most utilities is capacity intensification,
+# not methane production. This is the most commonly cited THP justification
+# in full-scale case studies (Thames, United Utilities, DC Water).
+
+# ── THP Configuration Library ─────────────────────────────────────────────
+# Full-scale operating KPIs by THP mode.
+# Source: Thames Water, United Utilities, DC Water, Davyhulme, Mangere, Ringsend.
+# Use these for calibration and reference plant confidence scoring.
+
+THP_CONFIG_LIBRARY = {
+    "full_thp": {
+        "label":         "Full THP (Cambi / Lysotherm)",
+        "description":   "All feed thermally hydrolysed. Highest VSR and dewatering. "
+                         "Highest steam demand and capital cost.",
+        "hydrolysis_factor": 1.00,
+        "vsr_range_pct": (52, 65),
+        "cake_ds_range_pct": (28, 35),
+        "steam_kg_per_tds": 861,        # Davyhulme reference
+        "ch4_nm3_per_tds": 259,         # Davyhulme reference (WAS-heavy)
+        "elec_mwh_per_tds": 0.68,       # Thames Water reference
+        "olr_max_kg_vs_m3_d": 6.0,
+        "capex_relative": 4,            # 1=lowest, 4=highest
+        "references": [
+            "Mangere WWTP NZ (20d HRT, 55.7% VSR, 63,151 Nm³/d)",
+            "Davyhulme WWTW UK (steam 861 kg/tDS, CH4 259 Nm³/tDS, cake 31.3%)",
+            "Thames Water Long Reach (cake 35-45% DS)",
+            "DC Water Blue Plains (cake >29% DS)",
+            "Ringsend WWTP IE (12%DS feed, 62% VSR, 34% cake DS)",
+        ],
+        "n_references": 100,
+        "maturity": "Commercial — 100+ installations worldwide",
+        "confidence": "high",
+    },
+    "was_only": {
+        "label":         "WAS-only THP (Secondary stream)",
+        "description":   "Secondary sludge only hydrolysed. PS bypasses THP. "
+                         "Lower steam demand. Suitable where PS fraction is dominant.",
+        "hydrolysis_factor": 0.88,
+        "vsr_range_pct": (52, 60),
+        "cake_ds_range_pct": (28, 33),
+        "steam_kg_per_tds": 450,        # ~50% of full THP (WAS fraction only)
+        "ch4_nm3_per_tds": None,        # site-specific
+        "elec_mwh_per_tds": 0.61,       # Thames Water reference
+        "olr_max_kg_vs_m3_d": 5.0,
+        "capex_relative": 3,
+        "references": [
+            "Mangere 2040 WAS-only scenario (19.5d HRT, 56.7% VSR)",
+            "Malabar WWTP Sydney (WAS-only, 51% VSR, 30% cake)",
+        ],
+        "n_references": 5,
+        "maturity": "Commercial — limited references (3-5 full-scale)",
+        "confidence": "medium",
+    },
+    "solidstream": {
+        "label":         "SolidStream (WAS-only THP, hot centrate recycle)",
+        "description":   "Cambi SolidStream: WAS hydrolysed, hot centrate recycled "
+                         "to digester inlet for heat integration. Highest cake DS.",
+        "hydrolysis_factor": 0.88,
+        "vsr_range_pct": (54, 62),
+        "cake_ds_range_pct": (36, 43),
+        "steam_kg_per_tds": 420,
+        "ch4_nm3_per_tds": None,
+        "elec_mwh_per_tds": 0.65,
+        "olr_max_kg_vs_m3_d": 5.0,
+        "capex_relative": 3,
+        "references": [
+            "Amperverband WWTP Germany (40-43% cake DS confirmed)",
+            "Cambi vendor data (38% DS guarantee basis)",
+        ],
+        "n_references": 3,
+        "maturity": "Commercial — emerging (3 full-scale references)",
+        "confidence": "medium",
+    },
+    "none": {
+        "label":         "Conventional MAD",
+        "description":   "Mesophilic anaerobic digestion, no pre-treatment. "
+                         "Lowest capital and operational complexity.",
+        "hydrolysis_factor": 0.0,
+        "vsr_range_pct": (40, 55),
+        "cake_ds_range_pct": (18, 25),
+        "steam_kg_per_tds": 0,
+        "ch4_nm3_per_tds": 220,         # typical range
+        "elec_mwh_per_tds": 0.45,
+        "olr_max_kg_vs_m3_d": 3.0,
+        "capex_relative": 1,
+        "references": ["10,000+ installations worldwide"],
+        "n_references": 10000,
+        "maturity": "Fully mature — universal reference base",
+        "confidence": "high",
+    },
+}
+
+
+# ── Operational Complexity Score ──────────────────────────────────────────
+# Score 1–10 based on: boilers, pressure vessels, automation,
+# maintenance frequency, specialist operator requirements, safety systems.
+# Source: Thames Water operational assessment, Panter (AD fundamentals).
+
+OPERATIONAL_COMPLEXITY = {
+    "base":         {"score": 2, "label": "Low",
+                     "notes": "Standard mesophilic AD. Proven technology, standard O&M."},
+    "recup":        {"score": 3, "label": "Low-moderate",
+                     "notes": "Centrifuge upgrade. Slightly higher polymer and maintenance."},
+    "pre_thp":      {"score": 7, "label": "High",
+                     "notes": "Steam boiler, pressure vessels (165°C/6 bar), "
+                               "specialist operators required. Safety-critical systems. "
+                               "Significant maintenance and compliance overhead."},
+    "solidstream":  {"score": 7, "label": "High",
+                     "notes": "Same as pre-THP plus hot centrate recycle management. "
+                               "Additional heat integration complexity."},
+    "separate":     {"score": 4, "label": "Moderate",
+                     "notes": "Separate digestion trains. More complex but proven configuration. "
+                               "Higher instrumentation and control requirements."},
+    "separate_thp": {"score": 8, "label": "High-very high",
+                     "notes": "Separate digestion PLUS THP steam systems. "
+                               "Highest operational complexity of standard configurations. "
+                               "Requires significant operator capability uplift."},
+    "optimised_mad":{"score": 3, "label": "Low-moderate",
+                     "notes": "WAS pre-thickening. Incremental complexity increase only."},
+}
+
+
+# ── THP Capacity Value Calculator ────────────────────────────────────────
+

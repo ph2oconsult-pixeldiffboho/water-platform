@@ -291,6 +291,14 @@ class ConfigResult:
     olr_kg_vs_m3_d:        float = 0.0   # organic loading rate
     olr_flag:              str   = ""    # "within limit" | "above limit"
     controlling_constraint:str   = ""    # HRT | OLR | hydrolysis | none
+    complexity_score:      int   = 0     # 1-10 operational complexity
+    complexity_label:      str   = ""    # Low / Moderate / High
+    n_references:          int   = 0     # number of full-scale reference plants
+    maturity_label:        str   = ""    # technology maturity description
+    complexity_score:      int   = 0     # 1-10 operational complexity
+    complexity_label:      str   = ""    # Low / Moderate / High
+    reference_count:       str   = ""    # "100+" | "5-10" | "Very limited"
+    reference_confidence:  str   = ""    # very_high / high / medium / low
 
     # ── Headroom ─────────────────────────────────────────────────────────────
     hrt_ps_d:              float = 0.0
@@ -1098,7 +1106,48 @@ def run_comparison(
         cr.wet_cake_t_per_year = wet_tpy
         cr.trucks_per_day      = trucks
 
+        # Hydrolysis factor, OLR, controlling constraint, complexity, reference count
+        try:
+            from tier1_data import OPERATIONAL_COMPLEXITY, THP_CONFIG_LIBRARY
+        except ImportError:
+            try:
+                from engine.tier1_data import OPERATIONAL_COMPLEXITY, THP_CONFIG_LIBRARY
+            except ImportError:
+                OPERATIONAL_COMPLEXITY = {}; THP_CONFIG_LIBRARY = {}
+
+        _oc = OPERATIONAL_COMPLEXITY.get(config_id, {})
+        cr.complexity_score = _oc.get("score", 0)
+        cr.complexity_label = _oc.get("label", "")
+
+        _ref_map = {
+            "base":         ("10,000+",  "very_high"),
+            "recup":        ("500+",     "high"),
+            "pre_thp":      ("100+",     "high"),
+            "solidstream":  ("5-10",     "medium"),
+            "separate":     ("10-30",    "medium"),
+            "separate_thp": ("3-8",      "medium"),
+            "optimised_mad":("100+",     "high"),
+        }
+        cr.reference_count, cr.reference_confidence = _ref_map.get(
+            config_id, ("unknown", "low"))
+
         # Hydrolysis factor, OLR and controlling constraint (unconditional)
+        # Operational complexity and reference count
+        try:
+            from tier1_data import OPERATIONAL_COMPLEXITY, THP_CONFIG_LIBRARY
+        except ImportError:
+            from engine.tier1_data import OPERATIONAL_COMPLEXITY, THP_CONFIG_LIBRARY
+        _oc = OPERATIONAL_COMPLEXITY.get(config_id, {"score":3,"label":"Moderate","notes":""})
+        cr.complexity_score = _oc["score"]
+        cr.complexity_label = _oc["label"]
+        _thp_key = {"pre_thp":"full_thp","solidstream":"solidstream",
+                    "separate_thp":"was_only","base":"none","recup":"none",
+                    "separate":"none","optimised_mad":"none"}.get(config_id,"none")
+        _tcfg = THP_CONFIG_LIBRARY.get(_thp_key, {})
+        cr.n_references  = _tcfg.get("n_references", 10000 if config_id=="base" else 0)
+        cr.maturity_label= _tcfg.get("maturity", "Conventional MAD — universal reference base"
+                                      if config_id=="base" else "See THP configuration library")
+
         _hf_map = {
             "base":         (0.0,  "Conventional MAD — WAS hydrolysis rate-limiting"),
             "recup":        (0.1,  "Recuperative thickening — marginal hydrolysis improvement"),
@@ -1314,6 +1363,10 @@ def run_comparison(
                                     else "above limit ⚠"),
             controlling_constraint=("WAS HRT — below 15d" if was_hrt < 15.0
                                     else "architecture opportunity"),
+            complexity_score    = {"separate":3,"separate_thp":7}.get(sep_id,3),
+            complexity_label    = {"separate":"Low-Moderate","separate_thp":"High"}.get(sep_id,"Low-Moderate"),
+            reference_count     = {"separate":"10-30","separate_thp":"3-8"}.get(sep_id,"10-30"),
+            reference_confidence= {"separate":"medium","separate_thp":"medium"}.get(sep_id,"medium"),
             scope1_kg_co2e_per_d = base_cr_sep.scope1_kg_co2e_per_d if base_cr_sep else 0,
             scope2_kg_co2e_per_d = base_cr_sep.scope2_kg_co2e_per_d if base_cr_sep else 0,
             scope3_kg_co2e_per_d = base_cr_sep.scope3_kg_co2e_per_d if base_cr_sep else 0,
