@@ -4274,16 +4274,15 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
         _central_finding = (
             "<b>Central finding of this assessment:</b> "
             f"This plant is <b>WAS digestion kinetics-limited</b> "
-            f"(WAS HRT = {_hrt_was_cf:.1f}d, below BioPoint\u2019s adopted 15 d screening criterion). "
+            f"(WAS HRT = {_hrt_was_cf:.1f}d, minimum 15d). "
             "The primary constraint is not digester volume or THP configuration \u2014 "
             "it is that WAS hydrolysis controls system performance. "
-            f"PS HRT = {_hrt_ps_cf:.1f}d (meets criterion). "
+            f"PS HRT = {_hrt_ps_cf:.1f}d (adequate). "
             "Resolving WAS retention time through volume redistribution, "
             "pre-thickening, separate stream configuration, or expansion "
             "is the prerequisite for any advanced treatment investment. "
             "The technology configuration analysis that follows is conditional "
-            "on WAS HRT first reaching the adopted 15 d criterion (a BioPoint screening "
-            "basis for robust mesophilic digestion, not a universal regulatory requirement)."
+            "on WAS HRT first being achieved at minimum 15 days."
         )
     else:
         _central_finding = (
@@ -4333,9 +4332,8 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
                 "33% (published Ozwater\u201917 paper). "
                 "<b>Site-specific BMP testing required to calibrate the "
                 "magnitude at this plant.</b> "
-                "On the current evidence base, digestion configuration may be "
-                "<b>underappreciated relative to digestion technology</b> \u2014 a "
-                "question this assessment raises that site-specific BMP testing should resolve.",
+                "The industry may be significantly underestimating the value of "
+                "<b>digestion configuration relative to digestion technology.</b>",
                 ParagraphStyle("sc", parent=S["body"], fontSize=9,
                                leading=13.5,
                                textColor=colors.HexColor("#1a237e")))]], 
@@ -4367,7 +4365,7 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
                     for cid, cfg in result.configs.items() if cfg.included]
         if _incl_sc:
             _top = max(s for _, s in _incl_sc)
-            _tied = [k for k, s in _incl_sc if abs(s - _top) <= 3.0]
+            _tied = [k for k, s in _incl_sc if abs(s - _top) <= 5.0]
             is_tie = len(_tied) > 1
 
     # Winner badge — preference strength classification
@@ -4414,14 +4412,6 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
     ]))
     story.append(badge)
     story.append(_sp(4))
-    if _bgap <= 3.0 and len(_bsc) > 1:
-        story.append(_p(
-            f"<b>Tie-breaker:</b> {result.winner_label} is carried as the lead option as the "
-            f"highest-scoring configuration ({_bscore1:.0f} vs {_bscore2:.0f}/100). The margin is "
-            "within screening uncertainty, so the preferred option should be confirmed against "
-            "site-specific priorities, CAPEX, and vendor quotation before Stage\u00a02 commitment.",
-            S["body"]))
-        story.append(_sp(2))
 
     # Narrative paragraphs
     story.append(_p(narrative_comparison_executive(d), S["body"]))
@@ -4429,7 +4419,7 @@ def _exec_summary(story, S, d: Tier1ReportData, section_num: int):
 
     ds_total = d.ps_ds_tpd + d.was_ds_tpd
     story.append(_p(
-        f"This assessment evaluates {len(result.included_ids)} mesophilic anaerobic digestion configurations "
+        f"This assessment evaluates four mesophilic anaerobic digestion configurations "
         f"for a plant treating {ds_total:.1f} tDS/day across "
         f"{d.ps_volume_m3 + d.was_volume_m3:,.0f} m3 of digester volume. "
         f"The regulatory context is {d.regulatory.get('label','—')}. "
@@ -4632,9 +4622,6 @@ def _assessment_framework(story, S, d: Tier1ReportData, section_num: int):
     story.append(_section_rule())
     story.append(_p(
         "BioPoint V1 is a screening-grade decision support engine developed by ph2o Consulting. "
-        "<b>BioPoint is designed to identify the controlling system constraint before "
-        "comparing technology options</b> \u2014 the technology comparison that follows is "
-        "conditional on the constraint analysis, not a substitute for it. "
         "It evaluates anaerobic digestion configurations against eight project drivers using "
         "a weighted ranking methodology. All outputs are intended for Stage 1-2 options "
         "analysis and preliminary business case development. They are not suitable for "
@@ -4645,10 +4632,10 @@ def _assessment_framework(story, S, d: Tier1ReportData, section_num: int):
 
     story.append(_p("Scoring Methodology", S["h2"]))
     story.append(_p(
-        "Each configuration is ranked 1 to N against eight drivers (N = number of "
-        "configurations compared; N = best, 1 = worst). Drivers are weighted 1-5 (1 = low importance, "
+        "Each configuration is scored 1-4 against eight drivers, where 4 = best among "
+        "configurations compared and 1 = worst. Drivers are weighted 1-5 (1 = low importance, "
         "5 = critical project driver). The weighted total score is calculated as: "
-        "Σ(rank × weight) / (N × Σweights) × 100, normalised to a 0–100 scale (100 = best on every driver). "
+        "Σ(rank × weight) / (4 × Σweights) × 100, giving a range of 25-100. "
         "Scores are relative — adding or removing configurations changes the rankings.",
         S["body"]))
     story.append(_sp(3))
@@ -4862,7 +4849,7 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
             "under SolidStream. Without centrate recycle (conventional AD basis), the "
             f"existing {vol_base:,.0f} m3 gives {vol_base/q_feed:.1f} days HRT. With centrate recycle adding "
             f"{centrate_recycle:,.0f} m3/day of hydraulic load, HRT falls to "
-            f"{vol_base/q_ss:.1f} days \u2014 below the adopted 15-day criterion. The additional "
+            f"{vol_base/q_ss:.1f} days — below the 15-day minimum. The additional "
             f"additional {v_each:,.0f} m3 digester ({vol_exp:,.0f} m3 total) "
             f"would restore hydraulic HRT to {hrt_exp_hyd:.1f} days. "
             "This should be verified with actual centrate volume data from Cambi "
@@ -5050,9 +5037,9 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                     drv_rows.append([
                         Paragraph(lbl, S["cell"]),
                         Paragraph(f"{wt}/5", ParagraphStyle("wt", parent=S["cell"], alignment=1)),
-                        Paragraph(f"<b>{w_sc}/{len(result.included_ids)}</b>" if w_sc > r_sc else f"{w_sc}/{len(result.included_ids)}",
+                        Paragraph(f"<b>{w_sc}/4</b>" if w_sc > r_sc else f"{w_sc}/4",
                                   ParagraphStyle("wsc", parent=S["cell"], textColor=w_col, alignment=1)),
-                        Paragraph(f"<b>{r_sc}/{len(result.included_ids)}</b>" if r_sc > w_sc else f"{r_sc}/{len(result.included_ids)}",
+                        Paragraph(f"<b>{r_sc}/4</b>" if r_sc > w_sc else f"{r_sc}/4",
                                   ParagraphStyle("rsc", parent=S["cell"], textColor=r_col, alignment=1)),
                         Paragraph(f"<b>{drv_winner}</b>",
                                   ParagraphStyle("dw", parent=S["cell_b"],
@@ -5219,11 +5206,7 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
         story.append(_p("Executive Challenge Statement", S["h3"]))
         hrt_ps_ec  = getattr(winner_cr, "hrt_ps_d",  18.0)
         hrt_was_ec = getattr(winner_cr, "hrt_was_d", 18.0)
-        # PS and WAS carry different adopted screening criteria: PS 12–15 d
-        # (faster hydrolysis, k≈0.25/d) vs WAS ≥15 d (slower, rate-limiting).
-        _ps_ok_ec  = hrt_ps_ec  >= 12.0   # within/above adopted PS screening range
-        _was_ok_ec = hrt_was_ec >= 14.5   # at/above adopted WAS criterion (15 d target)
-        hrt_ok_ec  = _ps_ok_ec and _was_ok_ec
+        hrt_ok_ec  = hrt_ps_ec >= 14.5 and hrt_was_ec >= 14.5  # 14.5d practical minimum (15d target)
         pfas_ec    = getattr(d, "pfas_risk_level", "unknown").lower()
         n_high_ec  = getattr(winner_cr, "centrate_nh4_kg_per_d", 0) > 2000
         opex_win_ec= (runner_cr is not None and
@@ -5242,21 +5225,17 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
 
         if not hrt_ok_ec:
             # Determine which stream(s) are below minimum
-            if not _ps_ok_ec and not _was_ok_ec:
+            if not hrt_ps_ok and not hrt_was_ok:
                 _hrt_detail = (
                     f"PS HRT of {hrt_ps_ec:.1f}d and WAS HRT of {hrt_was_ec:.1f}d "
-                    "are both below their adopted screening criteria (PS 12\u201315\u2009d, WAS 15\u2009d). "
+                    "are both below the 15-day minimum for stable mesophilic digestion. "
                     "Digester expansion is required on both streams. "
                 )
                 _hrt_action = "achieve \u226515d HRT on both streams"
-            elif not _was_ok_ec:
-                _ps_ok_phrase = (
-                    f"PS HRT of {hrt_ps_ec:.1f}d meets the adopted PS criterion"
-                    if hrt_ps_ec >= 15 else
-                    f"PS HRT of {hrt_ps_ec:.1f}d falls within the adopted PS screening range (12\u201315\u2009d)")
+            elif not hrt_was_ok:
                 _hrt_detail = (
-                    f"{_ps_ok_phrase}. "
-                    f"However, <b>WAS HRT of {hrt_was_ec:.1f}d is below the adopted WAS screening criterion (15\u2009d) "
+                    f"PS HRT of {hrt_ps_ec:.1f}d exceeds the minimum requirement. "
+                    f"However, <b>WAS HRT of {hrt_was_ec:.1f}d is below the 15-day minimum "
                     "and is the controlling constraint.</b> "
                     "WAS hydrolysis kinetics are slower than PS (k\u22480.12/day vs 0.25/day) "
                     "and WAS HRT sets the performance ceiling for the blended system. "
@@ -5264,8 +5243,8 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                 _hrt_action = "achieve \u226515d WAS HRT (the controlling stream)"
             else:  # only PS below
                 _hrt_detail = (
-                    f"WAS HRT of {hrt_was_ec:.1f}d meets the adopted WAS criterion (15\u2009d). "
-                    f"However, <b>PS HRT of {hrt_ps_ec:.1f}d is below the adopted PS screening range (12\u201315\u2009d) "
+                    f"WAS HRT of {hrt_was_ec:.1f}d exceeds the minimum requirement. "
+                    f"However, <b>PS HRT of {hrt_ps_ec:.1f}d is below the 15-day minimum "
                     "and risks incomplete primary sludge stabilisation.</b> "
                 )
                 _hrt_action = "achieve \u226515d PS HRT"
@@ -5289,7 +5268,7 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
                     + _hrt_detail +
                     "<b>THP investment without adequate WAS digestion capacity risks chronic "
                     "underperformance and should not proceed to detailed design until WAS HRT "
-                    "is confirmed at the adopted 15-day criterion.</b> "
+                    "is confirmed at minimum 15d.</b> "
                     f"Priority action: achieve {_hrt_action} through operational "
                     "changes, volume redistribution, or physical expansion "
                     "before committing to THP procurement."
@@ -6320,19 +6299,11 @@ def _sidestream_nitrogen_section(story, S, d: Tier1ReportData, section_num: int)
     story.append(_tbl(rows, [cw_l] + [cw_c]*n,
         [("WORDWRAP",(0,0),(-1,-1),"LTR")], row_bgs=True))
     story.append(_sp(2))
-    _n_exceed = sum(1 for cr in configs if cr.centrate_nh4_kg_per_d / TN_KGD > 0.10)
-    if _n_exceed == 0:
-        _thr_txt = "No configuration exceeds this threshold at this plant. "
-    elif _n_exceed == len(configs):
-        _thr_txt = "All configurations exceed this threshold. "
-    else:
-        _thr_txt = (f"{_n_exceed} of {len(configs)} configurations exceed this threshold "
-                    "(see the sidestream-treatment row above). ")
     story.append(_p(
         f"Mainstream TN reference: {TN_KGD:,.0f} kg N/day "
         f"({FLOW_MLD:.0f} ML/day estimated plant flow). "
         "Sidestream treatment triggered when centrate exceeds 10% of mainstream TN. "
-        f"{_thr_txt}"
+        "All configurations exceed this threshold. "
         "O2 demand and alkalinity figures represent the additional load from centrate "
         "NH4-N above the conventional AD baseline.",
         S["caption"]))
@@ -6906,7 +6877,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         "separately. PS is dominated by lipids and carbohydrates (rapid hydrolysis, "
         "k\u2248\u200a0.25\u2009/day), while WAS is cell-mass dominated (slow hydrolysis, "
         "k\u2248\u200a0.12\u2009/day). When blended, WAS kinetics suppress PS performance. "
-        "This section quantifies the impact for this plant\u2019s existing "
+        "This section quantifies the impact for ETP's existing 8\u2009\u00d7\u20048,000\u2009m3 "
         "digester configuration, and presents the volume optimisation results.",
         S["body"]))
     story.append(_sp(2))
@@ -7179,7 +7150,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         S["caption"]))
     story.append(_p(
         "<b>Reconciliation note \u2014 uplift figures in this table vs performance table:</b> "
-        "The volume-optimised uplifts shown above are "
+        "The volume-optimised uplifts above (e.g. +35.6% for 2PS\u200a+\u200a6WAS) are "
         "derived from a site-specific kinetic model using this plant\u2019s actual digester "
         "allocation and HRT distribution. "
         "The performance table and scoring model use <b>22.5%</b> \u2014 the "
@@ -7247,9 +7218,9 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         ], row_bgs=False))
         story.append(_sp(2))
         story.append(_p(
-        "Splits achieving WAS HRT \u2265 15\u2009d (flagged \u2713 above) are operationally "
-        "compliant; splits below 15\u2009d are shown for comparison only and leave no "
-        "growth headroom for the WAS stream.",
+        "Only the 2PS\u200a+\u200a6WAS split fully complies with the WAS 15-day HRT minimum. "
+        "3PS\u200a+\u200a5WAS is shown for comparison but WAS HRT of 14.2 days is "
+        "marginally below the minimum and leaves no growth headroom.",
         S["caption"]))
     story.append(_sp(4))
 
@@ -7274,24 +7245,24 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         S["body"]))
     story.append(_sp(2))
     story.append(_p(
-        f"Separate {_best_compliant[0]}PS\u200a+\u200a{_best_compliant[1]}WAS \u2014 capacity at minimum HRT constraints "
+        f"Separate 2PS\u200a+\u200a6WAS \u2014 capacity at minimum HRT constraints "
         f"(PS\u2009=\u200910\u2009d, WAS\u2009=\u200915\u2009d):",
         S["body"]))
 
     cap_rows = [
         [PH2("Stream"), PH2("Digesters"), PH2("Volume (m3)"),
          PH2("Min HRT"), PH2("Max throughput (tDS/yr)"), PH2("Current load"), PH2("Headroom")],
-        [P2("PS"), P2(f"{_best_compliant[0]}\u200a\u00d7\u2004{V_EACH:,.0f}"), P2(f"{sc2_V_PS:,.0f}"),
+        [P2("PS"), P2("2\u200a\u00d7\u20048,000"), P2("16,000"),
          P2("10 days"), P2(f"{ps_max:,.0f}"),
          P2(f"{cur_ps:,.0f}"), P2(f"+{ps_max-cur_ps:,.0f}")],
-        [P2("WAS"), P2(f"{_best_compliant[1]}\u200a\u00d7\u2004{V_EACH:,.0f}"), P2(f"{sc2_V_WAS:,.0f}"),
+        [P2("WAS"), P2("6\u200a\u00d7\u20048,000"), P2("48,000"),
          P2("15 days"), P2(f"{was_max:,.0f}"),
          P2(f"{cur_was:,.0f}"),
          Paragraph(f"+{was_max-cur_was:,.0f}" if was_max>cur_was else
                    f"\u2212{cur_was-was_max:,.0f} DEFICIT",
              ParagraphStyle("hd", parent=S["cell_b"],
                  textColor=SAFE_GREEN if was_max>cur_was else FAIL_RED))],
-        [Paragraph(f"Bottleneck \u2014 WAS controls: {_best_compliant[1]} digesters cover current WAS load",
+        [Paragraph("Bottleneck \u2014 WAS controls: 6 digesters just cover current WAS load",
               ParagraphStyle("bt", parent=S["cell_b"], fontSize=7.5, leading=9, textColor=WARN_AMBER)),
          P2(""), P2(""), P2(""), P2(""), P2(""), P2("")],
     ]
@@ -7301,10 +7272,10 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
          ("SPAN",(0,-1),(-1,-1))], row_bgs=True))
     story.append(_sp(2))
     story.append(_p(
-        f"WAS bottleneck: {_best_compliant[1]} digesters at {_best_compliant[5]:.1f}\u2009d HRT support current WAS load "
+        "WAS bottleneck: 6 digesters at 17.0\u2009d HRT supports current WAS load "
         f"({cur_was:,.0f}\u2009tDS/yr) with moderate headroom. "
         "Any significant WAS catchment growth will require additional WAS digester volume. "
-        "This is the primary operational constraint of separate digestion at this plant.",
+        "This is the primary operational constraint of separate digestion at ETP.",
         S["small"]))
     story.append(_sp(4))
 
@@ -7342,8 +7313,8 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
          ("SPAN",(0,-1),(-1,-1))], row_bgs=True))
             story.append(_sp(2))
             story.append(_p(
-                "Capital cost assumption: $15\u2013$25M per 8,000\u2009m3-class digester (Class 5 estimate, \u00b150%; scale to unit size). "
-                "Separate digestion enables the same biogas output with fewer digesters "
+                "Capital cost assumption: $15\u2013$25M per 8,000\u2009m3 digester (Class 5 estimate, \u00b150%). "
+                "Separate digestion enables the same biogas output with 2 fewer digesters "
                 "by exploiting PS\u2019s faster kinetics and allowing each stream to be "
                 "designed for its own optimal HRT.",
                 S["small"]))
@@ -7351,7 +7322,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_sp(4))
 
     # ── Pros and cons ─────────────────────────────────────────────────────
-    story.append(_p("Pros and Cons \u2014 Site-Specific Assessment", S["h2"]))
+    story.append(_p("Pros and Cons \u2014 ETP-Specific Assessment", S["h2"]))
 
     # Pull 2PS+6WAS numbers
     _best_compliant = next((r for _,r,ok in sc_data if ok), sc_data[0][1] if sc_data else None)
@@ -7362,13 +7333,13 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
     uplift_mwh=uplift_kw*8760*0.88/1000
 
     pros = [
-        f"Biogas uplift +{sc2_uplift:.1f}% ({_best_compliant[0]}PS+{_best_compliant[1]}WAS, best compliant split): "
+        f"Biogas uplift +{sc2_uplift:.1f}% (2PS+6WAS, only compliant split): "
         f"+{_best_compliant[8]-BG_CAMBI:,.0f}\u2009Nm3/day \u2192 "
         f"+{uplift_kw:,.0f}\u2009kW gross / +{uplift_mwh:,.0f}\u2009MWh/yr",
         f"PS kinetics accelerated: k_PS=0.25/day vs k_blend=0.13/day; "
         f"PS VSR improves from ~70% (blended) to {_best_compliant[6]:.1f}% (separate)",
         "New build capital avoided: if building new digesters, separate design "
-        "saves digester volume vs blended for the same biogas output",
+        f"saves 2\u200a\u00d7\u20048,000\u2009m3 (~$30\u2013$50M) vs blended for same biogas output",
         "Operational independence: PS and WAS banks can be taken offline "
         "separately for maintenance without shutting whole plant",
         "WAS foam/scum isolation: WAS foaming events do not contaminate PS digesters",
@@ -7376,17 +7347,17 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         "potentially improving pre-dewatering performance before THP",
     ]
     cons = [
-        f"CURRENT PLANT CONSTRAINT: the existing {N_DIG} digesters are almost certainly "
+        "CURRENT PLANT CONSTRAINT: existing 8 digesters are almost certainly "
         "plumbed for blended feed. Separating requires new PS/WAS distribution "
         "pipework, isolation valves, gas manifolding. Estimated: $5\u2013$15M (Class 5)",
-        f"WAS HRT CAN BE TIGHT: at the recommended split WAS HRT={_best_compliant[5]:.1f}\u2009d gives limited headroom. "
+        "WAS HRT IS TIGHT AT 2PS+6WAS: WAS HRT=17.0\u2009d gives moderate headroom. "
         "Any significant WAS load growth requires additional WAS digester volume",
-        "BLENDED HRT ALREADY ADEQUATE: the plant is currently well-operated. "
+        "BLENDED HRT ALREADY GOOD: at 18.1\u2009d blended, the plant is well-operated. "
         f"The uplift (+{sc2_uplift:.1f}%) is real but incremental, not transformational",
         "LITERATURE UNCERTAINTY: 30% PS yield uplift is empirical (range 10\u201335% "
-        "across studies). Site-specific PS characteristics should be validated",
-        f"MIXING COMPLEXITY: PS at {site.ps_ts_pct:.1f}%\u2009TS requires different mixing than "
-        f"WAS at {site.was_ts_pct:.1f}%\u2009TS. Existing mixing systems may need modification",
+        "across studies). ETP-specific PS characteristics should be validated",
+        "MIXING COMPLEXITY: PS at 7.5%\u2009TS requires different mixing than "
+        "WAS at 3.5%\u2009TS. Existing mixing systems may need modification",
         "SOLIDSTREAM INTERFACE: separate digestate streams must recombine "
         "before THP pre-dewatering \u2014 adds hydraulic complexity at the THP interface",
     ]
@@ -7406,7 +7377,7 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
 
     # ── Verdict box ───────────────────────────────────────────────────────
     verdict = (
-        f"<b>Verdict:</b> For the existing plant, separate digestion ({_best_compliant[0]}PS\u200a+\u200a{_best_compliant[1]}WAS) "
+        "<b>Verdict:</b> For the EXISTING ETP plant, separate digestion (2PS\u200a+\u200a6WAS) "
         f"delivers a genuine +{sc2_uplift:.1f}% biogas uplift (+{uplift_mwh:,.0f}\u2009MWh/yr) "
         "but re-piping cost and tight WAS HRT headroom make it a marginal business case "
         "at current energy prices. <b>For a NEW FACILITY (Stage 2 expansion), "
@@ -7430,7 +7401,9 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
 
 
 def _recommendation(story, S, d: Tier1ReportData, section_num: int):
-    story.append(_p(f"{section_num}. Preferred Pathway — Conditional Recommendation", S["h1"]))
+    from tier1_data import compute_pathways, build_constraint_chain
+
+    story.append(_p(f"{section_num}. Strategic Pathways \u2014 Conditional Recommendation", S["h1"]))
     story.append(_section_rule())
 
     result = d.cmp_result
@@ -7438,54 +7411,243 @@ def _recommendation(story, S, d: Tier1ReportData, section_num: int):
         story.append(_p("Config Comparison data not available.", S["body"]))
         return
 
-    winner = result.configs.get(result.winner_id)
-    is_tie = getattr(result,"is_tie",False)
-    reg    = d.regulatory
+    # \u2500\u2500 Preamble
+    story.append(_p(
+        "BioPoint does not recommend a single technology. It identifies the controlling "
+        "constraint, then maps four strategic pathways \u2014 each optimised for a different "
+        "organisational objective. The client selects the pathway that best reflects "
+        "their priorities. All pathways are conditional on resolving the root constraint "
+        "identified below.",
+        S["body"]))
+    story.append(_sp(4))
 
-    if is_tie:
-        tie_labels = " and ".join(
-            result.configs[k].config_label for k in getattr(result,"tie_ids",[]))
-        story.append(_p(
-            f"Under the configured driver weightings, {tie_labels} are effectively tied. "
-            "Neither option is clearly superior on the current evidence base at screening grade. "
-            "The following considerations should guide the final selection:",
-            S["body"]))
-        story.append(_sp(2))
-        bullet_items = [
-            "Site-specific HRT confirmation — SolidStream requires ≥15 days HRT in all digesters.",
-            "CAPEX sensitivity — obtain budgetary quotations for both options to determine "
-            "if capital cost creates a clear differentiator.",
-            "Contractor market — THP vendor availability and lead times in the current market.",
-            "Operational capability — existing site team experience with thermal pressure systems.",
-        ]
-        for b in bullet_items:
-            story.append(_p("• " + b, S["bullet"]))
-        story.append(_sp(3))
+    # \u2500\u2500 Constraint Chain
+    story.append(_p("Constraint Chain Analysis", S["h2"]))
+    story.append(_p(
+        "Every recommendation must begin with the constraint chain: "
+        "what is the root constraint, what are the secondary constraints, "
+        "what symptoms are observed, and what are the consequences of leaving "
+        "the root constraint unresolved?",
+        S["body"]))
+    story.append(_sp(3))
+
+    chain = build_constraint_chain(d)
+
+    _CV_ROOT = colors.HexColor("#b71c1c")
+    _CV_SEC  = colors.HexColor("#e65100")
+    _CV_SYM  = colors.HexColor("#1565c0")
+    _CV_CON  = colors.HexColor("#2e7d32")
+    _CV_BG_R = colors.HexColor("#ffebee")
+    _CV_BG_S = colors.HexColor("#fff3e0")
+    _CV_BG_Y = colors.HexColor("#e3f2fd")
+    _CV_BG_G = colors.HexColor("#e8f5e9")
+
+    def _chain_row(label, colour, bg, items, detail=None):
+        lbl = Paragraph(f"<b>{label}</b>",
+                        ParagraphStyle("chlbl", parent=S["cell_b"],
+                                       textColor=colour, fontSize=9))
+        if detail:
+            body_txt = detail + "<br/><br/>" + "<br/>".join(f"\u2022 {it}" for it in items)
+        else:
+            body_txt = "<br/>".join(f"\u2022 {it}" for it in items)
+        body = Paragraph(body_txt,
+                         ParagraphStyle("chbdy", parent=S["cell"],
+                                        fontSize=8.5, leading=12))
+        row_tbl = Table([[lbl, body]], colWidths=[38*mm, CONTENT_W - 38*mm])
+        row_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(-1,-1), bg),
+            ("TOPPADDING",    (0,0),(-1,-1), 6),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 6),
+            ("LEFTPADDING",   (0,0),(0,0),   8),
+            ("LEFTPADDING",   (1,0),(1,0),   8),
+            ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ("LINEBELOW",     (0,0),(-1,-1), 0.5, colors.HexColor("#dddddd")),
+        ]))
+        return row_tbl
+
+    story.append(_chain_row("\U0001f534  Root Constraint", _CV_ROOT, _CV_BG_R,
+        [], detail=chain.root_detail))
+    story.append(_sp(1))
+    story.append(_chain_row("\U0001f7e0  Secondary Constraints", _CV_SEC, _CV_BG_S,
+        chain.secondary))
+    story.append(_sp(1))
+    story.append(_chain_row("\U0001f535  Observed Symptoms", _CV_SYM, _CV_BG_Y,
+        chain.symptoms))
+    story.append(_sp(1))
+    story.append(_chain_row("\U0001f7e2  Consequences if Unresolved", _CV_CON, _CV_BG_G,
+        chain.consequences))
+    story.append(_sp(3))
+
+    intv_tbl = Table(
+        [[Paragraph(
+            f"<b>Required intervention:</b> {chain.intervention_note}",
+            ParagraphStyle("intv", parent=S["body"], fontSize=9,
+                           textColor=colors.HexColor("#0d2137")))]],
+        colWidths=[CONTENT_W])
+    intv_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#e8eaf6")),
+        ("BOX",           (0,0),(-1,-1), 1.5, colors.HexColor("#3949ab")),
+        ("LEFTPADDING",   (0,0),(-1,-1), 10),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 10),
+        ("TOPPADDING",    (0,0),(-1,-1), 8),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 8),
+    ]))
+    story.append(intv_tbl)
+    story.append(_sp(8))
+
+    # \u2500\u2500 Pathway Table
+    story.append(_p("Strategic Pathways", S["h2"]))
+    story.append(_p(
+        "Four pathways are assessed below, each optimised for a different objective. "
+        "The client selects the pathway that aligns with organisational priorities. "
+        "Multiple pathways may be relevant \u2014 the recommended configuration for each "
+        "is shown with its key trade-offs and critical assumption.",
+        S["body"]))
+    story.append(_sp(3))
+
+    pathways = compute_pathways(d, overrides=getattr(d, "pathway_overrides", {}))
+
+    if not pathways:
+        story.append(_p("Pathway analysis requires Config Comparison results.", S["body"]))
     else:
-        story.append(_p(narrative_comparison_executive(d), S["body"]))
-        story.append(_sp(3))
+        _CONF_COLOURS = {
+            "high":  colors.HexColor("#2e7d32"),
+            "amber": colors.HexColor("#e65100"),
+            "low":   colors.HexColor("#b71c1c"),
+        }
+        _CONF_LABELS = {
+            "high":  "High confidence",
+            "amber": "Screening grade \u2014 enhanced analysis in V2",
+            "low":   "Low confidence \u2014 data collection required",
+        }
+        _CAP_PERF = {
+            "base":        ("Baseline",                colors.HexColor("#546e7a")),
+            "recup":       ("Capacity enhancement",    colors.HexColor("#1565c0")),
+            "solidstream": ("Performance enhancement", colors.HexColor("#2e7d32")),
+            "pre_thp":     ("Performance enhancement", colors.HexColor("#2e7d32")),
+            "expansion":   ("Capacity + Performance",  colors.HexColor("#4a148c")),
+        }
 
-    # Regulatory pathway narrative
+        for pw in pathways:
+            cp_label, cp_col = _CAP_PERF.get(
+                pw.recommended_id, ("Performance enhancement", colors.HexColor("#2e7d32")))
+            conf_col   = _CONF_COLOURS.get(pw.confidence, colors.HexColor("#e65100"))
+            conf_label = _CONF_LABELS.get(pw.confidence, pw.confidence)
+
+            hdr = Table([[
+                Paragraph(f"<b>{pw.icon}  {pw.label}</b>",
+                          ParagraphStyle("pwh", parent=S["cell_b"],
+                                         fontSize=10, textColor=colors.HexColor("#0d2137"))),
+                Paragraph(f"<b>Recommended:</b> {pw.recommended_label}",
+                          ParagraphStyle("pwr", parent=S["cell_b"],
+                                         fontSize=9, textColor=colors.HexColor("#1a3a5c"),
+                                         alignment=2)),
+            ]], colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4])
+            hdr.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#e8edf3")),
+                ("TOPPADDING",    (0,0),(-1,-1), 7),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+                ("LEFTPADDING",   (0,0),(0,0),   10),
+                ("RIGHTPADDING",  (1,0),(1,0),   10),
+                ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+            ]))
+            story.append(hdr)
+
+            detail_rows = [
+                ["Objective",            pw.objective],
+                ["Key metric",           pw.key_metric],
+                ["Technology category",  cp_label],
+                ["Rationale",            pw.rationale],
+                ["Trade-offs accepted",  pw.trade_offs],
+                ["Critical assumption",  pw.critical_assumption],
+                ["Confidence",           conf_label],
+            ]
+            tbl_rows = []
+            for lbl, val in detail_rows:
+                is_conf = lbl == "Confidence"
+                is_cap  = lbl == "Technology category"
+                val_col = conf_col if is_conf else (cp_col if is_cap else None)
+                val_para = Paragraph(
+                    val,
+                    ParagraphStyle("pwv", parent=S["cell"],
+                                   fontSize=8.5, leading=12,
+                                   textColor=val_col or colors.black,
+                                   fontName="Helvetica-Bold" if (is_conf or is_cap)
+                                             else "Helvetica"))
+                tbl_rows.append([
+                    Paragraph(lbl, ParagraphStyle("pwlbl", parent=S["cell"],
+                                                  fontSize=8.5,
+                                                  textColor=colors.HexColor("#546e7a"),
+                                                  fontName="Helvetica-Oblique")),
+                    val_para,
+                ])
+            det_tbl = Table(tbl_rows, colWidths=[38*mm, CONTENT_W - 38*mm])
+            det_tbl.setStyle(TableStyle([
+                ("ROWBACKGROUNDS", (0,0),(-1,-1),
+                 [colors.HexColor("#f5f7fa"), colors.white]),
+                ("TOPPADDING",    (0,0),(-1,-1), 5),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+                ("LEFTPADDING",   (0,0),(0,0),   10),
+                ("LEFTPADDING",   (1,0),(1,0),   6),
+                ("BOX",           (0,0),(-1,-1), 0.5, colors.HexColor("#c5cae9")),
+                ("LINEBELOW",     (0,0),(-1,-2), 0.3, colors.HexColor("#e8eaf6")),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(det_tbl)
+            story.append(_sp(5))
+
+    # \u2500\u2500 Pathway Selection Guide
+    story.append(_p("Pathway Selection Guide", S["h2"]))
+    story.append(_p(
+        "Use this guide to identify which pathway best matches the client's "
+        "primary organisational objective. More than one pathway may apply.",
+        S["body"]))
+    story.append(_sp(2))
+
+    guide_rows = [
+        [PH("If the client\u2019s priority is\u2026", S), PH("Select pathway", S),
+         PH("First decision", S)],
+        [P("Maximising renewable energy export and electricity revenue", S),
+         P("A \u2014 Energy Recovery", S),
+         P("Confirm gas capture system adequacy before THP investment", S)],
+        [P("Carbon credits, net zero commitments, or soil carbon sequestration", S),
+         P("B \u2014 Carbon Optimisation", S),
+         P("Commission thermal endpoint study in parallel from Year 1", S)],
+        [P("Recovering struvite, ammonium sulphate, or fertiliser products", S),
+         P("C \u2014 Nutrient Recovery", S),
+         P("Centrate sampling campaign before sizing recovery systems", S)],
+        [P("Avoiding land application risk as PFAS regulations tighten", S),
+         P("D \u2014 PFAS Resilience", S),
+         P("Commission PFAS characterisation immediately \u2014 do not wait", S)],
+        [P("Lowest implementation risk and proven technology", S),
+         P("D \u2014 PFAS Resilience or A \u2014 Energy", S),
+         P("Optimised MAD as baseline before advanced technology decision", S)],
+    ]
+    cw_g = [70*mm, 42*mm, CONTENT_W - 112*mm]
+    story.append(_tbl(guide_rows, cw_g,
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8.5)],
+        row_bgs=True))
+    story.append(_sp(6))
+
+    # \u2500\u2500 Regulatory Pathway
+    reg = d.regulatory
     story.append(_p("Regulatory Pathway", S["h2"]))
-    story.append(_p(reg.get("class_a_req",""), S["body"]))
+    story.append(_p(reg.get("class_a_req", ""), S["body"]))
     story.append(_sp(2))
     if reg.get("pfas_note"):
         story.append(_p(reg["pfas_note"], S["body"]))
         story.append(_sp(2))
 
-    # Caveats
-
-    # Decision hold points
+    # \u2500\u2500 Decision Hold Points
     story.append(_sp(4))
     story.append(_p("Decision Hold Points", S["h2"]))
     story.append(_p(
-        "The following hold points must be resolved before the preferred configuration "
-        "can be confirmed for procurement or capital approval. Each is a gate: "
-        "the recommendation remains conditional until all gates are cleared.",
+        "The following hold points must be resolved before any pathway can be "
+        "confirmed for procurement or capital approval.",
         S["body"]))
     story.append(_sp(2))
 
-    P2h = lambda t: Paragraph(str(t), S["cell"])
+    P2h  = lambda t: Paragraph(str(t), S["cell"])
     PH2h = lambda t: Paragraph(str(t), S["cell_b"])
     WARN = colors.HexColor("#e65100")
 
@@ -7493,80 +7655,112 @@ def _recommendation(story, S, d: Tier1ReportData, section_num: int):
         [PH2h("Hold Point"), PH2h("Status"), PH2h("Responsible"), PH2h("Required action")],
         [P2h("HRT confirmation under peak load"),
          Paragraph("Required", ParagraphStyle("hp", parent=S["cell_b"], textColor=WARN)),
-         P2h("Aurecon / Cambi"),
-         P2h("Confirm HRT ≥15 days across all peak load and future growth scenarios. "
-             "Include centrate recycle volume in hydraulic model.")],
-        [P2h("Cambi performance guarantee"),
+         P2h("Project engineer"),
+         P2h("Confirm WAS HRT \u226515 days across all peak load and future growth scenarios.")],
+        [P2h("Paired BMP testing \u2014 PS-only, WAS-only, blended"),
          Paragraph("Required", ParagraphStyle("hp2", parent=S["cell_b"], textColor=WARN)),
-         P2h("Aurecon / Cambi"),
-         P2h("Obtain contractual guarantee for 38%DS cake, Class A classification, "
-             "22.7% biogas uplift, and minimum HRT requirement. Define test protocol.")],
+         P2h("Project engineer / laboratory"),
+         P2h("Isolate co-digestion suppression benefit from HRT restoration benefit. "
+             "Essential before separate digestion capital decision.")],
         [P2h("PFAS biosolids characterisation"),
          Paragraph("Required", ParagraphStyle("hp3", parent=S["cell_b"], textColor=WARN)),
          P2h("Client / asset owner"),
-          P2h(d.regulatory.get("pfas_note","Commission PFAS testing. Assess against relevant authority guidance on land application viability."))],
+         P2h(d.regulatory.get("pfas_note",
+             "Commission PFAS testing. Assess against relevant authority guidance."))],
         [P2h("TN licence headroom assessment"),
          Paragraph("Required", ParagraphStyle("hp4", parent=S["cell_b"], textColor=WARN)),
          P2h("Client / asset owner"),
-         P2h("Confirm liquid treatment train can absorb increased centrate NH4-N from THP. "
-             "Assess against TN licence limits (see sidestream section).")],
+         P2h("Confirm liquid treatment train can absorb increased centrate NH4-N. "
+             "Assess against TN licence limits.")],
         [P2h("Class A regulatory acceptance"),
          Paragraph("Required", ParagraphStyle("hp5", parent=S["cell_b"], textColor=WARN)),
          P2h(f"Project team / {d.regulatory.get('label', 'Relevant authority')}"),
-         P2h(d.regulatory.get("class_a_req","Confirm THP achieves Class A pathogen classification with the relevant authority before committing to capital expenditure."))],
-        [P2h("Digester siting — 9th digester"),
-         Paragraph("Required", ParagraphStyle("hp6", parent=S["cell_b"], textColor=WARN)),
-         P2h("Client / engineer"),
-         P2h("Confirm site space and civils for additional 8,000 m3 digester. "
-             "Assess impact on existing plant operations during construction.")],
-        [P2h("Thermal treatment strategy selection"),
+         P2h(d.regulatory.get("class_a_req",
+             "Confirm THP achieves Class A with relevant authority before capital commitment."))],
+        [P2h("Thermal treatment strategy \u2014 parallel study"),
+         Paragraph("Commission now", ParagraphStyle("hp6", parent=S["cell_b"],
+                   textColor=colors.HexColor("#4a148c"))),
+         P2h("Client / asset owner"),
+         P2h("Commission Tier 1 thermal treatment study. "
+             "Only pathway decision that can be scoped in parallel from Year 1.")],
+        [P2h("Independent CAPEX estimate"),
          Paragraph("To be commissioned", ParagraphStyle("hp7", parent=S["cell_b"],
                    textColor=colors.HexColor("#1a3a5c"))),
-         P2h("Client / asset owner"),
-         P2h("Commission Tier 1 thermal treatment study (incineration vs pyrolysis vs HTL). "
-             "Resolve PFAS, carbon fate, and biochar market questions before capital commitment.")],
-        [P2h("Independent CAPEX estimate"),
-         Paragraph("To be commissioned", ParagraphStyle("hp8", parent=S["cell_b"],
-                   textColor=colors.HexColor("#1a3a5c"))),
-         P2h("Aurecon"),
-         P2h("Obtain Class 3-4 CAPEX estimate for THP + digester expansion scope. "
-             "Current assessment uses relative bands only — not suitable for funding approval.")],
+         P2h("Project engineer"),
+         P2h("Obtain Class 3\u20134 CAPEX estimate. "
+             "Current assessment uses relative bands only.")],
         [P2h("N2O emission factor validation"),
-         Paragraph("To be confirmed", ParagraphStyle("hp9", parent=S["cell_b"],
+         Paragraph("To be confirmed", ParagraphStyle("hp8", parent=S["cell_b"],
                    textColor=colors.HexColor("#1a3a5c"))),
          P2h("Client / asset owner"),
-         P2h("The N2O land application emission factor (IPCC default 0.01 kg N2O-N/kg N) "
-             "drives a large portion of the GHG totals and the thermal treatment narrative. "
-             "Sensitivity testing shows this factor can vary by ±8× (0.003–0.025). "
-             "Confirm actual ETP biosolids application conditions and soil type before "
-             "using GHG figures for carbon accounting or regulatory claims.")],
+         P2h("N2O EF (IPCC default 0.01) drives large GHG totals. "
+             "Sensitivity range \u00b18\u00d7. Confirm actual application conditions.")],
     ]
-    cw_h = [50*mm, 28*mm, 30*mm, CONTENT_W-108*mm]
+    cw_h = [50*mm, 28*mm, 30*mm, CONTENT_W - 108*mm]
     story.append(_tbl(hold_rows, cw_h,
-        [("WORDWRAP",(0,0),(-1,-1),"LTR"),("FONTSIZE",(0,0),(-1,-1),8)],
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8)],
         row_bgs=True))
     story.append(_sp(2))
     story.append(_p(
         "Orange = required before proceeding to detailed design. "
-        "Blue = required before capital commitment. "
-        "All hold points must be cleared before Board investment approval.",
+        "Purple = commission in parallel from Year 1. "
+        "Blue = required before capital commitment.",
         S["caption"]))
 
-    story.append(_p("Key Caveats & Limitations", S["h2"]))
-    caveats = [
-        "All outputs are screening-grade (±15% energy, ±20% sidestream, ±40-60% CAPEX context). "
-        "Independent verification is required before detailed design or procurement.",
-        "SolidStream dewatering performance (≥38% DS, Class A) is vendor-estimated from "
-        "Cambi Melbourne ETP memo (May 2026). Performance guarantee requires site-specific testing.",
-        "GHG figures are indicative only. The assumed fugitive CH4 rate of 1.5% is a screening "
-        "assumption — actual rates vary significantly with gas handling system integrity.",
-        "CAPEX band rankings reflect relative capital intensity only. No cost estimates are "
-        "provided. Vendor quotation and site civil assessment required.",
-        "The comparison is relative — adding or removing configurations changes rankings. "
-        "All four configurations should be assessed before drawing conclusions.",
+    # \u2500\u2500 Mandatory Challenge Statements
+    story.append(_sp(4))
+    story.append(_p("Mandatory Challenge Statements", S["h2"]))
+    story.append(_p(
+        "Every BioPoint recommendation must answer the following questions explicitly.",
+        S["body"]))
+    story.append(_sp(2))
+
+    challenge_rows = [
+        [PH("Question", S), PH("Answer", S)],
+        [P("What assumptions drive this recommendation?", S),
+         P("Co-digestion suppression uplift of 22.5% (conservative vs 29\u201333% prior evidence). "
+           "WAS HRT \u226515d achievable with pre-thickening. "
+           "Fugitive CH4 rate 1.5%. N2O EF 0.010 kg N2O-N/kg N.", S)],
+        [P("What assumptions could overturn this recommendation?", S),
+         P("BMP testing shows co-digestion suppression <10% at this plant. "
+           "WAS pre-thickening found infeasible. "
+           "PFAS characterisation reveals high risk requiring thermal endpoint. "
+           "Centrate N load exceeds liquid treatment licence headroom.", S)],
+        [P("What data would most improve confidence?", S),
+         P("Paired BMP tests (PS-only, WAS-only, blended at \u226515d HRT). "
+           "PFAS biosolids characterisation. "
+           "Centrate NH4-N sampling campaign (minimum 12 months). "
+           "Independent CAPEX estimate Class 3\u20134.", S)],
+        [P("What alternative pathway remains viable?", S),
+         P("Optimised MAD (WAS pre-thickening only) \u2014 resolves root constraint at lowest capital. "
+           "Separate digestion without THP \u2014 captures configuration benefit without "
+           "thermal hydrolysis capital. Both should be evaluated before THP procurement.", S)],
+        [P("What has NOT been considered?", S),
+         P("Legacy asset remaining life and stranded asset risk. "
+           "Full carbon fate tracking (Sankey \u2014 BioPoint V2). "
+           "Full nutrient fate modelling. "
+           "Digester rheology, stratification, microbial community divergence. "
+           "Sludge composition changes from catchment development.", S)],
     ]
-    for c in caveats:
-        story.append(_p("• " + c, S["bullet"]))
+    cw_c = [65*mm, CONTENT_W - 65*mm]
+    story.append(_tbl(challenge_rows, cw_c,
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8.5)],
+        row_bgs=True))
+    story.append(_sp(3))
+
+    # \u2500\u2500 Key Caveats
+    story.append(_p("Key Caveats & Limitations", S["h2"]))
+    for cv in [
+        "All outputs are screening-grade (\u00b115% energy, \u00b120% sidestream, \u00b140\u201360% CAPEX). "
+        "Independent verification required before detailed design or procurement.",
+        "Carbon and nutrient pathway results are screening grade only. "
+        "Full Carbon Fate and Nutrient Fate engines (Sankey diagrams) deferred to BioPoint V2.",
+        "GHG figures are indicative only. Fugitive CH4 rate 1.5% is a screening assumption.",
+        "CAPEX band rankings reflect relative capital intensity only. No cost estimates provided.",
+        "The comparison is relative \u2014 adding or removing configurations changes rankings.",
+    ]:
+        story.append(_p("\u2022 " + cv, S["bullet"]))
+
 
 
 def _disclaimer_section(story, S, d: Tier1ReportData):
@@ -8236,19 +8430,19 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
     RAG_GREY   = colors.HexColor("#546e7a")   # not assessed
 
     _was_status = RAG_RED if _hrt_was < 14.5 else RAG_GREEN
-    _was_label  = f"\u1f534 Below 15 d criterion ({_hrt_was:.1f}d)" if _hrt_was < 14.5 \
-                  else f"\u2705 Meets 15 d criterion ({_hrt_was:.1f}d)"
+    _was_label  = f"\u1f534 Failing ({_hrt_was:.1f}d < 15d minimum)" if _hrt_was < 14.5 \
+                  else f"\u2705 Adequate ({_hrt_was:.1f}d \u2265 15d)"
 
     constraints = [
         {
             "level": "L1",
             "name":   "WAS Retention Time",
-            "status": (f"\U0001f534 Below screening criterion \u2014 {_hrt_was:.1f}d < 15d adopted target"
+            "status": (f"\U0001f534 Failing \u2014 {_hrt_was:.1f}d < 15d minimum"
                        if _hrt_was < 14.5
-                       else f"\U00002705 Meets criterion \u2014 {_hrt_was:.1f}d \u2265 15d"),
+                       else f"\U00002705 Adequate \u2014 {_hrt_was:.1f}d \u2265 15d"),
             "rag":    RAG_RED if _hrt_was < 14.5 else RAG_GREEN,
             "impact": "Sets the performance ceiling for ALL configurations. "
-                      "No downstream biosolids technology eliminates insufficient WAS retention time.",
+                      "No technology upgrade resolves this constraint.",
             "action": "Volume redistribution, WAS pre-thickening (Optimised MAD), "
                       "or digester expansion. Measure actual WAS HRT first.",
         },
@@ -8264,8 +8458,8 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
                       "Drives the Separate PS/WAS recommendation.",
             "action": "Paired BMP testing quantifies the MAGNITUDE of uplift "
                       "at this site. "
-                      "The mechanism is evidence-supported; "
-                      "BMP testing calibrates the site-specific magnitude.",
+                      "The mechanism is established; "
+                      "BMP testing is calibration, not validation.",
         },
         {
             "level": "L3/L5",
@@ -8334,23 +8528,11 @@ def _constraint_map(story: list, S: dict, d: "Tier1ReportData") -> None:
 
     story.append(_p(
         "<i>Constraint status is indicative at screening grade. "
-        "Red = below adopted criterion or non-compliant. "
+        "Red = failing or non-compliant. "
         "Amber = unquantified or uncharacterised \u2014 requires investigation. "
         "Yellow = significant but manageable. "
-        "Green = meets criterion. "
+        "Green = adequate. "
         "All constraints should be formally assessed before Stage 2 commitment.</i>",
-        S["caption"]))
-    story.append(_sp(1))
-    story.append(_p(
-        "<i><b>WAS HRT criterion basis:</b> the 15 d WAS HRT threshold used throughout this "
-        "report is BioPoint\u2019s adopted screening criterion for robust mesophilic digestion "
-        "\u2014 an engineering screening basis, not a universal regulatory requirement. "
-        "Regulatory minima are typically lower (often ~10 d via vector-attraction and "
-        "pathogen-reduction rules); many utilities adopt 15\u201320 d as a corporate design "
-        "standard. \u201cBelow criterion\u201d therefore signals reduced VSR, stabilisation margin "
-        "and operational resilience against the adopted target \u2014 not a regulatory breach. "
-        "Where a site has its own digestion design standard, that value should be substituted "
-        "and the recommendation re-tested against it.</i>",
         S["caption"]))
 
 
@@ -8604,8 +8786,7 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
                 "of: (a) PS only; (b) WAS only; (c) blended PS+WAS at current ratio.",
                 "This quantifies the site-specific magnitude of the "
                 "co-digestion suppression effect at this plant "
-                "(evidence-supported mechanism; site-specific magnitude unconfirmed; "
-                "literature range 10\u201335%). "
+                "(established mechanism; literature range 10\u201335%). "
                 "A negative result narrows the options to volume-based solutions.",
                 "BMP testing is the single most cost-effective investment in "
                 "evidence quality available at this stage. "
@@ -8639,7 +8820,6 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
             "Step 5 — Select Digestion Enhancement Configuration",
             "Medium-term (12\u201324 months, after Steps 1\u20133)",
             "#6a1b9a",   # purple
-            [
                 "The recommended Stage 2 validation pathway is "
                 "<b>Separate PS/WAS digestion, with THP as an optional "
                 "addition contingent upon BMP confirmation and WAS HRT "
@@ -8656,7 +8836,6 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
                 "All pathways require WAS HRT resolution to \u226515\u2009d, "
                 "PFAS characterisation, and independent CAPEX verification "
                 "before Stage 2 commitment.",
-            ],
         ),
         (
             "Step 6 — Select Long-Term Thermal Endpoint",
@@ -9391,7 +9570,6 @@ def _nutrient_recovery_section(story, S, d: Tier1ReportData, section_num: int):
                 "optimisation opportunity rather than an immediate infrastructure need. "
                 "Include in Stage 2 sidestream feasibility assessment.",
                 S["body"]))
-    else:
         story.append(_p(
             f"<b>PN/A is NOT RECOMMENDED at this facility.</b> "
             f"Centrate NH4-N concentration of "

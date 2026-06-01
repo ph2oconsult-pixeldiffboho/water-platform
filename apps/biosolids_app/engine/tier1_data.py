@@ -228,18 +228,6 @@ class Tier1ReportData:
     was_volume_m3:  float = 0.0
     plant_tkn_kgd:  float = 500.0
     n2o_ef:         float = 0.010  # N2O emission factor kg N2O-N/kg N applied (IPCC default)
-
-    # ── Digestion HRT design criterion (configurable screening basis) ──────
-    # The HRT thresholds below which a stream is flagged "below criterion".
-    # This is an ADOPTED SCREENING BASIS, not a universal/regulatory requirement.
-    # mode is a label only; the numeric values drive the assessment, so a
-    # reviewer can substitute their own utility standard and re-run.
-    hrt_criterion_mode:     str   = "Utility standard"   # Regulatory minimum / Utility standard / User-defined / Performance-based
-    was_hrt_criterion_d:    float = 15.0   # adopted WAS HRT criterion (the controlling stream)
-    ps_hrt_lo_d:            float = 12.0   # adopted PS screening range, lower bound (faster kinetics)
-    ps_hrt_hi_d:            float = 15.0   # adopted PS screening range, upper bound
-    hrt_regulatory_min_d:   float = 10.0   # typical regulatory minimum (VAR/pathogen) — reference only
-    hrt_utility_standard_d: float = 15.0   # typical utility corporate standard — reference only
     # PFAS site characterisation inputs
     pfas_risk_level:      str   = "unknown"  # unknown / low / medium / high / critical
     pfas_land_app_viable: bool  = True       # can biosolids still be land-applied?
@@ -299,18 +287,6 @@ def assemble_report_data(ss: dict, report_cfg: dict) -> Tier1ReportData:
     d.plant_tkn_kgd= ss.get("cmp_plant_tkn", 500.0)
     d.n2o_ef       = float(report_cfg.get("n2o_ef", 0.010))
 
-    # Digestion HRT design criterion (configurable; defaults preserve prior behaviour).
-    # Accept either a nested report_cfg["hrt_criterion"] dict or flat keys.
-    _hc = report_cfg.get("hrt_criterion", {})
-    if not isinstance(_hc, dict):
-        _hc = {}
-    d.hrt_criterion_mode     = _hc.get("mode", report_cfg.get("hrt_criterion_mode", "Utility standard"))
-    d.was_hrt_criterion_d    = float(_hc.get("was_d",  report_cfg.get("was_hrt_criterion_d", 15.0)))
-    d.ps_hrt_lo_d            = float(_hc.get("ps_lo_d", report_cfg.get("ps_hrt_lo_d", 12.0)))
-    d.ps_hrt_hi_d            = float(_hc.get("ps_hi_d", report_cfg.get("ps_hrt_hi_d", 15.0)))
-    d.hrt_regulatory_min_d   = float(_hc.get("regulatory_min_d",   report_cfg.get("hrt_regulatory_min_d", 10.0)))
-    d.hrt_utility_standard_d = float(_hc.get("utility_standard_d", report_cfg.get("hrt_utility_standard_d", 15.0)))
-
     # MAD result
     d.mad_result  = ss.get("mad_result")
     d.mad_inputs  = {k: ss[k] for k in ss if k.startswith("mad_")}
@@ -318,28 +294,6 @@ def assemble_report_data(ss: dict, report_cfg: dict) -> Tier1ReportData:
 
     # Comparison result
     d.cmp_result  = ss.get("cmp_result")
-
-    # ── Single source of truth ────────────────────────────────────────────
-    # Reconcile the report's plant inputs to the comparison the engine actually
-    # ran on. Without this, plant scale can diverge between sections: the exec
-    # summary / project context read d.* (set above from session state, with
-    # 3,000/1,200 m3 defaults) while engine-driven sections read
-    # d.cmp_result.site directly. If session state is incomplete the two
-    # disagree — e.g. a 64,000 m3 plant rendering "4,200 m3" in the summary.
-    # The comparison's site is authoritative, so derive d.* from it.
-    _site = getattr(d.cmp_result, "site", None) if d.cmp_result else None
-    if _site is not None:
-        d.ps_ds_tpd     = _site.ps_ds_tpd
-        d.was_ds_tpd    = _site.was_ds_tpd
-        d.ps_ts_pct     = _site.ps_ts_pct
-        d.was_ts_pct    = _site.was_ts_pct
-        d.ps_vs_pct     = _site.ps_vs_pct
-        d.was_vs_pct    = _site.was_vs_pct
-        d.ps_n_pct      = _site.ps_n_pct
-        d.was_n_pct     = _site.was_n_pct
-        d.ps_volume_m3  = _site.ps_volume_m3
-        d.was_volume_m3 = _site.was_volume_m3
-        d.plant_tkn_kgd = _site.plant_tkn_kg_per_d
 
     # Optional
     d.pathway_results = ss.get("pathway_results")
@@ -367,6 +321,395 @@ def assemble_report_data(ss: dict, report_cfg: dict) -> Tier1ReportData:
     }
 
     return d
+
+
+# ── Pathway system ────────────────────────────────────────────────────────
+
+# Pathway IDs and metadata — order determines display order in report
+PATHWAY_DEFINITIONS = [
+    {
+        "id":        "energy",
+        "label":     "Pathway A — Maximum Energy Recovery",
+        "objective": "Maximise biogas yield and net electricity export. "
+                     "Minimise grid electricity import.",
+        "icon":      "⚡",
+        "confidence":"high",   # engine can calculate this well at Tier 1
+    },
+    {
+        "id":        "carbon",
+        "label":     "Pathway B — Carbon Optimisation",
+        "objective": "Maximise stable carbon to soil or long-term sequestration. "
+                     "Minimise carbon released to atmosphere.",
+        "icon":      "🌱",
+        "confidence":"amber",  # Tier 1 screening — full Sankey in V2
+    },
+    {
+        "id":        "nutrient",
+        "label":     "Pathway C — Nutrient Recovery",
+        "objective": "Maximise nitrogen and phosphorus recovered from centrate and cake. "
+                     "Minimise nutrient return load to liquid treatment.",
+        "icon":      "♻️",
+        "confidence":"amber",  # Tier 1 screening — full fate engine in V2
+    },
+    {
+        "id":        "pfas",
+        "label":     "Pathway D — PFAS Resilience",
+        "objective": "Select the pathway viable regardless of PFAS outcome. "
+                     "Avoid lock-in to land application where PFAS risk is uncharacterised.",
+        "icon":      "🛡️",
+        "confidence":"high",
+    },
+]
+
+
+@dataclass
+class PathwayResult:
+    """Result for a single strategic pathway."""
+    pathway_id:         str
+    label:              str
+    icon:               str
+    objective:          str
+    confidence:         str          # high / amber / low
+    recommended_id:     str          # config_id of recommended config for this pathway
+    recommended_label:  str
+    key_metric:         str          # the one number that drives this pathway
+    rationale:          str          # 1–2 sentence explanation
+    trade_offs:         str          # what is accepted/sacrificed
+    critical_assumption:str          # the one assumption that could change this
+    override:           bool = False # True if engineer manually overrode engine choice
+
+
+@dataclass
+class ConstraintChain:
+    """Structured constraint chain for the recommendation section."""
+    root_constraint:     str
+    root_detail:         str
+    secondary:           List[str]
+    symptoms:            List[str]
+    consequences:        List[str]
+    intervention_note:   str
+
+
+def _pathway_energy(configs, result) -> PathwayResult:
+    """Maximum energy recovery pathway — highest net biogas/electricity."""
+    defn = next(p for p in PATHWAY_DEFINITIONS if p["id"] == "energy")
+
+    # Rank by net electricity export (or biogas if electricity not available)
+    best = max(configs,
+               key=lambda c: getattr(c, "net_elec_export_kwh_d",
+                                     getattr(c, "biogas_m3_per_d", 0)))
+    base = next((c for c in configs if c.config_id == "base"), None)
+    bg_uplift = ""
+    if base:
+        bg_base  = getattr(base,  "biogas_m3_per_d", 0)
+        bg_best  = getattr(best,  "biogas_m3_per_d", 0)
+        if bg_base > 0:
+            pct = (bg_best - bg_base) / bg_base * 100
+            bg_uplift = f"+{pct:.0f}% biogas vs base ({bg_best:,.0f} m\u00b3/d)"
+
+    # Capacity vs performance classifier
+    cap_vs_perf = {
+        "base":        "Baseline",
+        "recup":       "Capacity enhancement",
+        "solidstream": "Performance enhancement",
+        "pre_thp":     "Performance enhancement",
+        "expansion":   "Capacity + Performance",
+    }.get(best.config_id, "Performance enhancement")
+
+    return PathwayResult(
+        pathway_id          = "energy",
+        label               = defn["label"],
+        icon                = defn["icon"],
+        objective           = defn["objective"],
+        confidence          = defn["confidence"],
+        recommended_id      = best.config_id,
+        recommended_label   = best.config_label,
+        key_metric          = bg_uplift or f"Biogas: {getattr(best,'biogas_m3_d',0):,.0f} m³/d",
+        rationale           = (
+            f"{best.config_label} produces the highest biogas yield of all assessed "
+            f"configurations ({cap_vs_perf}). Higher VS destruction delivers more methane "
+            f"per tonne of feed, reducing grid electricity import and improving energy "
+            f"self-sufficiency."
+        ),
+        trade_offs          = (
+            "Higher biogas from THP raises Scope 1 fugitive CH4 risk if gas handling "
+            "is inadequate. CAPEX and operational complexity are higher than baseline. "
+            "Centrate NH4-N return load increases significantly."
+        ),
+        critical_assumption = (
+            "Fugitive CH4 rate ≤1.5% of biogas CH4. Gas capture and flaring systems "
+            "must be adequate — if not upgraded, net GHG benefit is reduced."
+        ),
+    )
+
+
+def _pathway_carbon(configs, result) -> PathwayResult:
+    """Carbon optimisation pathway — maximise stable carbon, minimise atmospheric loss."""
+    defn = next(p for p in PATHWAY_DEFINITIONS if p["id"] == "carbon")
+
+    # At Tier 1: proxy = highest VSR (more organic destruction = less residual carbon
+    # to soil but more converted to CH4 captured). Best carbon outcome = high VSR
+    # + thermal endpoint compatible (pyrolysis/HTL for biochar/biocrude).
+    # For now: prefer configs with THP (higher VSR) and note thermal endpoint needed.
+    thp_configs = [c for c in configs
+                   if c.config_id in ("solidstream", "pre_thp", "expansion")]
+    best = (max(thp_configs, key=lambda c: getattr(c, "vsr_pct", 0))
+            if thp_configs else
+            max(configs, key=lambda c: getattr(c, "vsr_pct", 0)))
+
+    vsr = getattr(best, "vsr_pct", None)
+    vsr_str = f"VSR {vsr:.0f}%" if vsr else "highest VSR of assessed configs"
+
+    return PathwayResult(
+        pathway_id          = "carbon",
+        label               = defn["label"],
+        icon                = defn["icon"],
+        objective           = defn["objective"],
+        confidence          = defn["confidence"],
+        recommended_id      = best.config_id,
+        recommended_label   = best.config_label,
+        key_metric          = vsr_str + " — thermal endpoint study required",
+        rationale           = (
+            f"{best.config_label} achieves the highest volatile solids reduction, "
+            f"converting more organic carbon to captured biogas (carbon to energy) "
+            f"rather than residual biosolids. Combined with a thermal endpoint "
+            f"(pyrolysis or HTL), carbon can be directed to biochar or biocrude "
+            f"rather than landfill or atmosphere."
+        ),
+        trade_offs          = (
+            "Higher VSR reduces carbon in biosolids — which reduces soil carbon "
+            "sequestration potential from land application. The net carbon benefit "
+            "depends on the thermal endpoint selected and whether biochar is produced. "
+            "Full carbon Sankey analysis required (BioPoint V2)."
+        ),
+        critical_assumption = (
+            "Carbon fate modelling is screening grade only. Full Carbon Fate Engine "
+            "(Sankey diagrams tracking carbon to methane / atmosphere / biosolids / "
+            "soil / biochar) is deferred to BioPoint V2. "
+            "Thermal endpoint study is a prerequisite for this pathway."
+        ),
+    )
+
+
+def _pathway_nutrient(configs, result) -> PathwayResult:
+    """Nutrient recovery pathway — maximise N/P recovered, minimise return load."""
+    defn = next(p for p in PATHWAY_DEFINITIONS if p["id"] == "nutrient")
+
+    # At Tier 1: prefer configs with lower centrate return (separate digestion
+    # produces higher centrate N but also enables struvite recovery more effectively).
+    # Proxy: prefer THP (higher solubilisation = better struvite crystallisation
+    # conditions) but note centrate load trade-off.
+    # Without full nutrient fate data, use centrate_nh4_kg_per_d as the key metric.
+    best_n = max(configs, key=lambda c: getattr(c, "centrate_nh4_kg_per_d", 0))
+    # Highest centrate N = most N available for recovery (PN/A + struvite)
+    n_load = getattr(best_n, "centrate_nh4_kg_per_d", None)
+    n_str = f"{n_load:,.0f} kg NH4-N/d available for recovery" if n_load else ""
+
+    return PathwayResult(
+        pathway_id          = "nutrient",
+        label               = defn["label"],
+        icon                = defn["icon"],
+        objective           = defn["objective"],
+        confidence          = defn["confidence"],
+        recommended_id      = best_n.config_id,
+        recommended_label   = best_n.config_label,
+        key_metric          = n_str + " (struvite + PN/A)",
+        rationale           = (
+            f"{best_n.config_label} produces the highest centrate NH4-N concentration, "
+            f"creating the strongest conditions for struvite crystallisation and "
+            f"partial nitritation/anammox (PN/A) treatment. "
+            f"This converts a return-load liability into a recoverable resource — "
+            f"struvite as fertiliser and nitrogen removed via PN/A rather than "
+            f"burdening the liquid treatment train."
+        ),
+        trade_offs          = (
+            "Higher centrate N requires investment in struvite crystallisation and/or "
+            "PN/A reactor. Capital cost is additional to digestion configuration. "
+            "Nutrient recovery revenue (~$2.7–3.2M/yr at ETP scale) partially offsets "
+            "digestion OPEX savings. Full nutrient fate modelling required (BioPoint V2)."
+        ),
+        critical_assumption = (
+            "Nutrient recovery economics are screening grade (±30%). "
+            "Centrate characterisation (sampling campaign) required before sizing "
+            "struvite or PN/A systems. Full Nutrient Fate Engine deferred to BioPoint V2."
+        ),
+    )
+
+
+def _pathway_pfas(configs, result, pfas_risk="unknown") -> PathwayResult:
+    """PFAS resilience pathway — viable regardless of PFAS outcome."""
+    defn = next(p for p in PATHWAY_DEFINITIONS if p["id"] == "pfas")
+
+    # PFAS resilience = prefer thermal endpoint compatible configurations.
+    # At Tier 1: THP is PFAS-neutral (doesn't destroy PFAS but produces
+    # a cake amenable to thermal treatment). Thermal endpoint (incineration,
+    # pyrolysis, HTL) is the ultimate PFAS-resilient pathway.
+    # Prefer configs that don't lock into land application.
+    thp_configs = [c for c in configs
+                   if c.config_id in ("solidstream", "pre_thp", "expansion")]
+    best = thp_configs[0] if thp_configs else configs[0]
+
+    risk_label = {
+        "unknown":  "PFAS catchment risk uncharacterised — worst case assumed",
+        "low":      "Low PFAS catchment risk — land application likely viable",
+        "medium":   "Medium PFAS catchment risk — characterisation required",
+        "high":     "High PFAS catchment risk — thermal endpoint strongly indicated",
+        "critical": "Critical PFAS risk — thermal endpoint mandatory",
+    }.get(pfas_risk, "PFAS risk uncharacterised")
+
+    return PathwayResult(
+        pathway_id          = "pfas",
+        label               = defn["label"],
+        icon                = defn["icon"],
+        objective           = defn["objective"],
+        confidence          = defn["confidence"],
+        recommended_id      = best.config_id,
+        recommended_label   = best.config_label,
+        key_metric          = risk_label,
+        rationale           = (
+            f"{best.config_label} produces a dewatered cake with characteristics "
+            f"suitable for thermal treatment (incineration, pyrolysis, or HTL) "
+            f"if land application is constrained by PFAS. "
+            f"This pathway avoids lock-in to land application and preserves strategic "
+            f"flexibility as the PFAS regulatory position evolves."
+        ),
+        trade_offs          = (
+            "Thermal treatment endpoint adds significant capital cost and operational "
+            "complexity beyond the digestion configuration. The thermal treatment "
+            "study (Tier 1) must be commissioned in parallel — it cannot wait until "
+            "after the digestion decision is made."
+        ),
+        critical_assumption = (
+            "PFAS characterisation of biosolids and catchment has not been completed. "
+            "Until characterised, land application viability is unknown. "
+            "The PFAS Resilience pathway is recommended where characterisation is "
+            "absent or where catchment risk is medium or above."
+        ),
+    )
+
+
+def compute_pathways(d: "Tier1ReportData",
+                     overrides: Optional[Dict[str, str]] = None) -> List[PathwayResult]:
+    """
+    Compute all four strategic pathways from comparison results.
+    overrides: dict of pathway_id -> config_id to manually override engine choice.
+    Returns list of PathwayResult in display order.
+    """
+    if not d.cmp_result:
+        return []
+
+    result  = d.cmp_result
+    configs = [result.configs[k] for k in result.included_ids]
+    overrides = overrides or {}
+
+    pathways = [
+        _pathway_energy(configs, result),
+        _pathway_carbon(configs, result),
+        _pathway_nutrient(configs, result),
+        _pathway_pfas(configs, result, pfas_risk=d.pfas_risk_level),
+    ]
+
+    # Apply engineer overrides
+    for pw in pathways:
+        if pw.pathway_id in overrides:
+            override_id = overrides[pw.pathway_id]
+            if override_id in result.configs:
+                pw.recommended_id    = override_id
+                pw.recommended_label = result.configs[override_id].config_label
+                pw.override          = True
+
+    return pathways
+
+
+def build_constraint_chain(d: "Tier1ReportData") -> ConstraintChain:
+    """
+    Build the constraint chain from plant data.
+    Root → Secondary → Symptoms → Consequences.
+    """
+    result  = d.cmp_result
+    base    = result.configs.get("base") if result else None
+    hrt_was = getattr(base, "hrt_was_d", d.was_volume_m3 /
+                      (d.was_ds_tpd / (d.was_ts_pct / 100) * 1000 / 86400) / 86400
+                      if d.was_ds_tpd > 0 else 0)
+
+    was_limited = hrt_was < 15.0
+
+    if was_limited:
+        root     = "WAS Kinetic HRT Deficiency"
+        root_det = (
+            f"WAS hydraulic retention time ({hrt_was:.1f} d) is below the minimum "
+            f"required for adequate cell-mass hydrolysis (15 d). "
+            f"This is not a digester volume problem — it is a volume allocation problem. "
+            f"PS and WAS are competing for digester volume designed for a different split."
+        )
+        secondary = [
+            "Co-digestion suppression — blended PS/WAS digestion compounds the WAS "
+            "kinetic constraint; PS lipid hydrolysis is suppressed by slower WAS kinetics.",
+            "PFAS uncertainty — biosolids cannot be characterised for thermal endpoint "
+            "planning until digestion architecture is resolved.",
+            "Centrate nitrogen load — inadequate WAS hydrolysis reduces ammonia release "
+            "to centrate, masking the true nitrogen return load.",
+        ]
+        symptoms = [
+            f"Apparent VS destruction rate below potential (~52% vs theoretical >58%) ",
+            "Lower biogas yield than plant capacity would suggest",
+            "Dewatered cake TS% at lower end of achievable range",
+            "WAS HRT flagged as non-compliant at screening grade",
+        ]
+        consequences = [
+            "Any technology investment (THP, SolidStream) made before resolving WAS HRT "
+            "will underperform against vendor projections.",
+            "OPEX saving from advanced configurations is overstated until root constraint "
+            "is resolved — the 22.5% separate digestion uplift requires ≥15 d WAS HRT.",
+            "Biosolids strategy (land application vs thermal) cannot be finalised until "
+            "PFAS characterisation is completed.",
+            "Capital expenditure risk: procurement before BMP testing and HRT confirmation "
+            "exposes the client to performance guarantee disputes.",
+        ]
+        intervention = (
+            "Resolving the WAS HRT deficiency is the prerequisite for all other "
+            "interventions. Options: volume redistribution (no capital), WAS pre-thickening "
+            "(low capital), or physical digester separation (moderate capital). "
+            "Evaluate Optimised MAD as the baseline — what does fixing the root cause "
+            "achieve before new technology is introduced?"
+        )
+    else:
+        root     = "Digestion Configuration Sub-optimal"
+        root_det = (
+            f"WAS kinetic HRT ({hrt_was:.1f} d) meets the minimum criterion. "
+            f"The primary constraint is digestion architecture — PS and WAS are "
+            f"co-digested despite having fundamentally different hydrolysis kinetics, "
+            f"suppressing overall system performance."
+        )
+        secondary = [
+            "Co-digestion suppression — WAS proteins and ammonia suppress PS lipid "
+            "hydrolysis yield when blended.",
+            "Technology selection premature — digestion architecture should be optimised "
+            "before advanced technology (THP) is introduced.",
+        ]
+        symptoms = [
+            "Biogas yield below separate-digestion potential",
+            "PS methane yield suppressed by blended WAS kinetics",
+        ]
+        consequences = [
+            "THP investment may be solving the wrong problem — separation alone may "
+            "recover most of the available uplift at lower capital cost.",
+            "Site-specific BMP testing required to isolate mechanism from HRT effect.",
+        ]
+        intervention = (
+            "Evaluate separate PS/WAS digestion as the primary intervention before "
+            "committing to THP. BMP testing will distinguish the co-digestion suppression "
+            "benefit from the HRT restoration benefit."
+        )
+
+    return ConstraintChain(
+        root_constraint   = root,
+        root_detail       = root_det,
+        secondary         = secondary,
+        symptoms          = symptoms,
+        consequences      = consequences,
+        intervention_note = intervention,
+    )
 
 
 # ── Narrative helper functions ─────────────────────────────────────────────
@@ -443,12 +786,30 @@ def narrative_comparison_executive(d: Tier1ReportData) -> str:
                 "a heat integration benefit that improves energy self-sufficiency."
             )
         elif winner.config_id == "pre_thp":
+            # Check if another config saves more OPEX — if so, explain the trade-off
+            runner_cr = next((c for c in configs
+                if c.config_id not in ("base", "pre_thp")
+                and c.included), None)
+            w_opex = getattr(winner, "opex_delta_whole_plant_per_yr",
+                            winner.opex_delta_vs_base_per_yr)
+            r_opex = getattr(runner_cr, "opex_delta_whole_plant_per_yr",
+                            runner_cr.opex_delta_vs_base_per_yr) if runner_cr else 0
+            opex_penalty = abs(r_opex - w_opex)
             rec_text += (
                 "Pre-digestion THP delivers the highest biogas uplift and Class A "
                 "biosolids classification. It is the preferred option where new "
                 "digester capacity is being planned, as THP can be incorporated "
-                "into the new facility scope."
+                "into the new facility scope. "
             )
+            if runner_cr and r_opex < w_opex and opex_penalty > 100000:
+                rec_text += (
+                    f"<b>Note: {runner_cr.config_label} delivers a stronger "
+                    f"OPEX outcome (${opex_penalty/1e6:.1f}M/yr additional saving). "
+                    "Pre-THP is preferred despite this because the scoring model "
+                    "places higher value on digester headroom, energy recovery, "
+                    "and suitability where new digestion capacity is being planned. "
+                    "The Board should confirm this trade-off explicitly.</b> "
+                )
         elif winner.config_id == "recup":
             rec_text += (
                 "Recuperative thickening offers the best risk-adjusted outcome — "
