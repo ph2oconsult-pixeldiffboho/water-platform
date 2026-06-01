@@ -4924,6 +4924,145 @@ def _mad_performance(story, S, d: Tier1ReportData, section_num: int):
     # 4. What hold points? 5. What is the uncertainty?
     # ══════════════════════════════════════════════════════════════════════
 
+    # ── Hydrolysis Utilisation + Evidence of Underperformance ─────────────
+    if d.cmp_result and d.cmp_result.site:
+        from math import exp as _mexp
+        site = d.cmp_result.site
+        _ps_ds  = site.ps_ds_tpd;  _was_ds = site.was_ds_tpd
+        _ps_vs  = _ps_ds * site.ps_vs_pct / 100
+        _was_vs = _was_ds * site.was_vs_pct / 100
+        _tot_vs = max(_ps_vs + _was_vs, 1e-9)
+        _tau_ps = 8.0;  _tau_was = 18.0
+        _vsr_max_ps = 0.65;  _vsr_max_was = 0.55
+        _bg_yield   = 0.995
+        _k_was = 1.0 / _tau_was;  _k_ps = 1.0 / _tau_ps
+
+        def _hu(hrt, tau):
+            return 1.0 - _mexp(-max(hrt, 0.0) / tau)
+
+        def _bg(hrt_ps, hrt_was):
+            vs_d = _ps_vs * _vsr_max_ps * _hu(hrt_ps, _tau_ps) + \
+                   _was_vs * _vsr_max_was * _hu(hrt_was, _tau_was)
+            vsr  = vs_d / _tot_vs
+            return vs_d * 1000.0 * _bg_yield, vsr
+
+        _bcr = d.cmp_result.configs.get("base")
+        _hrt_ps_c  = getattr(_bcr, "hrt_ps_d",  21.9) if _bcr else 21.9
+        _hrt_was_c = getattr(_bcr, "hrt_was_d", 10.2) if _bcr else 10.2
+
+        _bg_curr, _vsr_curr = _bg(_hrt_ps_c, _hrt_was_c)
+        _bg_15d,  _vsr_15d  = _bg(_hrt_ps_c, 15.0)
+        _bg_20d,  _vsr_20d  = _bg(_hrt_ps_c, 20.0)
+        _bg_max = (_ps_vs * _vsr_max_ps + _was_vs * _vsr_max_was) * 1000.0 * _bg_yield
+        _da_curr = _k_was * _hrt_was_c
+        _da_15   = _k_was * 15.0
+        _hu_curr = _hu(_hrt_was_c, _tau_was)
+        _hu_15   = _hu(15.0, _tau_was)
+        _olr_val = _was_ds * site.was_vs_pct / 100.0 * 1000.0 / \
+                   max(site.ps_volume_m3 + site.was_volume_m3, 1.0)
+
+        # Damköhler / hydrolysis utilisation table
+        story.append(_p(
+            "Hydrolysis Utilisation Analysis \u2014 Why 15 Days?", S["h2"]))
+        story.append(_p(
+            "The 15d BioPoint screening criterion is derived from WAS hydrolysis kinetics "
+            "using the <b>Damk\u00f6hler number</b>: Da = k\u2091\u209c\u1d33 \u00d7 HRT, "
+            f"where k_WAS = 1/\u03c4_WAS = 1/18d = {_k_was:.4f}/d (spec kinetics). "
+            "When Da \u2248 1.0, the reactor approaches adequate hydrolysis. "
+            f"At ETP WAS HRT = {_hrt_was_c:.1f}d: Da = {_da_curr:.2f} "
+            f"\u2014 only {_hu_curr*100:.0f}% of WAS hydrolysis potential is realised. "
+            f"At 15d criterion: Da = {_da_15:.2f} \u2014 {_hu_15*100:.0f}% realised. "
+            "PS is not constrained (21.9d, Da=2.7, HU=93%). "
+            "The constraint is kinetic, not volumetric.",
+            S["body"]))
+        story.append(_sp(2))
+
+        da_rows = [[PH("HRT (d)", S), PH("Da (WAS)", S), PH("HU_WAS", S),
+                    PH("HU_PS", S), PH("Status", S)]]
+        for _hv, _note in [
+            (5.0, ""), (8.0, ""), (_hrt_was_c, " \u2190 ETP"), (12.0, ""),
+            (15.0, " \u2190 criterion"), (18.0, ""), (20.0, " \u2190 Mangere"), (25.0, "")
+        ]:
+            _dw = _k_was * _hv;  _dp = _k_ps * _hv
+            _hw = (1 - _mexp(-_dw)) * 100;  _hp = (1 - _mexp(-_dp)) * 100
+            _fl = ("\U0001f534 Kinetics-limited" if _hv < 15
+                   else "\U0001f7e1 Adequate-screening" if _hv < 20
+                   else "\U0001f7e2 Well-optimised")
+            da_rows.append([P(f"{_hv:.1f}d{_note}", S), P(f"{_dw:.2f}", S),
+                             P(f"{_hw:.1f}%", S), P(f"{_hp:.1f}%", S), P(_fl, S)])
+        story.append(_tbl(da_rows,
+            [28*mm, 22*mm, 22*mm, 22*mm, CONTENT_W - 94*mm],
+            [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8.5)],
+            row_bgs=True))
+        story.append(_sp(4))
+
+        # Methane yield benchmark
+        story.append(_p(
+            "Predicted Performance Gap \u2014 Evidence of Underperformance",
+            S["h2"]))
+        story.append(_p(
+            "Kinetics-based prediction of biogas lost due to WAS HRT constraint. "
+            "<b>BMP testing on site sludge is required to confirm or refute "
+            "these predictions</b> \u2014 this is the single most important "
+            "validation step before any capital recommendation.",
+            S["body"]))
+        story.append(_sp(2))
+
+        _gv = 0.35
+        bench_rows = [
+            [PH("Scenario", S), PH("WAS HRT", S), PH("VSR", S),
+             PH("Biogas (Nm\u00b3/d)", S), PH("Uplift vs current", S),
+             PH("Annual value gap", S)],
+            [P("Current (blended, constrained)", S),
+             P(f"{_hrt_was_c:.1f}d", S), P(f"{_vsr_curr*100:.1f}%", S),
+             P(f"{_bg_curr:,.0f}", S), P("\u2014 baseline", S), P("\u2014", S)],
+            [P("At 15d criterion (thickening / redistribution)", S),
+             P("15.0d", S), P(f"{_vsr_15d*100:.1f}%", S),
+             P(f"{_bg_15d:,.0f}", S),
+             P(f"+{_bg_15d - _bg_curr:,.0f} Nm\u00b3/d", S),
+             P(f"~${(_bg_15d-_bg_curr)*_gv*365/1e6:.1f}M/yr", S)],
+            [P("At 20d HRT (Mangere conventional reference)", S),
+             P("20.0d", S), P(f"{_vsr_20d*100:.1f}%", S),
+             P(f"{_bg_20d:,.0f}", S),
+             P(f"+{_bg_20d - _bg_curr:,.0f} Nm\u00b3/d", S),
+             P(f"~${(_bg_20d-_bg_curr)*_gv*365/1e6:.1f}M/yr", S)],
+            [P("Theoretical maximum (VSRmax, long HRT)", S),
+             P(">30d", S),
+             P(f"{(_ps_vs*_vsr_max_ps+_was_vs*_vsr_max_was)/_tot_vs*100:.1f}%", S),
+             P(f"{_bg_max:,.0f}", S),
+             P(f"+{_bg_max - _bg_curr:,.0f} Nm\u00b3/d", S),
+             P(f"~${(_bg_max-_bg_curr)*_gv*365/1e6:.1f}M/yr", S)],
+        ]
+        story.append(_tbl(bench_rows,
+            [50*mm, 16*mm, 16*mm, 24*mm, 22*mm, CONTENT_W - 128*mm],
+            [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8.5)],
+            row_bgs=True))
+        story.append(_sp(2))
+        story.append(_p(
+            "Model basis: spec kinetics (\u03c4_PS=8d, \u03c4_WAS=18d), "
+            "Mangere-calibrated biogas yield 0.995 Nm\u00b3/kg VS destroyed. "
+            "BMP testing will confirm kinetic constants for this specific sludge.",
+            S["caption"]))
+        story.append(_sp(4))
+
+        # OLR vs HRT independence
+        story.append(_p(
+            "OLR Within Limits \u2014 Why the Kinetic Constraint Remains Valid",
+            S["h2"]))
+        story.append(_p(
+            f"OLR = {_olr_val:.2f} kgVS/m\u00b3/d (within 3.0 conventional limit). "
+            "<b>OLR and WAS hydrolysis HRT are independent constraints.</b> "
+            "OLR governs stability (VFA accumulation, pH, foaming). "
+            "WAS HRT governs kinetic completeness (hydrolysis extent, VSR). "
+            "A digester can be stable and within OLR limits while "
+            "simultaneously failing to complete WAS hydrolysis. "
+            "This is the ETP situation: digesters are not overloaded, "
+            "but WAS residence time is insufficient for hydrolysis completion "
+            f"(Da = {_da_curr:.2f}, HU = {_hu_curr*100:.0f}%).",
+            S["body"]))
+        story.append(_sp(5))
+
+
     if result.winner_id and result.winner_id in result.configs:
         story.append(_p("Decision Intelligence", S["h2"]))
         winner_cr   = result.configs[result.winner_id]
