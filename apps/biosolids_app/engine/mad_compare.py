@@ -1204,7 +1204,13 @@ def _weighted_totals(configs: Dict[ConfigID, ConfigResult],
     for cfg_id, cr in included.items():
         wt = sum(cr.driver_scores.get(d, 1) * weights.get(d, 1)
                  for d in DRIVER_IDS)
-        cr.weighted_score = round(wt / (total_weight * 4) * 100, 1)   # scale 0–100 (rank 1-4, max = 4×Σweights)
+        # Per-driver rank score runs 1..n_included (best = n_included), so the
+        # maximum achievable weighted total is total_weight * n_included. Scale by
+        # the ACTUAL included count, not a hardcoded 4 — with 7 configs the old
+        # "* 4" pushed scores past 100 (e.g. "133/100" in the exec summary).
+        n_included = len(included)
+        denom = total_weight * n_included
+        cr.weighted_score = round(wt / denom * 100, 1) if denom else 0.0  # 0–100
 
     return configs
 
@@ -1650,7 +1656,9 @@ def run_comparison(
         # Tie threshold: within 5 points (out of 100) — screening-grade margin
         tie_ids    = [k for k, s in included_scored if abs(s - top_score) <= 5.0]
         is_tie     = len(tie_ids) > 1
-        winner_id  = tie_ids[0]   # first alphabetically among tied; report flags tie
+        winner_id  = max(tie_ids, key=lambda k: configs[k].weighted_score)
+        # highest-scoring among the tied set (not first in config order); the
+        # report still flags the tie via is_tie / tie_ids
         winner_label = CONFIG_LABELS_SHORT.get(winner_id, "") if winner_id else ""
 
     # Store tie info on result for report use
