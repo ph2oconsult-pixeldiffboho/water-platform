@@ -499,11 +499,175 @@ POLYMER_EF = 3.5       # kg CO2e / kg polymer
 BIOGAS_LHV_MJ_M3 = 35.8 * CH4_FRACTION_BIOGAS   # CH4 fraction only
 
 
+# ── mad_v2 cutover (physics engine) ─────────────────────────────────────────
+# Master switch for the physics-based digestion engine (mad_v2). Default OFF so
+# the comparison engine reproduces the validated baseline exactly until the
+# diff has been reviewed and the flip is made deliberately. Flip to True (or set
+# site.use_mad_v2 = True) to route the five "survivor" configs
+# (base, recup, pre_thp, solidstream, optimised_mad) through mad_v2.
+# The separate / separate_thp configs always use separate_digestion.py and are
+# unaffected by this flag.
+USE_MAD_V2 = False
+
+# Kinetics calibration preset for mad_v2 ("spec" matches mad.py biogas to <0.1%
+# at ETP; "mangere" is the plant-anchored variant).
+MAD_V2_PRESET = "spec"
+
+# mad_v2 reasons in HRT / OLR / hydrolysis, not SRT / geometric feasibility.
+# This mesophilic floor is used as a documented PROXY so the existing
+# throughput_uplift_pct calc keeps working without inventing precision.
+_V2_MIN_STABLE_SRT_D = 12.0
+
+# config_id → (THPMode name, olr_max_kg_vs_m3_d). Only the five survivor configs
+# are routed through v2; separate/separate_thp are handled elsewhere.
+_V2_CONFIG_MAP = {
+    "base":          ("NONE",        3.0),
+    "recup":         ("NONE",        3.0),
+    "pre_thp":       ("FULL",        6.0),
+    "solidstream":   ("SOLIDSTREAM", 6.0),
+    "optimised_mad": ("NONE",        3.0),
+}
+
+
+def _run_mad_v2_config(site: ComparisonSiteInputs, config_id: ConfigID):
+    """
+    Run mad_v2 for a survivor config and adapt the result into a
+    MADResult-compatible shim, so run_comparison's existing consumer code is
+    unchanged. Returns (shim, None) to mirror _run_mad_config's (result, inputs)
+    signature (the second element is unused downstream).
+    """
+    try:
+        from engine.mad_v2 import (run_mad_v2, StreamInput, DigesterConfig,
+                                    SludgeType, THPMode)
+    except ImportError:
+        import sys as _sys_v2
+        _sys_v2.path.insert(0, "/mnt/user-data/outputs")
+        from mad_v2 import (run_mad_v2, StreamInput, DigesterConfig,
+                            SludgeType, THPMode)
+    from types import SimpleNamespace
+
+    thp_name, olr_max = _V2_CONFIG_MAP.get(config_id, ("NONE", 3.0))
+    thp_mode = getattr(THPMode, thp_name)
+
+    # Per-config feed TS% — mirrors the MADInputs construction in _run_mad_config
+    if config_id == "recup":
+        ps_ts, was_ts = site.recup_ps_ts_pct, site.recup_was_ts_pct
+    elif config_id == "optimised_mad":
+        ps_ts = site.ps_ts_pct
+        was_ts = min(site.was_ts_pct * 1.5, 5.5)   # WAS pre-thickening
+    else:
+        ps_ts, was_ts = site.ps_ts_pct, site.was_ts_pct
+
+    ps = StreamInput(ds_tpd=site.ps_ds_tpd, ts_pct=ps_ts, vs_pct=site.ps_vs_pct,
+                     sludge_type=SludgeType.PRIMARY)
+    was = StreamInput(ds_tpd=site.was_ds_tpd, ts_pct=was_ts, vs_pct=site.was_vs_pct,
+                      sludge_type=SludgeType.WAS_CONVENTIONAL)
+
+    # Separate-volume mode reproduces mad.py's per-stream kinetic HRTs
+    # (ETP: PS 21.9d, WAS 10.2d) — these are the volume-split diagnostics the
+    # report consumes, not a reactor-split decision.
+    cfg = DigesterConfig(
+        volume_m3=site.ps_volume_m3 + site.was_volume_m3,
+        ps_volume_m3=site.ps_volume_m3,
+        was_volume_m3=site.was_volume_m3,
+        temperature_c=35.0,
+        thp_mode=thp_mode,
+        hrt_criterion_d=15.0,
+        olr_max_kg_vs_m3_d=olr_max,
+        kinetics_preset=MAD_V2_PRESET,
+    )
+
+    v2 = run_mad_v2([ps, was], cfg)
+    return _madv2_to_madresult(v2, site, config_id), None
+
+
+def _madv2_to_madresult(v2, site, config_id):
+    """
+    Adapt a MADv2Result into a MADResult-compatible shim.
+
+    Faithful fields (from physics): biogas, biogas GJ, gross/net electricity,
+    per-stream VS destruction and HRT, centrate NH4-N.
+    PROXY fields: SRT_eff_d := hrt_d and minStableSRT_d := mesophilic floor,
+    because mad_v2 does not model SRT / geometric feasibility. Status is mapped
+    from mad_v2 diagnostics onto mad.py's StatusLiteral.
+    """
+    try:
+        from engine.mad_v2 import SludgeType
+    except ImportError:
+        from mad_v2 import SludgeType
+    from types import SimpleNamespace
+
+    def _find(*types_):
+        return next((s for s in v2.streams if s.sludge_type in types_), None)
+
+    ps_sr = _find(SludgeType.PRIMARY) or (v2.streams[0] if v2.streams else None)
+    was_sr = _find(SludgeType.WAS_CONVENTIONAL, SludgeType.WAS_AGS) or (
+        v2.streams[1] if len(v2.streams) > 1 else None)
+
+    def _stream(sr):
+        if sr is None:
+            return SimpleNamespace(VS_destruction_pct=0.0, HRT_nominal_d=0.0,
+                                   SRT_nominal_d=0.0, SRT_eff_d=0.0)
+        return SimpleNamespace(
+            VS_destruction_pct=sr.vsr_frac * 100.0,
+            HRT_nominal_d=sr.hrt_d,
+            SRT_nominal_d=sr.hrt_d,
+            SRT_eff_d=sr.hrt_d,            # PROXY — see docstring
+        )
+
+    diag = v2.diagnostics
+    if getattr(diag, "hrt_limited", False) or getattr(diag, "olr_limited", False):
+        status = "LIMITING"
+    elif getattr(diag, "hydrolysis_limited", False):
+        status = "WATCH"
+    else:
+        status = "SAFE"
+
+    # cake N = total influent N − centrate (soluble) N. Not consumed by
+    # run_comparison, populated for completeness / parity with MADResult.
+    total_n = (site.ps_ds_tpd * site.ps_n_pct / 100.0
+               + site.was_ds_tpd * site.was_n_pct / 100.0) * 1000.0
+    centrate_n = v2.nh4_n_kg_d
+    cake_n = max(0.0, total_n - centrate_n)
+
+    return SimpleNamespace(
+        status=status,
+        primary_constraint=diag.controlling_constraint,
+        feasibility_warning=(status in ("LIMITING", "FAILURE")),
+        confidence_grade=str(getattr(v2, "confidence_overall", "")),
+        ps=_stream(ps_sr),
+        was=_stream(was_sr),
+        feasibility=SimpleNamespace(minStableSRT_d=_V2_MIN_STABLE_SRT_D),
+        biogas_m3_per_d=v2.energy.biogas_nm3_d,
+        biogas_GJ_per_d=v2.energy.biogas_lhv_mj_d / 1000.0,
+        elecGross_kW=v2.energy.gross_elec_kw,
+        mixingParasitic_kW=max(0.0, v2.energy.gross_elec_kw - v2.energy.net_elec_kw),
+        netElec_kW=v2.energy.net_elec_kw,
+        centrate_N_kg_per_d=centrate_n,
+        cake_N_kg_per_d=cake_n,
+        totalN_released_kg_per_d=centrate_n,
+        effective_pH=site.digester_ph,
+        effective_KI=0.0,
+        diagnostic_flags={"engine": "mad_v2", "preset": MAD_V2_PRESET,
+                          "constraint_chain": list(getattr(diag, "constraint_chain", []))},
+        _v2=v2,
+    )
+
+
 # ── Physics helpers ────────────────────────────────────────────────────────
 
 def _run_mad_config(site: ComparisonSiteInputs, config_id: ConfigID):
     """Run MAD engine for a given config. Returns MADResult or None."""
     try:
+        # mad_v2 cutover: route survivor configs through the physics engine when
+        # enabled (module flag or per-site override). Separate configs and any
+        # config not in the v2 map fall through to mad.py below.
+        _use_v2 = getattr(site, "use_mad_v2", None)
+        if _use_v2 is None:
+            _use_v2 = USE_MAD_V2
+        if _use_v2 and config_id in _V2_CONFIG_MAP:
+            return _run_mad_v2_config(site, config_id)
+
         try:
             from engine.mad import MADInputs, run_mad
         except ImportError:
