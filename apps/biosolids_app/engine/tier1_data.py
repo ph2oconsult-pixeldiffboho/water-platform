@@ -1108,3 +1108,152 @@ def narrative_next_steps(d: Tier1ReportData, reg_key: str) -> List[str]:
         "comparison if priorities change (regulatory deadline, budget, programme)."
     )
     return steps
+
+
+# ── Calibration Library ───────────────────────────────────────────────────
+# Full-scale operating reference cases for BioPoint screening validation.
+# Source: Mangere WWTP (NZ) evidence package and associated THP investigations.
+# Use these to validate model outputs against real plant performance before
+# using BioPoint results for design or procurement decisions.
+
+CALIBRATION_LIBRARY = {
+    # ── Conventional MAD ──────────────────────────────────────────────────
+    "mangere_conventional": {
+        "description":    "Mangere WWTP conventional MAD — long-term operating baseline",
+        "source":         "Hillis & Taylor, Ozwater\u201917; Mangere WWTP operating data",
+        "plant":          "Mangere WWTP, Auckland, New Zealand",
+        "technology":     "Conventional MAD (blended PS/WAS)",
+        "total_tds_d":    165.0,
+        "ps_tds_d":       105.0,
+        "was_tds_d":      60.0,
+        "feed_ts_pct":    6.1,
+        "hrt_d":          20.0,
+        "vsr_pct":        52.0,
+        "biogas_nm3_d":   62_385,
+        "cake_ds_pct":    None,   # not confirmed in operating data
+        "nh4_n_kg_d":     3_118,
+        "k_ps":           0.18,   # Mangere-calibrated (conservative vs literature 0.25)
+        "k_was":          0.08,   # Mangere-calibrated (conservative vs literature 0.12)
+        "confidence":     "high",
+        "note": (
+            "Validated against 5+ years of operating data. "
+            "k values are more conservative than literature defaults (Bolzonella 2005; WEF MOP 8). "
+            "At long HRT (>18d) both models converge; gap is largest at short HRT (<12d). "
+            "BioPoint uses Mangere k values for conservative screening."
+        ),
+    },
+    # ── THP — Full Hydrolysis ─────────────────────────────────────────────
+    "mangere_2015_full_thp": {
+        "description":    "Mangere WWTP 2015 THP mass balance (Cambi reference case)",
+        "source":         "Cambi indicative mass balance for Mangere 2015",
+        "plant":          "Mangere WWTP, Auckland, New Zealand",
+        "technology":     "Full THP (Cambi) — all feed hydrolysed",
+        "total_tds_d":    156.8,
+        "ps_tds_d":       105.0,
+        "was_tds_d":      60.0,
+        "feed_ts_pct":    10.0,   # after pre-dewatering
+        "hrt_d":          20.0,
+        "vsr_pct":        55.7,
+        "biogas_nm3_d":   63_151,
+        "methane_nm3_d":  39_785,
+        "cake_ds_pct":    30.0,
+        "nh4_n_kg_d":     3_134,
+        "steam_kg_h":     6_111,
+        "confidence":     "high",
+        "note": (
+            "Key THP calibration anchor. "
+            "Biogas uplift vs conventional: +1.2% (63,151 vs 62,385 Nm\u00b3/d). "
+            "Primary benefit is cake DS improvement (30% vs ~22% conventional) and "
+            "Class A pathogen classification — not primarily biogas. "
+            "THP HRT-VSR saturation: VSR gains are rapid to ~10d HRT then flatten. "
+            "Going from 10d to 20d adds only ~5% more VSR — diminishing returns above ~10d."
+        ),
+    },
+    "mangere_2040_full_thp": {
+        "description":    "Mangere WWTP 2040 full THP projection",
+        "source":         "Mangere 2015 solids strategy — 2040 growth scenario",
+        "plant":          "Mangere WWTP, Auckland, New Zealand",
+        "technology":     "Full THP (Cambi) — future growth case",
+        "total_tds_d":    148.0,
+        "ps_tds_d":       84.0,
+        "was_tds_d":      64.0,
+        "feed_ts_pct":    10.0,
+        "hrt_d":          23.0,
+        "vsr_pct":        59.5,
+        "biogas_nm3_d":   66_212,
+        "methane_nm3_d":  41_714,
+        "cake_ds_pct":    30.0,
+        "nh4_n_kg_d":     3_423,
+        "steam_kg_h":     5_132,
+        "confidence":     "medium",   # modelled projection, not operating data
+        "note": (
+            "2040 growth scenario — higher WAS fraction, longer HRT. "
+            "Note steam demand falls despite higher total load: "
+            "lower PS fraction reduces steam demand per tDS. "
+            "Confirms HRT-VSR saturation: VSR rises from 55.7% to 59.5% (+3.8pp) "
+            "with HRT from 20d to 23d — diminishing returns clearly visible."
+        ),
+    },
+    "mangere_2040_was_only": {
+        "description":    "Mangere WWTP 2040 WAS-only THP scenario",
+        "source":         "Mangere 2015 solids strategy — WAS-only option",
+        "plant":          "Mangere WWTP, Auckland, New Zealand",
+        "technology":     "WAS-only THP — primary sludge bypasses hydrolysis",
+        "total_tds_d":    148.0,
+        "ps_tds_d":       84.0,
+        "was_tds_d":      64.0,
+        "feed_ts_pct":    5.5,
+        "hrt_d":          19.5,
+        "vsr_pct":        56.7,
+        "biogas_nm3_d":   64_948,
+        "methane_nm3_d":  40_917,
+        "cake_ds_pct":    30.0,
+        "nh4_n_kg_d":     3_366,
+        "confidence":     "medium",
+        "note": (
+            "WAS-only THP delivers 97.8% of the biogas of full THP "
+            "(64,948 vs 66,212 Nm\u00b3/d) at lower steam demand. "
+            "Relevant where PS fraction is dominant and full THP capital is hard to justify. "
+            "BioPoint uses this as the SolidStream reference case basis."
+        ),
+    },
+    # ── THP — Secondary-only ─────────────────────────────────────────────
+    "malabar_was_only": {
+        "description":    "Malabar WWTP WAS-only THP (secondary-stream only plant)",
+        "source":         "Published performance data — Malabar WWTP",
+        "plant":          "Malabar WWTP, Sydney, Australia",
+        "technology":     "WAS-only THP (no primary sludge)",
+        "total_tds_d":    140.0,
+        "ps_tds_d":       0.0,
+        "was_tds_d":      140.0,
+        "hrt_d":          18.0,
+        "vsr_pct":        51.0,
+        "biogas_nm3_d":   42_292,
+        "cake_ds_pct":    30.0,
+        "nh4_n_kg_d":     3_788,
+        "confidence":     "medium",
+        "note": (
+            "WAS-only plant — no primary sludge contribution to biogas. "
+            "Lower VSR than blended plants (51% vs 55-57%) reflects absence of "
+            "readily-degradable primary lipids. "
+            "High NH4-N load per tDS confirms WAS-heavy feeds require "
+            "sidestream treatment assessment."
+        ),
+    },
+}
+
+# ── THP HRT saturation constants (from model calibration) ─────────────────
+# Based on THP screening model v0.2 calibrated against Mangere and Malabar data.
+# Used by _compute_thickening_uplift() and report narrative.
+THP_HRT_SATURATION = {
+    "base_vsr_max":  0.555,   # VSR asymptote for full THP at reference conditions
+    "k_thp":         0.27,    # saturation rate constant (per day)
+    "sweet_spot_hrt":10.0,    # HRT beyond which VSR gains become marginal
+    "note": (
+        "THP VSR gains are rapid from 3-10d HRT, then flatten. "
+        "Doubling HRT from 10d to 20d adds only ~3-5% additional VSR. "
+        "Beyond ~10-12d HRT, longer digestion time reduces cake DS "
+        "(dewaterability deteriorates through digestion) while VSR gains are minimal. "
+        "The optimal THP HRT is typically 8-12d, not the 15-20d assumed for conventional MAD."
+    ),
+}

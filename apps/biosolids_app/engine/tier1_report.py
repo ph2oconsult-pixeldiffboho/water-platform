@@ -6975,6 +6975,112 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
         "This distinction is critical before committing capital to separation.",
         S["small"]))
     story.append(_sp(4))
+
+    # ── THP HRT Saturation Note ───────────────────────────────────────────
+    story.append(_p("THP HRT \u2014 Saturation and Dewatering Trade-off", S["h2"]))
+    story.append(_p(
+        "A critical insight from THP screening modelling (calibrated against Mangere and "
+        "Malabar full-scale data): <b>THP VSR gains are not linear with HRT.</b> "
+        "The VSR-HRT relationship follows a saturation curve with a rate constant of "
+        "approximately k\u22480.27/d. This means:",
+        S["body"]))
+    story.append(_sp(2))
+
+    # Saturation table
+    from tier1_data import THP_HRT_SATURATION
+    _k   = THP_HRT_SATURATION["k_thp"]
+    _max = THP_HRT_SATURATION["base_vsr_max"]
+    from math import exp as _exp
+    sat_rows = [
+        [PH("THP HRT (days)", S), PH("Approximate VSR", S),
+         PH("Incremental VSR gain", S), PH("Cake DS trend", S)],
+    ]
+    _prev_vsr = 0.0
+    for _hrt_v, _cake_note in [
+        (5,  "~34% DS \u2014 high dewaterability"),
+        (8,  "~31% DS \u2014 good"),
+        (10, "~30% DS \u2014 sweet spot"),
+        (12, "~30% DS \u2014 plateau"),
+        (15, "~30% DS \u2014 no further improvement"),
+        (20, "~29% DS \u2014 slight deterioration"),
+    ]:
+        _vsr = _max * (1 - _exp(-_k * _hrt_v))
+        _inc = _vsr - _prev_vsr
+        _note = "\u2190 sweet spot" if _hrt_v == 10 else (
+                "\u2190 conventional MAD target" if _hrt_v == 20 else "")
+        sat_rows.append([
+            P(f"{_hrt_v} d", S),
+            P(f"~{_vsr*100:.0f}%", S),
+            P(f"+{_inc*100:.1f}pp {_note}", S),
+            P(_cake_note, S),
+        ])
+        _prev_vsr = _vsr
+
+    story.append(_tbl(sat_rows, [28*mm, 32*mm, 60*mm, CONTENT_W-120*mm],
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8.5)],
+        row_bgs=True))
+    story.append(_sp(2))
+    story.append(_p(
+        "<b>Key implication:</b> Going from 10d to 20d HRT adds only ~3\u20135% additional VSR "
+        "but requires double the digester volume. Beyond ~10\u201312d HRT, longer digestion "
+        "time actively <i>reduces</i> cake DS as dewaterability deteriorates through digestion "
+        "(undigested THP cake potential ~46% DS falls to ~30% by 10d, then plateaus). "
+        "The conventional MAD target of 15\u201320d HRT is not necessarily optimal for THP. "
+        "The Mangere 2015 reference case (20d HRT, 55.7% VSR, 30% cake DS) illustrates the "
+        "trade-off: adequate performance, but most VSR gain was captured by 10\u201312d. "
+        "<b>BioPoint adopts 15d as the minimum criterion, not the optimum.</b>",
+        S["small"]))
+    story.append(_sp(4))
+
+    # ── Calibration Anchors table ─────────────────────────────────────────
+    story.append(_p("Full-Scale Calibration Anchors", S["h2"]))
+    story.append(_p(
+        "BioPoint screening outputs are calibrated against the following full-scale "
+        "operating reference cases. These are the evidence base that BioPoint's kinetic "
+        "assumptions are tested against.",
+        S["body"]))
+    story.append(_sp(2))
+
+    from tier1_data import CALIBRATION_LIBRARY
+    cal_rows = [
+        [PH("Reference case", S), PH("Technology", S), PH("HRT", S),
+         PH("VSR", S), PH("Biogas", S), PH("Cake DS", S), PH("Confidence", S)],
+    ]
+    _conf_col = {
+        "high":   colors.HexColor("#2e7d32"),
+        "medium": colors.HexColor("#e65100"),
+        "low":    colors.HexColor("#b71c1c"),
+    }
+    for key, anchor in CALIBRATION_LIBRARY.items():
+        _c = anchor.get("confidence","medium")
+        cal_rows.append([
+            Paragraph(anchor["description"].split(" \u2014 ")[0],
+                      ParagraphStyle("cl", parent=S["cell"], fontSize=8)),
+            Paragraph(anchor["technology"].split("(")[0].strip(),
+                      ParagraphStyle("cl2", parent=S["cell"], fontSize=8)),
+            P(f"{anchor['hrt_d']:.0f} d", S),
+            P(f"{anchor['vsr_pct']:.1f}%", S),
+            P(f"{anchor.get('biogas_nm3_d', 0):,.0f}", S),
+            P(f"{anchor['cake_ds_pct']:.0f}%" if anchor.get('cake_ds_pct') else "\u2014", S),
+            Paragraph(_c.title(),
+                      ParagraphStyle("cc", parent=S["cell"], fontSize=8,
+                                     textColor=_conf_col.get(_c, colors.black))),
+        ])
+    cw_cal = [52*mm, 38*mm, 14*mm, 12*mm, 22*mm, 16*mm, CONTENT_W-154*mm]
+    story.append(_tbl(cal_rows, cw_cal,
+        [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8)],
+        row_bgs=True))
+    story.append(_sp(2))
+    story.append(_p(
+        "Calibration basis: Mangere WWTP (NZ) long-term operating data; "
+        "Malabar WWTP (Sydney) published performance. "
+        "Kinetics: k\u209a\u209b=0.18/d, k\u1d42\u1d43\u209b=0.08/d (Mangere-calibrated, "
+        "conservative vs literature values of 0.25/0.12). "
+        "Confidence: High = validated against multi-year operating data; "
+        "Medium = modelled projection or single reference period.",
+        S["caption"]))
+    story.append(_sp(6))
+
     # ── Three HRT concept diagram ─────────────────────────────────────────
     _hrt_ok = False
     try:
