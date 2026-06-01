@@ -7493,7 +7493,59 @@ def _recommendation(story, S, d: Tier1ReportData, section_num: int):
         ("BOTTOMPADDING", (0,0),(-1,-1), 8),
     ]))
     story.append(intv_tbl)
-    story.append(_sp(8))
+    story.append(_sp(4))
+
+    # ── Thickening Uplift panel (shown when TS% data available)
+    tu = chain.thickening_uplift
+    if tu is not None:
+        _TU_BG   = colors.HexColor("#e8f5e9")
+        _TU_BDR  = colors.HexColor("#2e7d32")
+        _TU_HEAD = colors.HexColor("#1b5e20")
+
+        # Header
+        story.append(_p(
+            "📊  Thickening Uplift Analysis — Mangere-Calibrated",
+            ParagraphStyle("tuh", fontName="Helvetica-Bold", fontSize=9.5,
+                           textColor=_TU_HEAD, spaceAfter=2)))
+
+        # Numbers table
+        tu_rows = [
+            [PH("Parameter", S), PH("Current", S), PH("At target TS%", S), PH("Uplift / note", S)],
+            [P("WAS feed concentration", S),
+             P(f"{tu.was_ts_current_pct:.1f}%TS", S),
+             P(f"{tu.was_ts_target_pct:.1f}%TS", S),
+             P(f"+{tu.was_ts_target_pct - tu.was_ts_current_pct:.1f} pp "
+               f"(≤ thickening optimisation)", S)],
+            [P("WAS kinetic HRT", S),
+             P(f"{tu.was_hrt_current_d:.1f} d", S),
+             P(f"{tu.was_hrt_target_d:.1f} d", S),
+             P(f"{'Meets' if tu.ts_meets_criterion else 'Still below'} "
+               f"{tu.hrt_criterion_d:.0f} d criterion", S)],
+            [P("Biogas (Mangere-calibrated)", S),
+             P(f"{tu.biogas_current_m3d:,.0f} Nm³/d", S),
+             P(f"{tu.biogas_target_m3d:,.0f} Nm³/d", S),
+             P(f"+{tu.biogas_uplift_m3d:,.0f} Nm³/d "
+               f"(+{tu.biogas_uplift_pct:.1f}%)", S)],
+            [P("Capital indicative", S),
+             P("—", S), P("—", S),
+             P(tu.capex_note, S)],
+        ]
+        cw_tu = [52*mm, 28*mm, 28*mm, CONTENT_W - 108*mm]
+        tu_tbl = _tbl(tu_rows, cw_tu,
+            [("WORDWRAP",(0,0),(-1,-1),"LTR"), ("FONTSIZE",(0,0),(-1,-1),8.5)],
+            row_bgs=True)
+        story.append(tu_tbl)
+        story.append(_sp(2))
+        story.append(_p(
+            "Calibration basis: Mangere WWTP (NZ), 165 tDS/d, 6.1%TS feed, 20 d HRT, "
+            "52% VSR, 62,385 Nm³/d biogas — full-scale operating data. "
+            "Kinetics: kₚₛ=0.18/d, kᵂᵃₛ=0.08/d (conservative vs literature values). "
+            "Thickening uplift is additive to architecture and technology benefits — "
+            "it should be the first intervention evaluated.",
+            S["caption"]))
+        story.append(_sp(6))
+    else:
+        story.append(_sp(8))
 
     # \u2500\u2500 Pathway Table
     story.append(_p("Strategic Pathways", S["h2"]))

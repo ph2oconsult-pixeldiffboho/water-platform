@@ -380,6 +380,22 @@ class PathwayResult:
 
 
 @dataclass
+class ThickeningUplift:
+    """Quantified biogas and HRT gain from WAS pre-thickening alone."""
+    was_ts_current_pct:  float   # current WAS feed TS%
+    was_ts_target_pct:   float   # target TS% to meet HRT criterion
+    was_hrt_current_d:   float   # current WAS HRT
+    was_hrt_target_d:    float   # WAS HRT at target TS%
+    hrt_criterion_d:     float   # adopted screening criterion
+    biogas_current_m3d:  float   # biogas at current TS%
+    biogas_target_m3d:   float   # biogas at target TS%
+    biogas_uplift_m3d:   float   # absolute uplift
+    biogas_uplift_pct:   float   # % uplift
+    ts_meets_criterion:  bool    # does target TS% achieve HRT criterion?
+    capex_note:          str     # qualitative capital note
+
+
+@dataclass
 class ConstraintChain:
     """Structured constraint chain for the recommendation section."""
     root_constraint:     str
@@ -388,6 +404,7 @@ class ConstraintChain:
     symptoms:            List[str]
     consequences:        List[str]
     intervention_note:   str
+    thickening_uplift:   Optional[ThickeningUplift] = None
 
 
 def _pathway_energy(configs, result) -> PathwayResult:
@@ -621,10 +638,99 @@ def compute_pathways(d: "Tier1ReportData",
     return pathways
 
 
+def _compute_thickening_uplift(d: "Tier1ReportData",
+                               hrt_criterion: float = 15.0) -> Optional[ThickeningUplift]:
+    """
+    Calculate the biogas and HRT gain from WAS pre-thickening alone.
+    Uses Mangere-calibrated first-order kinetics (k_PS=0.18/d, k_WAS=0.08/d).
+    This isolates the thickening intervention from architecture or technology changes.
+    """
+    from math import exp
+    if d.was_ds_tpd <= 0 or d.was_ts_pct <= 0 or d.was_volume_m3 <= 0:
+        return None
+
+    # Mangere-calibrated kinetics (full-scale validated)
+    k_ps, k_was       = 0.18, 0.08
+    vsrmax_ps         = 0.60
+    vsrmax_was        = 0.50
+    gas_yield_nm3_kgVS= 0.995   # Nm³/kg VS destroyed (Mangere calibration)
+
+    def _was_hrt(was_ts_pct: float) -> float:
+        """WAS kinetic HRT at a given feed TS%."""
+        was_flow_m3d = (d.was_ds_tpd / (was_ts_pct / 100)) * 1000 / 1000
+        # was_ds_tpd in t/d, TS% fraction → volume in m³/d
+        was_flow_m3d = d.was_ds_tpd / (was_ts_pct / 100)
+        return d.was_volume_m3 / max(was_flow_m3d, 1e-9)
+
+    def _biogas(was_ts_pct: float) -> float:
+        """Screening biogas estimate at a given WAS feed TS%."""
+        ps_flow   = d.ps_ds_tpd / (d.ps_ts_pct / 100)
+        ps_hrt    = d.ps_volume_m3 / max(ps_flow, 1e-9)
+        was_hrt   = _was_hrt(was_ts_pct)
+        ps_vsr    = vsrmax_ps  * (1 - exp(-k_ps  * ps_hrt))
+        was_vsr   = vsrmax_was * (1 - exp(-k_was * was_hrt))
+        ps_vs_dest  = d.ps_ds_tpd  * (d.ps_vs_pct  / 100) * ps_vsr  * 1000  # kg/d
+        was_vs_dest = d.was_ds_tpd * (d.was_vs_pct / 100) * was_vsr * 1000  # kg/d
+        return (ps_vs_dest + was_vs_dest) * gas_yield_nm3_kgVS
+
+    # Current state
+    was_hrt_current = _was_hrt(d.was_ts_pct)
+    biogas_current  = _biogas(d.was_ts_pct)
+
+    # Find target TS% that meets HRT criterion (scan 0.5% steps up to 10%)
+    target_ts = d.was_ts_pct
+    meets      = False
+    for ts_step in range(int(d.was_ts_pct * 10) + 1, 101):
+        ts = ts_step / 10
+        if _was_hrt(ts) >= hrt_criterion:
+            target_ts = ts
+            meets     = True
+            break
+
+    if not meets:
+        target_ts = min(d.was_ts_pct * 2.0, 10.0)  # cap at 10% if criterion unreachable
+
+    was_hrt_target = _was_hrt(target_ts)
+    biogas_target  = _biogas(target_ts)
+    uplift_m3d     = biogas_target - biogas_current
+    uplift_pct     = uplift_m3d / max(biogas_current, 1) * 100
+
+    # CAPEX note based on magnitude of TS% step
+    ts_step = target_ts - d.was_ts_pct
+    if ts_step <= 1.0:
+        capex_note = (f"Low capital — target TS% increase of {ts_step:.1f} percentage points "
+                      f"achievable by thickener optimisation or polymer dosing adjustment. "
+                      f"No new major equipment likely required.")
+    elif ts_step <= 2.0:
+        capex_note = (f"Low-moderate capital — {ts_step:.1f} percentage point TS% increase "
+                      f"may require gravity belt thickener (GBT) upgrade or additional "
+                      f"thickening stage. Estimated order-of-magnitude: $0.5–3M.")
+    else:
+        capex_note = (f"Moderate capital — {ts_step:.1f} percentage point TS% increase "
+                      f"likely requires new or upgraded thickening equipment. "
+                      f"Estimated order-of-magnitude: $2–8M.")
+
+    return ThickeningUplift(
+        was_ts_current_pct  = d.was_ts_pct,
+        was_ts_target_pct   = target_ts,
+        was_hrt_current_d   = was_hrt_current,
+        was_hrt_target_d    = was_hrt_target,
+        hrt_criterion_d     = hrt_criterion,
+        biogas_current_m3d  = biogas_current,
+        biogas_target_m3d   = biogas_target,
+        biogas_uplift_m3d   = uplift_m3d,
+        biogas_uplift_pct   = uplift_pct,
+        ts_meets_criterion  = meets,
+        capex_note          = capex_note,
+    )
+
+
 def build_constraint_chain(d: "Tier1ReportData") -> ConstraintChain:
     """
     Build the constraint chain from plant data.
     Root → Secondary → Symptoms → Consequences.
+    Now diagnoses WAS feed TS% as the root cause of HRT deficiency where applicable,
+    and quantifies the biogas uplift from thickening alone (Mangere-calibrated kinetics).
     """
     result  = d.cmp_result
     base    = result.configs.get("base") if result else None
@@ -634,47 +740,112 @@ def build_constraint_chain(d: "Tier1ReportData") -> ConstraintChain:
 
     was_limited = hrt_was < 15.0
 
+    # Compute thickening uplift regardless — shows opportunity even when not primary constraint
+    tu = _compute_thickening_uplift(d, hrt_criterion=15.0)
+
+    # Is the WAS TS% the root cause of the HRT deficiency?
+    # Low TS% means high volumetric flow → short HRT despite adequate digester volume.
+    # Mangere reference: 6.1%TS → 20d HRT. ETP: 4%TS → 11.7d HRT.
+    # Flag as TS%-driven if current WAS TS% < 5.5% AND thickening alone could fix it.
+    ts_is_root_cause = (
+        was_limited
+        and d.was_ts_pct < 5.5
+        and tu is not None
+        and tu.ts_meets_criterion
+    )
+
     if was_limited:
-        root     = "WAS Kinetic HRT Deficiency"
-        root_det = (
-            f"WAS hydraulic retention time ({hrt_was:.1f} d) is below the minimum "
-            f"required for adequate cell-mass hydrolysis (15 d). "
-            f"This is not a digester volume problem — it is a volume allocation problem. "
-            f"PS and WAS are competing for digester volume designed for a different split."
-        )
-        secondary = [
-            "Co-digestion suppression — blended PS/WAS digestion compounds the WAS "
-            "kinetic constraint; PS lipid hydrolysis is suppressed by slower WAS kinetics.",
-            "PFAS uncertainty — biosolids cannot be characterised for thermal endpoint "
-            "planning until digestion architecture is resolved.",
-            "Centrate nitrogen load — inadequate WAS hydrolysis reduces ammonia release "
-            "to centrate, masking the true nitrogen return load.",
-        ]
-        symptoms = [
-            f"Apparent VS destruction rate below potential (~52% vs theoretical >58%) ",
-            "Lower biogas yield than plant capacity would suggest",
-            "Dewatered cake TS% at lower end of achievable range",
-            "WAS HRT flagged as non-compliant at screening grade",
-        ]
-        consequences = [
-            "Any technology investment (THP, SolidStream) made before resolving WAS HRT "
-            "will underperform against vendor projections.",
-            "OPEX saving from advanced configurations is overstated until root constraint "
-            "is resolved — the 22.5% separate digestion uplift requires ≥15 d WAS HRT.",
-            "Biosolids strategy (land application vs thermal) cannot be finalised until "
-            "PFAS characterisation is completed.",
-            "Capital expenditure risk: procurement before BMP testing and HRT confirmation "
-            "exposes the client to performance guarantee disputes.",
-        ]
-        intervention = (
-            "Resolving the WAS HRT deficiency is the prerequisite for all other "
-            "interventions. Options: volume redistribution (no capital), WAS pre-thickening "
-            "(low capital), or physical digester separation (moderate capital). "
-            "Evaluate Optimised MAD as the baseline — what does fixing the root cause "
-            "achieve before new technology is introduced?"
-        )
+        if ts_is_root_cause:
+            root = "WAS Feed Concentration (TS%) Driving HRT Deficiency"
+            root_det = (
+                f"WAS kinetic HRT ({hrt_was:.1f} d) is below the 15 d minimum — but "
+                f"the root cause is WAS feed concentration, not digester volume. "
+                f"At {d.was_ts_pct:.1f}%TS, the WAS volumetric flow is "
+                f"{d.was_ds_tpd/(d.was_ts_pct/100):,.0f} m³/d, consuming digester volume "
+                f"faster than the kinetics require. "
+                f"Mangere WWTP (NZ, full-scale calibration anchor) operates at 6.1%TS "
+                f"and achieves 20 d HRT and 52% VSR from the same digester configuration. "
+                f"Thickening WAS feed from {d.was_ts_pct:.1f}% to "
+                f"{tu.was_ts_target_pct:.1f}%TS would extend WAS HRT to "
+                f"{tu.was_hrt_target_d:.1f} d and add "
+                f"{tu.biogas_uplift_m3d:,.0f} Nm³/d biogas (+{tu.biogas_uplift_pct:.1f}%) "
+                f"— before any architecture or technology change."
+            )
+            secondary = [
+                f"WAS HRT deficiency ({hrt_was:.1f} d < 15 d) — consequence of low feed "
+                f"TS%, not insufficient digester volume.",
+                "Co-digestion suppression — blended PS/WAS digestion compounds the kinetic "
+                "constraint; PS lipid hydrolysis suppressed by slower WAS kinetics.",
+                "PFAS uncertainty — biosolids cannot be characterised for thermal endpoint "
+                "planning until digestion architecture is resolved.",
+                "Centrate nitrogen load — inadequate WAS hydrolysis reduces ammonia release "
+                "to centrate, masking the true return load.",
+            ]
+            symptoms = [
+                f"WAS HRT = {hrt_was:.1f} d (minimum 15 d) — below criterion",
+                f"VSR below potential — WAS at {d.was_ts_pct:.1f}%TS vs Mangere 6.1%TS reference",
+                "Biogas yield lower than digester volume and DS load would suggest",
+                "Dewatered cake TS% at lower end of achievable range",
+            ]
+            consequences = [
+                "Thickening optimisation should be evaluated first — it is the lowest-capital "
+                "intervention and may resolve the HRT constraint without new digesters.",
+                "Any technology investment (THP, SolidStream) before resolving WAS TS% "
+                "will underperform against vendor projections.",
+                f"Biogas uplift from thickening alone ({tu.biogas_uplift_pct:.1f}%) may "
+                f"exceed some technology uplift claims at lower capital cost.",
+                "Capital expenditure risk: procurement before thickening assessment and "
+                "BMP testing exposes the client to performance guarantee disputes.",
+            ]
+            intervention = (
+                f"Step 1 — Evaluate WAS thickening improvement to {tu.was_ts_target_pct:.1f}%TS "
+                f"({tu.capex_note}). "
+                f"Step 2 — If thickening resolves HRT, evaluate Optimised MAD as baseline. "
+                f"Step 3 — Only then evaluate architecture (separate digestion) and "
+                f"technology (THP). "
+                f"This is the correct intervention sequence: thickening → architecture → technology."
+            )
+        else:
+            root = "WAS Kinetic HRT Deficiency"
+            root_det = (
+                f"WAS hydraulic retention time ({hrt_was:.1f} d) is below the minimum "
+                f"required for adequate cell-mass hydrolysis (15 d). "
+                f"This is not a digester volume problem — it is a volume allocation problem. "
+                f"PS and WAS are competing for digester volume designed for a different split."
+            )
+            secondary = [
+                "Co-digestion suppression — blended PS/WAS digestion compounds the WAS "
+                "kinetic constraint; PS lipid hydrolysis suppressed by slower WAS kinetics.",
+                "PFAS uncertainty — biosolids cannot be characterised for thermal endpoint "
+                "planning until digestion architecture is resolved.",
+                "Centrate nitrogen load — inadequate WAS hydrolysis reduces ammonia release "
+                "to centrate, masking the true nitrogen return load.",
+            ]
+            symptoms = [
+                f"WAS HRT = {hrt_was:.1f} d (minimum 15 d) — below criterion",
+                "VS destruction rate below potential",
+                "Lower biogas yield than plant capacity would suggest",
+                "Dewatered cake TS% at lower end of achievable range",
+            ]
+            consequences = [
+                "Any technology investment (THP, SolidStream) made before resolving WAS HRT "
+                "will underperform against vendor projections.",
+                "OPEX saving from advanced configurations is overstated until root constraint "
+                "is resolved — the 22.5% separate digestion uplift requires ≥15 d WAS HRT.",
+                "Biosolids strategy (land application vs thermal) cannot be finalised until "
+                "PFAS characterisation is completed.",
+                "Capital expenditure risk: procurement before BMP testing and HRT confirmation "
+                "exposes the client to performance guarantee disputes.",
+            ]
+            intervention = (
+                "Resolving the WAS HRT deficiency is the prerequisite for all other "
+                "interventions. Options: volume redistribution (no capital), WAS pre-thickening "
+                "(low capital), or physical digester separation (moderate capital). "
+                "Evaluate Optimised MAD as the baseline — what does fixing the root cause "
+                "achieve before new technology is introduced?"
+            )
     else:
-        root     = "Digestion Configuration Sub-optimal"
+        root = "Digestion Configuration Sub-optimal"
         root_det = (
             f"WAS kinetic HRT ({hrt_was:.1f} d) meets the minimum criterion. "
             f"The primary constraint is digestion architecture — PS and WAS are "
@@ -709,6 +880,7 @@ def build_constraint_chain(d: "Tier1ReportData") -> ConstraintChain:
         symptoms          = symptoms,
         consequences      = consequences,
         intervention_note = intervention,
+        thickening_uplift = tu,
     )
 
 
