@@ -227,6 +227,14 @@ class HydrolysisState:
             return cls(min(0.90, 0.88 * sf),
                        f"WAS-only THP — secondary stream hydrolysed",
                        ConfidenceTier.FULL_SCALE)
+        if mode == THPMode.SOLIDSTREAM:
+            # SolidStream is WAS-only THP with hot centrate recycle — same
+            # hydrolysis effectiveness as WAS_ONLY. Previously missing here, so it
+            # fell through to factor=0.0 and digested as conventional MAD (A27 fix).
+            return cls(min(0.90, 0.88 * sf),
+                       "SolidStream (WAS-only THP, hot centrate recycle) — "
+                       "secondary stream hydrolysed",
+                       ConfidenceTier.FULL_SCALE)
         if mode == THPMode.INTERMEDIATE:
             return cls(min(1.0, 1.02 * sf),
                        "intermediate THP — pre-digested material re-hydrolysed",

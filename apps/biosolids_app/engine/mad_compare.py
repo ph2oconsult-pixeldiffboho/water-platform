@@ -540,12 +540,12 @@ def _run_mad_v2_config(site: ComparisonSiteInputs, config_id: ConfigID):
     """
     try:
         from engine.mad_v2 import (run_mad_v2, StreamInput, DigesterConfig,
-                                    SludgeType, THPMode)
+                                    SludgeType, THPMode, HydrolysisState)
     except ImportError:
         import sys as _sys_v2
         _sys_v2.path.insert(0, "/mnt/user-data/outputs")
         from mad_v2 import (run_mad_v2, StreamInput, DigesterConfig,
-                            SludgeType, THPMode)
+                            SludgeType, THPMode, HydrolysisState)
     from types import SimpleNamespace
 
     thp_name, olr_max = _V2_CONFIG_MAP.get(config_id, ("NONE", 3.0))
@@ -580,7 +580,15 @@ def _run_mad_v2_config(site: ComparisonSiteInputs, config_id: ConfigID):
     )
 
     v2 = run_mad_v2([ps, was], cfg)
-    return _madv2_to_madresult(v2, site, config_id), None
+    shim = _madv2_to_madresult(v2, site, config_id)
+    # Item 3: surface the hydrolysis state mad_v2 actually used (same call
+    # run_mad_v2 makes internally), so the report's HF comes from the physics
+    # engine rather than the hardcoded _hf_map.
+    hstate = HydrolysisState.from_thp_mode(
+        thp_mode, cfg.thp_temperature_c, cfg.thp_retention_min)
+    shim.hydrolysis_factor = hstate.factor
+    shim.hydrolysis_label = hstate.mechanism
+    return shim, None
 
 
 def _madv2_to_madresult(v2, site, config_id):
@@ -1344,17 +1352,24 @@ def run_comparison(
         cr.maturity_label= _tcfg.get("maturity", "Conventional MAD — universal reference base"
                                       if config_id=="base" else "See THP configuration library")
 
-        _hf_map = {
-            "base":         (0.0,  "Conventional MAD — WAS hydrolysis rate-limiting"),
-            "recup":        (0.1,  "Recuperative thickening — marginal hydrolysis improvement"),
-            "pre_thp":      (1.0,  "Full THP — hydrolysis barrier removed"),
-            "solidstream":  (0.88, "WAS-only THP — secondary stream hydrolysed"),
-            "separate":     (0.0,  "Separate PS/WAS — architecture benefit only"),
-            "separate_thp": (0.88, "Separate+THP — WAS hydrolysed"),
-            "optimised_mad":(0.1,  "Optimised MAD — thickening only, no hydrolysis change"),
-        }
-        cr.hydrolysis_factor, cr.hydrolysis_label = _hf_map.get(
-            config_id, (0.0, "unknown"))
+        # Hydrolysis factor: from the physics engine when mad_v2 produced this
+        # config (item 3); otherwise fall back to the hardcoded map for mad.py.
+        if getattr(mad_result, "_v2", None) is not None and \
+                getattr(mad_result, "hydrolysis_factor", None) is not None:
+            cr.hydrolysis_factor = mad_result.hydrolysis_factor
+            cr.hydrolysis_label = mad_result.hydrolysis_label
+        else:
+            _hf_map = {
+                "base":         (0.0,  "Conventional MAD — WAS hydrolysis rate-limiting"),
+                "recup":        (0.1,  "Recuperative thickening — marginal hydrolysis improvement"),
+                "pre_thp":      (1.0,  "Full THP — hydrolysis barrier removed"),
+                "solidstream":  (0.88, "WAS-only THP — secondary stream hydrolysed"),
+                "separate":     (0.0,  "Separate PS/WAS — architecture benefit only"),
+                "separate_thp": (0.88, "Separate+THP — WAS hydrolysed"),
+                "optimised_mad":(0.1,  "Optimised MAD — thickening only, no hydrolysis change"),
+            }
+            cr.hydrolysis_factor, cr.hydrolysis_label = _hf_map.get(
+                config_id, (0.0, "unknown"))
         _vs_total_hf = (site.ps_ds_tpd * site.ps_vs_pct/100
                         + site.was_ds_tpd * site.was_vs_pct/100)
         _vol_total_hf = site.ps_volume_m3 + site.was_volume_m3
