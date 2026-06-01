@@ -7433,8 +7433,8 @@ def _separate_digestion_section(story, S, d: Tier1ReportData, section_num: int):
             arrowprops=dict(arrowstyle="->",color=_WC,lw=1),
             bbox=dict(boxstyle="round,pad=0.25",fc="#ffebee",ec=_WC,alpha=0.9))
         for _i,(_col,_txt) in enumerate([
-            (_PC,"PS Hydrolysis HRT\n= V_PS / Q_PS\nFast hydrolysis (k~0.25/d)\nPS well-optimised. Not the constraint."),
-            (_WC,f"WAS Hydrolysis HRT\n= V_WAS / Q_WAS\nSlow hydrolysis (k~0.12/d)\n{_hrt_was:.1f}d {'<' if _hrt_was < 15 else '\u2265'} 15d minimum. CONTROLS stability."),
+            (_PC,"PS Hydrolysis HRT\n= V_PS / Q_PS\nFast hydrolysis (k~0.13/d)\nPS well-optimised. Not the constraint."),
+            (_WC,f"WAS Hydrolysis HRT\n= V_WAS / Q_WAS\nSlow hydrolysis (k~0.06/d)\n{_hrt_was:.1f}d {'<' if _hrt_was < 15 else '\u2265'} 15d minimum. CONTROLS stability."),
             (_HC,f"Hydraulic HRT\n= V_total / Q_total\nCapacity sizing metric\n{_hrt_hyd:.1f}d masks WAS constraint."),
         ]):
             _xc=2.0+_i*2.95
