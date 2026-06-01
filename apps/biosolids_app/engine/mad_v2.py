@@ -51,10 +51,11 @@ class THPMode(str, Enum):
     NONE            = "none"
     FULL            = "full_thp"           # all feed hydrolysed
     WAS_ONLY        = "was_only"           # secondary stream only
-    INTERMEDIATE    = "intermediate"       # interstage (digested→THP→digested)
-    THERMO_MESO     = "thermo_meso"        # thermophilic + mesophilic series
-    THTPAD          = "thtpad"             # temperature-phased THP-AD
+    INTERMEDIATE    = "intermediate"       # retained in engine but not in BioPoint UI
+    THERMO_MESO     = "thermo_meso"        # retained in engine but not in BioPoint UI
+    THTPAD          = "thtpad"             # retained in engine but not in BioPoint UI
     SOLIDSTREAM     = "solidstream"        # WAS-only THP with hot centrate recycle
+    # BioPoint V1 active modes: NONE, FULL, WAS_ONLY, SOLIDSTREAM
 
 class DewateringTech(str, Enum):
     CENTRIFUGE      = "centrifuge"
@@ -999,7 +1000,6 @@ def validate_calibration() -> None:
         ("Sep PS/WAS",         THPMode.NONE,    35200, 28800, 3.0, 4.0),
         ("Full THP",           THPMode.FULL,    None,  None,  6.0, 10.0),
         ("WAS-only THP",       THPMode.WAS_ONLY,None,  None,  5.0, 8.0),
-        ("Intermediate THP",   THPMode.INTERMEDIATE,None,None,6.0, 10.0),
     ]:
         cfg_e = DigesterConfig(
             volume_m3=64000, ps_volume_m3=ps_v, was_volume_m3=was_v,

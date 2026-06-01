@@ -285,6 +285,13 @@ class ConfigResult:
     capex_scope_summary: str = ""   # one-line scope description
     capex_note:      str = ""
 
+    # ── Hydrolysis and loading ───────────────────────────────────────────────
+    hydrolysis_factor:     float = 0.0   # 0=untreated WAS, 1.0=full THP
+    hydrolysis_label:      str   = ""    # human-readable HF description
+    olr_kg_vs_m3_d:        float = 0.0   # organic loading rate
+    olr_flag:              str   = ""    # "within limit" | "above limit"
+    controlling_constraint:str   = ""    # HRT | OLR | hydrolysis | none
+
     # ── Headroom ─────────────────────────────────────────────────────────────
     hrt_ps_d:              float = 0.0
     hrt_was_d:             float = 0.0
@@ -1091,6 +1098,35 @@ def run_comparison(
         cr.wet_cake_t_per_year = wet_tpy
         cr.trucks_per_day      = trucks
 
+        # Hydrolysis factor, OLR and controlling constraint (unconditional)
+        _hf_map = {
+            "base":         (0.0,  "Conventional MAD — WAS hydrolysis rate-limiting"),
+            "recup":        (0.1,  "Recuperative thickening — marginal hydrolysis improvement"),
+            "pre_thp":      (1.0,  "Full THP — hydrolysis barrier removed"),
+            "solidstream":  (0.88, "WAS-only THP — secondary stream hydrolysed"),
+            "separate":     (0.0,  "Separate PS/WAS — architecture benefit only"),
+            "separate_thp": (0.88, "Separate+THP — WAS hydrolysed"),
+            "optimised_mad":(0.1,  "Optimised MAD — thickening only, no hydrolysis change"),
+        }
+        cr.hydrolysis_factor, cr.hydrolysis_label = _hf_map.get(
+            config_id, (0.0, "unknown"))
+        _vs_total_hf = (site.ps_ds_tpd * site.ps_vs_pct/100
+                        + site.was_ds_tpd * site.was_vs_pct/100)
+        _vol_total_hf = site.ps_volume_m3 + site.was_volume_m3
+        cr.olr_kg_vs_m3_d = round(_vs_total_hf * 1000 / max(_vol_total_hf, 1), 2)
+        _olr_limit_hf = 6.0 if config_id in ("pre_thp","solidstream","separate_thp") else 3.0
+        cr.olr_flag = ("above limit ⚠" if cr.olr_kg_vs_m3_d > _olr_limit_hf
+                       else f"within limit ({_olr_limit_hf:.0f} kgVS/m\u00b3/d max)")
+        _hrt_was_hf = getattr(cr, "hrt_was_d", 0.0)
+        if _hrt_was_hf > 0 and _hrt_was_hf < 15.0:
+            cr.controlling_constraint = f"WAS HRT ({_hrt_was_hf:.1f}d < 15d)"
+        elif cr.olr_kg_vs_m3_d > _olr_limit_hf:
+            cr.controlling_constraint = f"OLR ({cr.olr_kg_vs_m3_d:.2f} > {_olr_limit_hf:.0f})"
+        elif cr.hydrolysis_factor < 0.3:
+            cr.controlling_constraint = "WAS hydrolysis rate-limiting"
+        else:
+            cr.controlling_constraint = "architecture opportunity"
+
         # ── Pathogen class ─────────────────────────────────────────────────
         if config_id in ("pre_thp", "solidstream"):
             cr.pathogen_class   = "Class A"
@@ -1264,6 +1300,20 @@ def run_comparison(
             centrate_nh4_kg_per_d= round(centrate_n),
             hrt_ps_d             = round(ps_hrt, 1),
             hrt_was_d            = round(was_hrt, 1),
+            hydrolysis_factor    = 0.88 if sep_id == "separate_thp" else 0.0,
+            hydrolysis_label     = ("Separate+THP — WAS stream hydrolysed"
+                                    if sep_id == "separate_thp"
+                                    else "Separate PS/WAS — architecture benefit only"),
+            olr_kg_vs_m3_d       = round((site.ps_ds_tpd * site.ps_vs_pct/100
+                                          + site.was_ds_tpd * site.was_vs_pct/100)
+                                         * 1000 / max(site.ps_volume_m3 + site.was_volume_m3, 1), 2),
+            olr_flag             = ("within limit (3 max)" if
+                                    (site.ps_ds_tpd * site.ps_vs_pct/100
+                                     + site.was_ds_tpd * site.was_vs_pct/100)
+                                    * 1000 / max(site.ps_volume_m3 + site.was_volume_m3, 1) <= 3.0
+                                    else "above limit ⚠"),
+            controlling_constraint=("WAS HRT — below 15d" if was_hrt < 15.0
+                                    else "architecture opportunity"),
             scope1_kg_co2e_per_d = base_cr_sep.scope1_kg_co2e_per_d if base_cr_sep else 0,
             scope2_kg_co2e_per_d = base_cr_sep.scope2_kg_co2e_per_d if base_cr_sep else 0,
             scope3_kg_co2e_per_d = base_cr_sep.scope3_kg_co2e_per_d if base_cr_sep else 0,
