@@ -603,6 +603,41 @@ def build(bundle):
         story.append(styled(Table(rows, colWidths=[96*mm, 37*mm, 37*mm])))
         story.append(Spacer(1, 4))
 
+    # ===== V3.5 Carbon Endpoint Strategy (Stage 3) =====
+    story.append(P("Carbon Endpoint Strategy &mdash; Retention / Conversion / Destruction (Stage 3)", S_H1))
+    story.append(P("Biology (separate digestion) optimises methane and capacity; biosolids quality "
+                   "(SolidStream) optimises the cake; the <i>endpoint</i> optimises where the carbon "
+                   "finally goes &mdash; a third, independent decision. BioPoint composes the strategic "
+                   "ETP front-end (Pathway K) with each Stage-3 endpoint and groups them by carbon fate "
+                   "into three families. The columns are deliberately NOT combined into one score: "
+                   "retaining carbon, converting it to energy and destroying it for PFAS resilience are "
+                   "different objectives, and each family wins a different one."))
+    comp = S.carbon_strategy_comparison(plant)
+    hdr = [P("Endpoint", S_CELLH), P("Strategy", S_CELLH), P("Retain tC/d", S_CRH), P("Seq.", S_CRH),
+           P("Emit", S_CRH), P("Removed CO2e", S_CRH), P("PFAS", S_CRH), P("Net MWh/d", S_CRH), P("Conf", S_CRH)]
+    rows = [hdr]
+    for r in comp:
+        rows.append([P(r["endpoint"], S_CELL), P(r["family"].replace("Carbon ", ""), S_CELL),
+                     P(f"{r['retained_tC_d']:.1f}", S_CR), P(f"{r['sequestered_tC_d']:.1f}", S_CR),
+                     P(f"{r['destroyed_emitted_tC_d']:.0f}", S_CR), P(f"{r['removed_tCO2e_d']:.1f}", S_CR),
+                     P(f"{r['pfas_destruction']*100:.0f}%", S_CR), P(f"{r['net_export_mwh_d']:.0f}", S_CR),
+                     P(r["confidence"], S_CR)])
+    story.append(styled(Table(rows, colWidths=[22*mm, 24*mm, 16*mm, 12*mm, 12*mm, 18*mm, 13*mm, 16*mm, 11*mm])))
+    story.append(Spacer(1, 3))
+    story.append(P("Reading it by objective, not by score: <b>pyrolysis</b> (Retention) gives the most "
+                   "durable carbon &mdash; it retains less mass than land but sequesters more than twice "
+                   "as much at 100 years, the highest CO2 removal, at confidence B. <b>Incineration</b> "
+                   "(Destruction) retains no carbon or nutrients but maximises PFAS destruction and is "
+                   "most mature (confidence A) &mdash; the regulatory-resilience play. <b>HTL</b> gives "
+                   "the most energy and a biocrude product but is pre-commercial (confidence C). Land "
+                   "stays cheapest today, but its retained carbon is low-permanence and it carries the "
+                   "PFAS land-application risk.", S_SMALL))
+    story.append(P("<b>Preferred Strategic Carbon and Nutrient Pathway</b> is therefore not a single "
+                   "technology but a front-end (separate digestion + SolidStream) plus an endpoint chosen "
+                   "for the objective being optimised &mdash; carbon permanence, energy, or PFAS "
+                   "resilience &mdash; carried with its confidence level, not collapsed into one number.", S_SMALL))
+    story.append(Spacer(1, 6))
+
     # ===== 20 future resilience =====
     story.append(P("20 &nbsp; Future Resilience (testing different worlds)", S_H1))
     story.append(P("The decisive uncertainty is no longer engineering performance &mdash; it is "
