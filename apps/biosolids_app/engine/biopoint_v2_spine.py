@@ -1248,6 +1248,92 @@ def feasibility(pathways: list, constraints: dict) -> dict:
 
 
 
+# ===========================================================================
+# V3 U1 - DECISION HIERARCHY (L1-L5) + CONSTRAINT DIAGNOSIS
+# Adaptive, least-regret-at-acceptable-risk: constraint diagnosis INFORMS ordering
+# but never prunes. All viable pathways stay active; regret is named, not removed.
+# A shock at or above HIGH_LIKELIHOOD that breaks a pathway flags it as needing a hedge.
+HIGH_LIKELIHOOD = 0.5
+
+
+def diagnose_constraints(plant, pathways) -> list:
+    """L1 Constraint Diagnosis. Surface what is binding today and which future shocks
+    would make each constraint binding. Informs the L2-L5 ordering; prunes nothing."""
+    thp = next((p for p in pathways if p.basis.get("has_thp")), pathways[0])
+    cap = capacity_view(thp); nut = nutrient_value(thp); cv = carbon_value(thp)
+    feedN = nut["feed_N_kgd"]; rlN = nut["return_liquor_N_kgd"]
+    nm = [sc.name for sc in SCENARIOS]
+    cons = []
+    if cap.get("existing_vol_m3"):
+        head = cap.get("capacity_headroom_tds", 0.0)
+        cons.append({"constraint": "capacity", "binding": head <= 0,
+            "state": f"existing {cap['existing_vol_m3']:,.0f} m3 -> {head:,.0f} tDS/d headroom ({cap.get('existing_governing','')}-governed)",
+            "shocks": [n for n in nm if n.startswith("FOGO")]})
+    cons.append({"constraint": "regulatory_pfas", "binding": False,
+        "state": "land-applied cake carries PFAS; no digestion route destroys it",
+        "shocks": [n for n in nm if "PFAS" in n]})
+    cons.append({"constraint": "return_liquor_nitrogen",
+        "binding": (rlN / feedN > 0.30) if feedN else False,
+        "state": f"{rlN:,.0f} kgN/d to works ({(rlN/feedN*100) if feedN else 0:.0f}% of feed N) - aeration/N2O load",
+        "shocks": [n for n in nm if "Methane" in n]})
+    cons.append({"constraint": "energy_balance", "binding": thp.net_export_mwh_d < 0,
+        "state": f"worked pathway net {thp.net_export_mwh_d:,.0f} MWh/d",
+        "shocks": [n for n in nm if "lectricity" in n or "exporter" in n]})
+    cons.append({"constraint": "carbon_strategy", "binding": False,
+        "state": f"net removal {cv['net_removal_tCO2e_yr']:,.0f} tCO2e/yr; avoided {cv['avoided_fossil_tCO2e_yr']:,.0f} tCO2e/yr (separate)",
+        "shocks": [n for n in nm if "Carbon" in n]})
+    return cons
+
+
+def regret_profile(pw, weights, risk_threshold=HIGH_LIKELIHOOD) -> dict:
+    """One pathway: where it wins, which HIGH-LIKELIHOOD shocks break it, what it
+    forecloses, and whether it is acceptable-risk or needs a hedge. Never prunes."""
+    sc = pw.driver_scores()
+    res = resilience(pw); ov = optionality_value(pw)
+    breaking = [r for r in res["results"]
+                if r["likelihood"] >= risk_threshold and (not r["viable"] or r["perf"] < 0.4)]
+    hedges = [m.name for m in pw.moves if m.tag == Tag.KEEP_OPEN] if breaking else []
+    return {
+        "pathway": pw.name,
+        "performance": three_axis(pw, weights)["performance"],
+        "confidence": pw.confidence_level.name if pw.confidence_level else "?",
+        "resilience": res["score"],
+        "net_option_value_m_aud_yr": ov["net_option_value_m_aud_yr"],
+        "wins_on": sorted(sc, key=lambda d: -sc[d])[:3],
+        "high_likelihood_shocks": [{"shock": r["scenario"], "likelihood": r["likelihood"],
+                                    "viable": r["viable"], "note": r["note"]} for r in breaking],
+        "acceptable_risk": len(breaking) == 0,
+        "hedge_required": None if not breaking else ("keep open: " + ("; ".join(hedges)
+                          if hedges else "an endpoint/option that survives the flagged shock")),
+        "forecloses": ov["foreclosed"],
+    }
+
+
+def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> dict:
+    """L1-L5 decision hierarchy (V3 U1). Runs the levels in order, keeps ALL viable
+    pathways active, attaches a regret profile to each. The recommendation is a
+    least-regret SEQUENCE at acceptable risk: commit-grade now + priced hedges held
+    open against the high-likelihood shocks - not a single chosen technology."""
+    weights = weights or rank_weights(DRIVER_RANKING_PLUS)
+    worked = build_worked_pathway(plant); conv = build_conventional_pathway(plant)
+    thermal = build_thermal_pathway(plant); endpoints = build_thermal_endpoints(plant)
+    pathways = [conv, worked, thermal] + list(endpoints.values())
+    return {
+        "L1_constraints": diagnose_constraints(plant, pathways),
+        "L2_capacity": capacity_view(worked),
+        "L3_resource_recovery": nutrient_value(worked),
+        "L4_carbon": carbon_value(worked),
+        "L5_thermal_endpoint": {n: {"pfas": p.pfas_destruction_frac,
+                                    "evidence": EVIDENCE.get(n, (Conf.C, ""))[0].name}
+                                for n, p in endpoints.items()},
+        "risk_threshold": risk_threshold,
+        "pathways": [regret_profile(p, weights, risk_threshold) for p in pathways],
+        "least_regret_note": ("All viable pathways retained. acceptable_risk=False means a "
+            f"shock at or above {risk_threshold:.0%} likelihood breaks the pathway; it stays "
+            "active but must be paired with the named hedge to be commit-grade."),
+    }
+
+
 def compare(paths: list[Pathway], weights: dict[str, float]) -> str:
     lines = ["\nPATHWAY COMPARISON (under locked weighting — trade, not winner):"]
     drivers = ["energy_neutrality", "scope1_emissions", "pfas",
