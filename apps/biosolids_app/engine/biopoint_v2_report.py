@@ -604,14 +604,6 @@ def build(bundle):
         story.append(Spacer(1, 4))
 
     # ===== V3.5 Carbon Endpoint Strategy (Stage 3) =====
-    story.append(P("Carbon Endpoint Strategy &mdash; Retention / Conversion / Destruction (Stage 3)", S_H1))
-    story.append(P("Biology (separate digestion) optimises methane and capacity; biosolids quality "
-                   "(SolidStream) optimises the cake; the <i>endpoint</i> optimises where the carbon "
-                   "finally goes &mdash; a third, independent decision. BioPoint composes the strategic "
-                   "ETP front-end (Pathway K) with each Stage-3 endpoint and groups them by carbon fate "
-                   "into three families. The columns are deliberately NOT combined into one score: "
-                   "retaining carbon, converting it to energy and destroying it for PFAS resilience are "
-                   "different objectives, and each family wins a different one."))
     comp = S.carbon_strategy_comparison(plant)
     hdr = [P("Endpoint", S_CELLH), P("Strategy", S_CELLH), P("Retain tC/d", S_CRH), P("Seq.", S_CRH),
            P("Emit", S_CRH), P("Removed CO2e", S_CRH), P("PFAS", S_CRH), P("Net MWh/d", S_CRH), P("Conf", S_CRH)]
@@ -622,7 +614,17 @@ def build(bundle):
                      P(f"{r['destroyed_emitted_tC_d']:.0f}", S_CR), P(f"{r['removed_tCO2e_d']:.1f}", S_CR),
                      P(f"{r['pfas_destruction']*100:.0f}%", S_CR), P(f"{r['net_export_mwh_d']:.0f}", S_CR),
                      P(r["confidence"], S_CR)])
-    story.append(styled(Table(rows, colWidths=[22*mm, 24*mm, 16*mm, 12*mm, 12*mm, 18*mm, 13*mm, 16*mm, 11*mm])))
+    story.append(KeepTogether([
+        P("Carbon Endpoint Strategy &mdash; Retention / Conversion / Destruction (Stage 3)", S_H1),
+        P("Biology (separate digestion) optimises methane and capacity; biosolids quality "
+          "(SolidStream) optimises the cake; the <i>endpoint</i> optimises where the carbon "
+          "finally goes &mdash; a third, independent decision. BioPoint composes the strategic "
+          "ETP front-end (Pathway K) with each Stage-3 endpoint and groups them by carbon fate "
+          "into three families. The columns are deliberately NOT combined into one score: "
+          "retaining carbon, converting it to energy and destroying it for PFAS resilience are "
+          "different objectives, and each family wins a different one."),
+        styled(Table(rows, colWidths=[22*mm, 24*mm, 16*mm, 12*mm, 12*mm, 18*mm, 13*mm, 16*mm, 11*mm])),
+    ]))
     story.append(Spacer(1, 3))
     story.append(P("Reading it by objective, not by score: <b>pyrolysis</b> (Retention) gives the most "
                    "durable carbon &mdash; it retains less mass than land but sequesters more than twice "
