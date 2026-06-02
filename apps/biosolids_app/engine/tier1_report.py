@@ -5,6 +5,10 @@ ph2o Consulting — v25B02
 ReportLab A4, max 50pp excl appendices.
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_ED = _os.path.dirname(_os.path.abspath(__file__))
+if _ED not in _sys.path:
+    _sys.path.insert(0, _ED)
 import sys
 from io import BytesIO
 from datetime import date
@@ -317,22 +321,19 @@ def _sanitise(txt: str) -> str:
         txt = str(txt)
     return (
         txt
-        # Subscript digits → ASCII (NH4 → NH4, CO2 → CO2, etc.)
-        .replace("\u2080", "0").replace("1", "1")
-        .replace("2", "2").replace("3", "3")
-        .replace("4", "4").replace("5", "5")
-        .replace("6", "6").replace("\u2087", "7")
+        # Subscript digits -> ASCII
+        .replace("\u2080", "0").replace("\u2081", "1")
+        .replace("\u2082", "2").replace("\u2083", "3")
+        .replace("\u2084", "4").replace("\u2085", "5")
+        .replace("\u2086", "6").replace("\u2087", "7")
         .replace("\u2088", "8").replace("\u2089", "9")
-        # Superscript digits that Helvetica lacks
-        .replace("3", "3")   # 3 → 3  (Nm3 already uses 3)
-        .replace("1", "1")   # ¹ → 1
+        # Superscript digits -> ASCII
+        .replace("\u00b9", "1").replace("\u00b2", "2").replace("\u00b3", "3")
         # Superscript +/- signs
-        .replace("+", "+").replace("-", "-")
-        # Degree sign, middle dot — keep (Helvetica has these)
-        # Subscript +/- 
-        .replace("+", "+").replace("-", "-")
+        .replace("\u207a", "+").replace("\u207b", "-")
+        # Subscript +/- signs
+        .replace("\u208a", "+").replace("\u208b", "-")
     )
-
 def _p(text, style):
     return Paragraph(_sanitise(text), style)
 
@@ -2765,8 +2766,8 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p(f"{section_num}. Long-Term Biosolids Pathway — Thermal Treatment", S["h1"]))
     story.append(_section_rule())
     story.append(_p(
-        "Thermal treatment 0 "
-        "and methane emissions to zero by 2035-2040. Thermal treatment of biosolids "
+        "Many water utilities have committed to reducing biosolids-related land-application "
+        "dependency and methane emissions to zero by 2035-2040. Thermal treatment of biosolids "
         "— either incineration or pyrolysis — provides a pathway to eliminate "
         "land application entirely, removing the dependency on agricultural markets, "
         "regulatory land use restrictions, and PFAS compliance requirements. "
@@ -3833,22 +3834,19 @@ def _sanitise(txt: str) -> str:
         txt = str(txt)
     return (
         txt
-        # Subscript digits → ASCII (NH4 → NH4, CO2 → CO2, etc.)
-        .replace("\u2080", "0").replace("1", "1")
-        .replace("2", "2").replace("3", "3")
-        .replace("4", "4").replace("5", "5")
-        .replace("6", "6").replace("\u2087", "7")
+        # Subscript digits -> ASCII
+        .replace("\u2080", "0").replace("\u2081", "1")
+        .replace("\u2082", "2").replace("\u2083", "3")
+        .replace("\u2084", "4").replace("\u2085", "5")
+        .replace("\u2086", "6").replace("\u2087", "7")
         .replace("\u2088", "8").replace("\u2089", "9")
-        # Superscript digits that Helvetica lacks
-        .replace("3", "3")   # 3 → 3  (Nm3 already uses 3)
-        .replace("1", "1")   # ¹ → 1
+        # Superscript digits -> ASCII
+        .replace("\u00b9", "1").replace("\u00b2", "2").replace("\u00b3", "3")
         # Superscript +/- signs
-        .replace("+", "+").replace("-", "-")
-        # Degree sign, middle dot — keep (Helvetica has these)
-        # Subscript +/- 
-        .replace("+", "+").replace("-", "-")
+        .replace("\u207a", "+").replace("\u207b", "-")
+        # Subscript +/- signs
+        .replace("\u208a", "+").replace("\u208b", "-")
     )
-
 def _p(text, style):
     return Paragraph(_sanitise(text), style)
 
@@ -6778,8 +6776,8 @@ def _thermal_treatment_section(story, S, d: Tier1ReportData, section_num: int):
     story.append(_p(f"{section_num}. Long-Term Biosolids Pathway — Thermal Treatment", S["h1"]))
     story.append(_section_rule())
     story.append(_p(
-        "Thermal treatment 0 "
-        "and methane emissions to zero by 2035-2040. Thermal treatment of biosolids "
+        "Many water utilities have committed to reducing biosolids-related land-application "
+        "dependency and methane emissions to zero by 2035-2040. Thermal treatment of biosolids "
         "— either incineration or pyrolysis — provides a pathway to eliminate "
         "land application entirely, removing the dependency on agricultural markets, "
         "regulatory land use restrictions, and PFAS compliance requirements. "
@@ -9594,25 +9592,22 @@ def _strategic_roadmap(story, S, d: Tier1ReportData, section_num: int):
             ]
         ),
         (
-            "Step 5 — Select Digestion Enhancement Configuration",
+            "Step 5 \u2014 Select Digestion Enhancement Configuration",
             "Medium-term (12\u201324 months, after Steps 1\u20133)",
             "#6a1b9a",   # purple
-                "The recommended Stage 2 validation pathway is "
-                "<b>Separate PS/WAS digestion, with THP as an optional "
-                "addition contingent upon BMP confirmation and WAS HRT "
-                "remediation.</b> "
-                "Separate digestion should be evaluated first: "
-                "if BMP testing confirms the co-digestion suppression "
-                "if BMP testing confirms adequate site-specific uplift, "
-                "separate digestion alone may deliver substantial "
-                "THP addition can then be evaluated as a Class A upgrade "
-                "once the digestion architecture is confirmed. "
-                "If BMP testing does not confirm measurable uplift, "
-                "SolidStream or Pre-THP become the preferred pathway "
-                "for Class A upgrade without the separate digestion capital cost. "
-                "All pathways require WAS HRT resolution to \u226515\u2009d, "
-                "PFAS characterisation, and independent CAPEX verification "
-                "before Stage 2 commitment.",
+            [
+                "The recommended Stage 2 validation pathway is <b>Separate PS/WAS digestion, "
+                "with THP as an optional addition contingent on BMP confirmation and WAS HRT "
+                "remediation.</b>",
+                "Separate digestion should be evaluated first: if BMP testing confirms adequate "
+                "site-specific uplift, separate digestion alone may deliver substantial benefit, "
+                "and THP can then be added as a Class A upgrade once the digestion architecture "
+                "is confirmed.",
+                "If BMP testing does not confirm measurable uplift, SolidStream or Pre-THP become "
+                "the preferred pathway for Class A upgrade without the separate-digestion capital cost.",
+                "All pathways require WAS HRT resolution to \u226515\u2009d, PFAS characterisation, "
+                "and independent CAPEX verification before Stage 2 commitment.",
+            ]
         ),
         (
             "Step 6 — Select Long-Term Thermal Endpoint",
