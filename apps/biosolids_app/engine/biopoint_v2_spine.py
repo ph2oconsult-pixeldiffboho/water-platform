@@ -329,6 +329,93 @@ def _volume_constraints(Q, vs_load_kg, olr_max, hrt_hydrolysis):
     governing = max(vols, key=vols.get)
     return vols, governing, vols[governing]
 
+# ===========================================================================
+# HYDROLYSIS-KINETICS LAYER (V3.5 Digestion Architecture) - first-order CSTR
+# ===========================================================================
+# Derives the HRT needed for a target VS destruction from hydrolysis kinetics,
+# instead of hard-coding 18 d / 10 d. Calibrated to two closure-validated anchors:
+# conventional blended VSR 0.575 @ 18.1 d, and SolidStream 0.703 @ 13.4 d.
+# SolidStream is modelled as a partial-THP "assist" a in [0,1] that raises BOTH the
+# hydrolysis rate (recycle returns solubilised residual) AND the accessible
+# biodegradable fraction (THP unlocks recalcitrant VS) - the calibration shows
+# SolidStream's uplift is part-rate, part-accessibility, not rate alone.
+# SCREENING-GRADE, confidence C: the assist a is the pilot-measurable unknown
+# (BMP-on-centrate + recycle ratio), carried as a band, never a point claim.
+class KIN:
+    F_BIO_0 = 0.68          # blended biodegradable VS fraction (conventional); calib to 0.575 @ 18.1 d
+    K_H_0 = 0.30            # blended first-order hydrolysis rate (1/d), conventional
+    SS_DELTA_FBIO = 0.09    # SolidStream full-assist accessibility uplift (THP unlock); calib to 0.703
+    SS_K_MULT = 2.8         # SolidStream full-assist rate multiplier (recycle); vs full-THP ~3x
+    TAU_CONV_REF = 18.1     # ETP conventional digester HRT (calibration reference)
+    TAU_SS_REF = 13.4       # SolidStream effective HRT (Cambi 2026)
+    HRT_FLOOR_D = 12.0      # hydraulic/OLR-governed HRT floor (= KCAP.HRT_FLOOR)
+
+
+def vs_destruction(k_h: float, tau: float, f_bio: float) -> float:
+    """First-order hydrolysis in a CSTR: fraction of VS destroyed at retention time tau (d)."""
+    return f_bio * (k_h * tau) / (1.0 + k_h * tau)
+
+
+def hrt_for_vsr(target_vsr: float, k_h: float, f_bio: float):
+    """Invert vs_destruction: HRT (d) to reach a target VS destruction. None if target >= f_bio."""
+    r = target_vsr / f_bio
+    return (r / (k_h * (1.0 - r))) if r < 1.0 else None
+
+
+def solidstream_assist(a: float) -> tuple:
+    """SolidStream as a partial-THP assist a in [0,1] (0 = conventional, 1 = full SolidStream).
+    Raises hydrolysis rate (recycle) and biodegradable fraction (THP unlock). Returns (k_h, f_bio)."""
+    a = max(0.0, min(1.0, a))
+    return (KIN.K_H_0 * (1.0 + a * (KIN.SS_K_MULT - 1.0)), KIN.F_BIO_0 + a * KIN.SS_DELTA_FBIO)
+
+
+def kinetics_calibration_check() -> dict:
+    """Confirm the kinetics reproduce the two closure-validated VSR anchors."""
+    k1, f1 = solidstream_assist(1.0)
+    return {"conventional_VSR_at_18_1d": vs_destruction(KIN.K_H_0, KIN.TAU_CONV_REF, KIN.F_BIO_0),
+            "solidstream_VSR_at_13_4d": vs_destruction(k1, KIN.TAU_SS_REF, f1),
+            "ss_full_k_h": k1, "ss_full_f_bio": f1}
+
+
+def kplus_was_constraint(plant: dict = None, target_vsr: float = None,
+                         assist_band: tuple = (0.2, 0.5, 1.0)) -> dict:
+    """V3.5 Pathway K+ (recycle-to-WAS-only). Tests whether the SolidStream recycle shifts the WAS
+    train from hydrolysis-governed to OLR/hydraulic-governed WITHOUT conventional THP. Returns the
+    required WAS hydrolysis HRT vs SolidStream assist, the governing constraint at each, and the
+    crossover assist a* where it flips. Total VSR is conserved (set by solubilisation, ~0.70, not by
+    recycle routing); WAS-only routing concentrates the recovered residual load on the WAS digester,
+    which is what drives the crossover. Confidence C - the assist a is pilot-measurable."""
+    target = target_vsr if target_vsr is not None else K.VSR_CONV
+    floor = KIN.HRT_FLOOR_D
+    rows = []
+    for a in assist_band:
+        k_h, f_bio = solidstream_assist(a)
+        th = hrt_for_vsr(target, k_h, f_bio)
+        governed = "OLR/hydraulic" if (th is None or th <= floor) else "hydrolysis"
+        rows.append({"assist": a, "k_h": round(k_h, 3), "f_bio": round(f_bio, 3),
+                     "req_was_hrt_d": (round(th, 1) if th else None), "governing": governed})
+    lo, hi = 0.0, 1.0
+    for _ in range(60):
+        m = (lo + hi) / 2.0
+        k_h, f_bio = solidstream_assist(m)
+        th = hrt_for_vsr(target, k_h, f_bio)
+        if th is None or th <= floor:
+            hi = m
+        else:
+            lo = m
+    a_star = (lo + hi) / 2.0
+    conv_hrt = hrt_for_vsr(target, KIN.K_H_0, KIN.F_BIO_0)
+    return {"target_vsr": target, "hydraulic_floor_d": floor, "rows": rows,
+            "crossover_assist": round(a_star, 2),
+            "conventional_req_hrt_d": (round(conv_hrt, 1) if conv_hrt else None),
+            "total_vsr_conserved": KSS.VSR,
+            "verdict": (f"WAS train shifts hydrolysis -> OLR/hydraulic-governed at assist a*={a_star:.2f}; "
+                        f"SolidStream full effectiveness is a=1.0, so K+ crosses the constraint with margin "
+                        f"(total VSR conserved at {KSS.VSR:.3f}). Assist a is pilot-measurable (confidence C)."),
+            "confidence": "C"}
+
+
+
 
 def capacity_view(pw: Pathway) -> dict:
     """Capacity intensification via the actual full-scale mechanism: THP pre-completes
