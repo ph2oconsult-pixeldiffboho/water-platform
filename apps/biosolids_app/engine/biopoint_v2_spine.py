@@ -271,8 +271,13 @@ class Pathway:
 
         # Nutrient recovery: recovered N + P fractions, off the N and P ledgers.
         n_rec = N.fraction_to("struvite_N")
+        # V3.5: return-liquor N can also be MANAGED by destruction (PN/A -> N2), which cuts the
+        # WWTW return load + N2O risk but yields no recoverable product, so it scores at half the
+        # weight of true recovery. Without this, sidestream-deammonification (Pathway B) scored ~0.
+        n_destroyed = N.fraction_to("N2_to_atmosphere_via_PNA")
+        n_managed = min(1.0, n_rec + 0.5 * n_destroyed)
         p_rec = P.fraction_to("struvite_P")
-        nutrient_recovery = 0.5 * n_rec + 0.5 * p_rec
+        nutrient_recovery = 0.5 * n_managed + 0.5 * p_rec
 
         # Energy neutrality: net pathway energy / gross generation (set per pathway).
         energy_neutrality = (min(1.0, max(0.0, self.net_export_mwh_d / self.generation_mwh_d))
