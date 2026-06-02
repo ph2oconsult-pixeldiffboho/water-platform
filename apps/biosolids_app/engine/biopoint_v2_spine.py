@@ -941,6 +941,24 @@ THERMAL_ENDPOINTS = {
 }
 
 
+# ===========================================================================
+# V3 U5 — EVIDENCE-STRENGTH REGISTRY (single source of truth for maturity grading)
+# Level A multiple full-scale refs | B multiple demonstrations |
+# C limited full-scale refs | D site-specific hypothesis. Grades are deployment-
+# based (biosolids-specific), with the reference basis recorded for each.
+EVIDENCE = {
+    "THP":            (Conf.A, "Cambi/Sustec full-scale fleet: St Marys, Davyhulme, Ringsend, Thames, Blue Plains"),
+    "PN/A":           (Conf.A, "anammox sidestream: 100+ full-scale installations (DEMON/ANAMMOX)"),
+    "struvite":       (Conf.A, "Ostara Pearl / NuReSys / Crystalactor full-scale P recovery"),
+    "incineration":   (Conf.A, "sewage-sludge mono-incineration widespread (EU/Japan), fluidised bed"),
+    "gasification":   (Conf.B, "Logan/Loganholme full-scale AU since 2022 (34 kt/yr); intl demos"),
+    "pyrolysis":      (Conf.B, "South East Water PYROCO (VIC, commercial 2026) + Sydney Water Pyreg (2025); Pyreg EU sludge fleet"),
+    "htl":            (Conf.C, "pre-commercial for biosolids; limited references (Genifuel/Licella pilots)"),
+    "separate_PS_WAS":(Conf.B, "multiple demonstrations; mechanism established (Hillis & Taylor Ozwater'17)"),
+    "site_uplift":    (Conf.D, "site-specific magnitude requires BMP calibration"),
+}
+
+
 def build_thermal_endpoints(plant: dict = GENERIC) -> dict:
     """Four DISTINCT thermal-endpoint pathways on the shared THP+MAD front end. Returns
     {endpoint_name: Pathway}. Each closes carbon/nitrogen/phosphorus/energy and carries
@@ -994,7 +1012,7 @@ def build_thermal_endpoints(plant: dict = GENERIC) -> dict:
             outflows={"chp_electricity_generated": elec_gen,
                       "chp_heat_and_drying": biogas_chem*K.CHP_HEAT,
                       "process_losses": biogas_chem - elec_gen - biogas_chem*K.CHP_HEAT + endpoint_energy})
-        conf = {"High": Conf.B, "Medium": Conf.C, "Low": Conf.D}[e["maturity"]]
+        conf = EVIDENCE.get(name, (Conf.C, ""))[0]   # V3 U5: registry is the single source of truth
         pw = Pathway(
             name=f"THP + MAD + {name.title()} endpoint",
             description=f"Thermal endpoint = {name} ({e['temp']}). Screening-grade, literature-anchored.",
