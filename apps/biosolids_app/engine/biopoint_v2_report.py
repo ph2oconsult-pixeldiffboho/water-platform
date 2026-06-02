@@ -369,7 +369,7 @@ def build(bundle):
         ("Biogas CH\u2084 fraction", f"{K.CH4_FRACTION*100:.0f}%", "Calibrated", "THP-AD reference"),
         ("Soluble-N release efficiency", f"{K.N_SOLUBILISATION_EFF:.2f}", "Calibrated", "Mangere centrate 32-43% band"),
         ("Carbon per VS", f"{K.C_PER_VS} gC/gVS", "Estimate", "Municipal sludge literature"),
-        ("Phosphorus content", f"{K.P_PER_DS*100:.1f}% DS", "Estimate", "ETP P not measured"),
+        ("Phosphorus content", f"{K.P_PER_DS*100:.1f}% DS", "Estimate", "Plant P not measured"),
         ("Struvite P recovery", f"{K.STRUVITE_P_RECOVERY*100:.0f}%", "Estimate", "Process literature"),
         ("Thermal drying energy", f"{S.KT.DRY_MWH_PER_T_WATER} MWh/t water", "Estimate", "Evaporation + inefficiency"),
         ("Syngas recovery", f"{S.KT.SYNGAS_MWH_PER_TDS[0]}-{S.KT.SYNGAS_MWH_PER_TDS[2]} MWh/tDS", "Provisional", "Digested-solids gasification"),
@@ -644,7 +644,7 @@ def build(bundle):
                    "does not yet include the full digestion-kinetics narrative (Damk\u00f6hler / "
                    "HRT analysis) of the production Tier 1 engine, nor the wider pathway set; "
                    "those require porting the mad_v2 physics and additional pathways into the "
-                   "spine. ETP phosphorus is an estimate pending measured data.", S_SMALL))
+                   "spine. Phosphorus is an estimate pending measured data.", S_SMALL))
     return story
 
 
@@ -749,7 +749,7 @@ def project_development_story(bundle):
               "THP capital not costed here &mdash; obtain vendor quote; deferred-digester CAPEX is the offsetting value.",
               "Return-liquor nitrogen raises mainstream aeration/alkalinity load &mdash; assess TN headroom.",
               "PFAS not characterised &mdash; if land application is restricted, a thermal endpoint is required.",
-              "ETP phosphorus is an estimate &mdash; confirm by centrate/cake sampling."]:
+              "Phosphorus is an estimate &mdash; confirm by centrate/cake sampling."]:
         story.append(bullet(b))
 
     story.append(P("7 &nbsp; Recommendation &amp; Next Steps", S_H1))
@@ -901,7 +901,7 @@ def generate(mode, plant=S.ETP, outdir="/mnt/user-data/outputs"):
     out = f"{outdir}/{fname}"
     doc = SimpleDocTemplate(out, pagesize=A4, topMargin=18*mm, bottomMargin=20*mm,
                             leftMargin=20*mm, rightMargin=20*mm, title=title, author="BioPoint")
-    foot = make_footer(f"BioPoint - {title} (ETP)")
+    foot = make_footer(f"BioPoint - {title} ({plant.get('name', 'ETP')})")
     doc.build(story_fn(bundle), onFirstPage=foot, onLaterPages=foot)
     print("PDF written:", out)
     return out
