@@ -144,6 +144,7 @@ class K:
     FUGITIVE_CH4_FRAC = 0.015   # methane slip -> Scope 1 (capture performance, not gas volume)
     CHP_ELEC = 0.40
     CHP_HEAT = 0.45
+    GAS_UTILISATION_DEFAULT = 0.95  # biogas to CHP; rest flared (CHP-sizing artifact, plant input). Mangere-as-operated ~0.80
     STEAM_KWH_PER_KG = 0.70     # ~2.6 MJ/kg saturated steam
     DEWATER_KWH_PER_TDS = 40.0
     DIGESTER_HEAT_MWH_D = 15.0  # net, after hot THP-WAS heat integration
@@ -437,6 +438,15 @@ ST_MARYS = dict(
 )
 
 
+def _chp_split(biogas_chem, gas_util):
+    """Split generated biogas chemical energy by CHP utilisation (Mangere calibration).
+    Flaring (1-gas_util) is a CHP-sizing artifact - a plant input, not a constant.
+    Returns (elec, heat, losses, flared)."""
+    u = biogas_chem * gas_util
+    return (u * K.CHP_ELEC, u * K.CHP_HEAT, u * (1 - K.CHP_ELEC - K.CHP_HEAT),
+            biogas_chem * (1 - gas_util))
+
+
 def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
     # --- Feed basis (from plant) ---
     WAS_tds = plant["WAS_tds"]
@@ -470,9 +480,8 @@ def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
 
     # ---------------- ENERGY (MWh/d) ----------------
     biogas_chem = CH4_nm3 * K.CH4_LHV_KWH_NM3 / 1000.0
-    elec_gen = biogas_chem * K.CHP_ELEC
-    heat_gen = biogas_chem * K.CHP_HEAT
-    chp_losses = biogas_chem * (1 - K.CHP_ELEC - K.CHP_HEAT)
+    gas_util = plant.get("gas_utilisation_frac", K.GAS_UTILISATION_DEFAULT)
+    elec_gen, heat_gen, chp_losses, gas_flared = _chp_split(biogas_chem, gas_util)
     steam_t = WAS_tds * K.STEAM_T_PER_TDS
     steam_demand = steam_t * 1000 * K.STEAM_KWH_PER_KG / 1000.0
     heat_demand = steam_demand + K.DIGESTER_HEAT_MWH_D
@@ -482,15 +491,17 @@ def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
     cooling_par = cooling_water_t * K.COOLING_PUMP_KWH_PER_T / 1000.0  # MWh/d circulation parasitic
     parasitics = (dewater_par + K.STRUVITE_PARASITIC_MWH_D
                   + K.THP_PUMP_PARASITIC_MWH_D + K.PLANT_PARASITIC_MWH_D + cooling_par)
-    heat_surplus_unused = heat_gen - heat_demand        # delivered but unused (real output)
+    heat_used = min(heat_gen, heat_demand)
+    heat_surplus_unused = max(0.0, heat_gen - heat_demand)        # delivered but unused (real output)
     net_elec = elec_gen - parasitics + K.PRIMARY_AERATION_CREDIT_MWH_D  # net incl. upstream credit
     energy = Ledger("energy", "MWh/d",
         inflows={"biogas_chemical_energy": biogas_chem},
         outflows={                                       # closes by real physics, no plug
             "chp_electricity_generated": elec_gen,
-            "ad_heat_used_thp_and_digester": heat_demand,
+            "ad_heat_used_thp_and_digester": heat_used,
             "heat_surplus_unused": heat_surplus_unused,
             "chp_conversion_losses": chp_losses,
+            "biogas_flared_unused": gas_flared,
         })
 
     # ---------------- NITROGEN (kgN/d) ----------------
@@ -788,16 +799,17 @@ def build_conventional_pathway(plant: dict = GENERIC) -> Pathway:
                   "atmosphere_fugitive_CH4_scope1": C_fug})
 
     biogas_chem = CH4 * K.CH4_LHV_KWH_NM3 / 1000.0
-    elec_gen = biogas_chem * K.CHP_ELEC
-    heat_gen = biogas_chem * K.CHP_HEAT
-    chp_losses = biogas_chem * (1 - K.CHP_ELEC - K.CHP_HEAT)
+    gas_util = plant.get("gas_utilisation_frac", K.GAS_UTILISATION_DEFAULT)
+    elec_gen, heat_gen, chp_losses, gas_flared = _chp_split(biogas_chem, gas_util)
     heat_demand = K.DIGESTER_HEAT_MWH_D                       # no THP steam
+    heat_used = min(heat_gen, heat_demand)
     parasitics = (VS_rem + total_tds*(1-vs_ts)) * K.DEWATER_KWH_PER_TDS / 1000.0 + K.PLANT_PARASITIC_MWH_D
     net_elec = elec_gen - parasitics + K.PRIMARY_AERATION_CREDIT_MWH_D
     energy = Ledger("energy", "MWh/d",
         inflows={"biogas_chemical_energy": biogas_chem},
-        outflows={"chp_electricity_generated": elec_gen, "ad_heat_used_digester": heat_demand,
-                  "heat_surplus_unused": heat_gen - heat_demand, "chp_conversion_losses": chp_losses})
+        outflows={"chp_electricity_generated": elec_gen, "ad_heat_used_digester": heat_used,
+                  "heat_surplus_unused": max(0.0, heat_gen - heat_demand),
+                  "chp_conversion_losses": chp_losses, "biogas_flared_unused": gas_flared})
 
     N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
     N_rel = N_in * VSR * K.N_SOLUBILISATION_EFF
