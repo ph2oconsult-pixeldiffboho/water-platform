@@ -8,7 +8,7 @@ from __future__ import annotations
 import os as _os, sys as _sys
 _ED = _os.path.dirname(_os.path.abspath(__file__))
 if _ED not in _sys.path:
-    _sys.path.insert(0, _ED)
+    _sys.path.append(_ED)
 import sys
 from io import BytesIO
 from datetime import date
