@@ -1089,6 +1089,93 @@ def build_thermal_endpoints(plant: dict = GENERIC) -> dict:
 
 
 # ===========================================================================
+# V3.5 - ENDPOINT FAMILIES + STAGE-3 COMPOSITION LAYER
+# ===========================================================================
+# Stop forcing biology/quality/endpoint into one score. Keep the calibrated
+# front-end builders (Stage 1 biology + Stage 2 quality) as the engine, and
+# COMPOSE a Stage-3 carbon endpoint onto any of them. Endpoints are grouped by
+# CARBON FATE into three families. Endpoint splits stay PROVISIONAL (KT bands,
+# confidence C); only the cake C/N/P is re-routed - digestion is untouched.
+ENDPOINT_FAMILY = {                       # endpoint -> (family, carbon-strategy label)
+    "land":         ("Carbon Retention",   "retain C in soil (low permanence; PFAS land risk)"),
+    "pyrolysis":    ("Carbon Retention",   "retain C as stable biochar (~80% 100-yr permanence)"),
+    "htl":          ("Carbon Conversion",  "convert C to biocrude fuel product"),
+    "gasification": ("Carbon Conversion",  "convert C to syngas/energy"),
+    "incineration": ("Carbon Destruction", "destroy C; max PFAS destruction; P in ash"),
+}
+
+
+def compose_pathway(front_end: Pathway, endpoint: str, plant: dict = GENERIC) -> Pathway:
+    """V3.5 Stage-3 composition. Take a built biology+quality FRONT-END and swap its land
+    endpoint for a carbon endpoint, re-routing ONLY the cake C/N/P through the endpoint family.
+    Digestion (biogas, liquor, struvite, PN/A) is untouched and its ledgers are reused. Endpoint
+    splits are PROVISIONAL (KT bands, confidence C); the digestion ledgers close exactly, the
+    endpoint energy adjustment is carried as a net-export BAND."""
+    fam, strategy = ENDPOINT_FAMILY[endpoint]
+    cl = front_end.ledgers["carbon"]; nl = front_end.ledgers["nitrogen"]; pl = front_end.ledgers["phosphorus"]
+    C_cake = cl.outflows.get("soil_land_application", 0.0)
+    N_cake = nl.outflows.get("cake_organic_N_to_land", 0.0)
+    P_cake = pl.outflows.get("cake_P_to_land", 0.0)
+
+    if endpoint == "land":                # already the front-end endpoint; tag family + return
+        front_end.basis.update({"endpoint": "land", "endpoint_family": fam})
+        front_end.traits["carbon_strategy"] = fam
+        return front_end
+
+    e = THERMAL_ENDPOINTS[endpoint]
+    keepC = {k: v for k, v in cl.outflows.items() if k != "soil_land_application"}
+    c_char = C_cake * e["c_char"]; c_bio = C_cake * e["c_biocrude"]; c_co2 = C_cake - c_char - c_bio
+    outC = dict(keepC)
+    if c_char > 0: outC["char_permanently_stored"] = c_char
+    if c_bio > 0:  outC["biocrude_product"] = c_bio
+    outC["atmosphere_thermal_CO2"] = c_co2
+    carbon = Ledger("carbon", "tC/d", inflows=dict(cl.inflows), outflows=outC)
+
+    keepN = {k: v for k, v in nl.outflows.items() if k != "cake_organic_N_to_land"}
+    outN = dict(keepN)
+    outN["volatilised_NOx_N2"] = N_cake * e["n_atm"]
+    outN["aqueous_sidestream_N"] = N_cake * e["n_aqueous"]
+    outN["retained_in_solid_NPK"] = N_cake * e["n_solid"]
+    nitrogen = Ledger("nitrogen", "kgN/d", inflows=dict(nl.inflows), outflows=outN)
+
+    keepP = {k: v for k, v in pl.outflows.items() if k != "cake_P_to_land"}
+    outP = dict(keepP)
+    outP["recoverable_in_ash_or_char"] = P_cake * e["p_recoverable"]
+    outP["aqueous_or_lost"] = P_cake * (1 - e["p_recoverable"])
+    phosphorus = Ledger("phosphorus", "kgP/d", inflows=dict(pl.inflows), outflows=outP)
+
+    cake_ds = front_end.basis.get("cake_ds", 0.22)
+    wet = front_end.basis.get("product_wet_tpd", 0.0)
+    cake_solids = wet * cake_ds
+    rec = cake_solids * e["energy_mwh_tds"] * 0.4                       # endpoint recovery (already-digested solids)
+    dry = (max(0.0, wet - cake_solids / KT.DRY_TARGET_DS) * KT.DRY_MWH_PER_T_WATER) if e["drying"] else 0.0
+    net_c = front_end.net_export_mwh_d + rec - dry
+    net_lo = front_end.net_export_mwh_d + rec * 0.6 - dry
+    net_hi = front_end.net_export_mwh_d + rec * 1.4 - dry
+    pfas = e["pfas"]; conf = EVIDENCE.get(endpoint, (Conf.C, ""))[0]
+
+    base = dict(front_end.basis)
+    base.update({"endpoint": endpoint, "endpoint_family": fam, "has_endpoint": True,
+                 "char_tC_d": c_char, "biocrude_tC_d": c_bio,
+                 "product_wet_tpd": (cake_solids / KT.DRY_TARGET_DS) if e["drying"] else (cake_solids * 0.3 / 0.95)})
+    pw = Pathway(
+        name=f"{front_end.name} -> {endpoint} endpoint",
+        description=f"V3.5 composition: {front_end.name} front-end -> Stage-3 {endpoint} ({fam}). "
+                    f"Endpoint splits PROVISIONAL (KT bands, confidence C); digestion ledgers exact.",
+        ledgers={"carbon": carbon, "energy": front_end.ledgers["energy"],
+                 "nitrogen": nitrogen, "phosphorus": phosphorus},
+        moves=front_end.moves, pfas_destruction_frac=pfas,
+        net_export_mwh_d=net_c, generation_mwh_d=front_end.generation_mwh_d, basis=base,
+        bands={"energy_neutrality": (net_lo, net_c, net_hi),
+               "pfas": (max(0.0, pfas - 0.05), pfas, min(1.0, pfas + 0.02))})
+    _attach(pw, endpoint="thermal", conf=conf)
+    pw.traits["carbon_strategy"] = fam
+    pw.traits["maturity"] = e["maturity"]; pw.traits["pfas"] = pfas
+    return pw
+
+
+
+# ===========================================================================
 # V2.1 — CARBON VALUE ENGINE (permanence, not just fate)
 # ===========================================================================
 # Fraction of carbon still sequestered at 100 years, by destination (IPCC biochar
