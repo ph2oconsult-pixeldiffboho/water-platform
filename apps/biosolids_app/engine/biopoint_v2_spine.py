@@ -1030,23 +1030,66 @@ def _permanence(name):
     return 0.0
 
 
-def carbon_value(pw: Pathway, credit_price_per_t=150.0, grid_ef_t_per_mwh=0.6) -> dict:
-    """Move from carbon FATE to carbon VALUE: permanent sequestration + avoided fossil
-    energy - fugitive methane, priced. Answers 'is this pathway net carbon-negative?'"""
+def carbon_value(pw: Pathway, credit_price_per_t=150.0, credit_price_avoided=35.0,
+                 grid_ef_t_per_mwh=0.6) -> dict:
+    """Carbon FATE -> carbon VALUE. Durable REMOVAL (permanent sequestration) and
+    AVOIDED fossil emissions are reported SEPARATELY and are NEVER summed into a single
+    'removal' figure (V3 Update 3) - they are physically different and price differently.
+    'carbon_negative' means genuine net removal: the pathway sequesters more durable
+    carbon than it directly emits, EXCLUDING any avoided-emission credits."""
     cl = pw.ledgers["carbon"]
-    perm_C = sum(v * _permanence(k) for k, v in cl.outflows.items() if v > 0)   # tC/d retained @100yr
-    seq_CO2e = perm_C * 44/12                                                   # tCO2e/d removed
+    perm_C = sum(v * _permanence(k) for k, v in cl.outflows.items() if v > 0)
+    removed_CO2e_d = perm_C * 44/12
     fug_C = sum(v for k, v in cl.outflows.items() if "fugitive" in k)
-    fug_CO2e = fug_C * (16/12) * 28                                             # CH4 mass x GWP100
-    avoided_fossil = max(0.0, pw.net_export_mwh_d) * grid_ef_t_per_mwh          # tCO2e/d
-    net_removal_d = seq_CO2e + avoided_fossil - fug_CO2e                        # tCO2e/d (>0 = net negative emissions)
-    net_removal_y = net_removal_d * 365
+    fug_CO2e = fug_C * (16/12) * 28
+    fossil_C = sum(v for k, v in cl.outflows.items() if "fossil" in k)
+    direct_CO2e_d = fug_CO2e + fossil_C * 44/12
+    avoided_CO2e_d = max(0.0, pw.net_export_mwh_d) * grid_ef_t_per_mwh
+    net_removal_y = (removed_CO2e_d - direct_CO2e_d) * 365
+    avoided_y = avoided_CO2e_d * 365
     return {
-        "permanent_C_tC_d": perm_C, "sequestered_CO2e_d": seq_CO2e,
-        "avoided_fossil_CO2e_d": avoided_fossil, "fugitive_CO2e_d": fug_CO2e,
+        "permanent_C_tC_d": perm_C,
+        "removed_gross_tCO2e_d": removed_CO2e_d,
+        "direct_emissions_tCO2e_d": direct_CO2e_d,
         "net_removal_tCO2e_yr": net_removal_y,
         "carbon_negative": net_removal_y > 0,
-        "credit_value_m_aud_yr": net_removal_y * credit_price_per_t / 1e6,
+        "avoided_fossil_tCO2e_yr": avoided_y,
+        "combined_ghg_benefit_tCO2e_yr": net_removal_y + avoided_y,
+        "removal_credit_m_aud_yr": net_removal_y * credit_price_per_t / 1e6,
+        "avoided_credit_m_aud_yr": avoided_y * credit_price_avoided / 1e6,
+        "credit_value_m_aud_yr": (net_removal_y * credit_price_per_t
+                                  + avoided_y * credit_price_avoided) / 1e6,
+        "sequestered_CO2e_d": removed_CO2e_d,
+        "avoided_fossil_CO2e_d": avoided_CO2e_d,
+        "fugitive_CO2e_d": fug_CO2e,
+    }
+
+
+def carbon_categories(pw: Pathway, grid_ef_t_per_mwh=0.6) -> dict:
+    """The six V3 carbon categories, reported DISTINCTLY (Update 3). Fate categories are
+    carbon MASS (tC/d) off the closed ledger; 'permanently sequestered' is the durable
+    SUBSET of 'retained'. 'Removed' and 'Avoided' are climate metrics (tCO2e/d), kept apart."""
+    cl = pw.ledgers["carbon"]
+    out = {k: v for k, v in cl.outflows.items() if v > 0}
+    feed_C = sum(cl.inflows.values())
+    emitted   = sum(v for k, v in out.items() if k.startswith("atmosphere"))
+    recovered = sum(v for k, v in out.items() if "biocrude" in k)
+    liquor    = sum(v for k, v in out.items() if "liquor" in k)
+    retained  = sum(v for k, v in out.items()
+                    if any(t in k for t in ("soil", "land", "char", "ash", "cake")))
+    sequestered = sum(v * _permanence(k) for k, v in out.items())
+    fug_C    = sum(v for k, v in out.items() if "fugitive" in k)
+    fossil_C = sum(v for k, v in out.items() if "fossil" in k)
+    return {
+        "feed_carbon_tC_d": feed_C,
+        "destroyed_emitted_tC_d": emitted,
+        "recovered_in_product_tC_d": recovered,
+        "returned_in_liquor_tC_d": liquor,
+        "retained_in_solids_tC_d": retained,
+        "of_which_permanently_sequestered_tC_d": sequestered,
+        "removed_tCO2e_d": sequestered * 44/12,
+        "avoided_tCO2e_d": max(0.0, pw.net_export_mwh_d) * grid_ef_t_per_mwh,
+        "direct_emissions_tCO2e_d": fug_C * (16/12) * 28 + fossil_C * 44/12,
     }
 
 
