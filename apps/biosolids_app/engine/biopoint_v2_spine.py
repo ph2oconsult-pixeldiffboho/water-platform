@@ -375,6 +375,16 @@ class KO:  # opex constants (AUD)
     STRUVITE_MW_PER_P = 245.0 / 31.0
 
 
+class KN:  # nutrient-recovery economics (AUD) - screening estimates, tunable
+    AS_PRICE_T = 350.0            # ammonium sulphate product, $/t
+    AS_N_FRAC = 0.21              # N content of (NH4)2SO4 by mass
+    AS_RECOVERY = 0.75            # return-liquor N captured as AS (stripping efficiency)
+    PNA_N_REMOVAL = 0.88          # return-liquor N destroyed to N2 by PN/A
+    AVOIDED_N_TREAT_PER_KG = 3.0  # avoided mainstream/sidestream N-removal cost, $/kg N
+    N_FERT_VALUE_PER_KG = 1.2     # synthetic-N replacement value, $/kg N (urea-equiv)
+    P_FERT_VALUE_PER_KG = 3.5     # synthetic-P replacement value, $/kg P (DAP-equiv)
+
+
 def opex_view(pw: Pathway) -> dict:
     """Annual OPEX, read off ledgers + basis. Energy from net export, transport from
     product tonnage, chemicals/O&M from basis, product revenue from the P ledger.
@@ -1143,6 +1153,44 @@ OPTION_ECON = {
     "FOGO co-digestion capacity":  (0.50, 3.0),   # gate fees + biogas
 }
 
+
+def nutrient_value(pw: Pathway) -> dict:
+    """Nutrient recovery as a co-equal value stream (V3 U8). Struvite (P) plus the two
+    MUTUALLY-EXCLUSIVE routes for return-liquor nitrogen - PN/A (destroy -> avoided
+    treatment cost) vs ammonium sulphate (recover -> fertiliser product). PN/A and AS are
+    alternatives and are reported separately, never summed. Also reports sidestream load
+    reduction, fertiliser-replacement value, and a phosphorus-security index."""
+    N = pw.ledgers["nitrogen"]; P = pw.ledgers["phosphorus"]
+    feed_N = N.total_in; feed_P = P.total_in
+    p_struvite = P.outflows.get("struvite_P", 0.0)              # kgP/d
+    n_struvite = N.outflows.get("struvite_N", 0.0)              # kgN/d (P-limited)
+    rl_N = N.outflows.get("return_liquor_NH4_to_WWTW", 0.0)     # kgN/d treatable sidestream
+    struvite_tpy = p_struvite * KO.STRUVITE_MW_PER_P / 1000.0 * 365
+    struvite_rev = struvite_tpy * KO.STRUVITE_PRICE_T / 1e6     # M$/yr
+    pna_N = rl_N * KN.PNA_N_REMOVAL
+    pna_value = pna_N * 365 * KN.AVOIDED_N_TREAT_PER_KG / 1e6   # M$/yr avoided cost
+    as_N = rl_N * KN.AS_RECOVERY
+    as_tpy = as_N / KN.AS_N_FRAC / 1000.0 * 365
+    as_rev = as_tpy * KN.AS_PRICE_T / 1e6                       # M$/yr product revenue
+    best = "AS" if as_rev >= pna_value else "PNA"
+    n_route = as_N if best == "AS" else pna_N
+    fert_value = ((n_struvite + as_N) * KN.N_FERT_VALUE_PER_KG
+                  + p_struvite * KN.P_FERT_VALUE_PER_KG) * 365 / 1e6
+    return {
+        "feed_N_kgd": feed_N, "feed_P_kgd": feed_P,
+        "P_recovered_kgd": p_struvite, "struvite_t_yr": struvite_tpy,
+        "struvite_revenue_m_aud_yr": struvite_rev,
+        "return_liquor_N_kgd": rl_N,
+        "pna_N_destroyed_kgd": pna_N, "pna_avoided_cost_m_aud_yr": pna_value,
+        "as_N_recovered_kgd": as_N, "as_product_t_yr": as_tpy, "as_revenue_m_aud_yr": as_rev,
+        "recommended_N_route": best,
+        "sidestream_N_removed_kgd": n_struvite + n_route,
+        "residual_return_liquor_N_kgd": rl_N - n_route,
+        "fertiliser_value_m_aud_yr": fert_value,
+        "P_security_pct": (p_struvite / feed_P * 100) if feed_P else 0.0,
+        "N_recovered_pct": ((n_struvite + as_N) / feed_N * 100) if feed_N else 0.0,
+        "nutrient_value_m_aud_yr": struvite_rev + max(pna_value, as_rev),
+    }
 
 def optionality_value(pw: Pathway) -> dict:
     """Expected value retained (preserved options) vs expected value lost (foreclosed).
