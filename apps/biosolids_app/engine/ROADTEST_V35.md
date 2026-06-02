@@ -87,6 +87,9 @@ conventional A. Non-PN/A pathways unchanged; all ledgers still close.
 
 ## 7. Not yet tested (next)
 
-- GENERIC-plant robustness (graceful degradation where digester_vol / feed_N absent).
 - Actual PDF render of the carbon-strategy section (9-column table fit on A4).
 - Independent third-dataset validation (beyond the two Cambi memos the model is calibrated to).
+
+GENERIC-plant robustness: PASSED - full stack (builders, composition, carbon_strategy_comparison,
+decision_hierarchy) runs without exception on a plant missing digester_vol_m3 and feed_N_kgd; the K
+capacity claim self-suppresses to 0 rather than defaulting, and switches on when a volume is supplied.
