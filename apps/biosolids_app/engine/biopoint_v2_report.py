@@ -663,9 +663,9 @@ def project_development_story(bundle):
     story.append(P("BioPoint &middot; What should I build?", S_SUB))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceBefore=3, spaceAfter=8))
 
-    story.append(P("Recommended Configuration", S_H1))
+    story.append(P("Preferred Strategic Pathway", S_H1))
     story.append(P(f"<b>THP + Mesophilic Digestion + Struvite + Land</b> &mdash; the highest-"
-                   f"performing <i>commit-grade</i> configuration for {plant['name']} "
+                   f"performing <i>commit-grade</i> pathway for {plant['name']} "
                    f"({tot:.0f} tDS/d).", mk("rec", parent=S_BODY, backColor=LIGHT, borderPadding=6,
                                              textColor=INK)))
     story.append(kv([
@@ -680,15 +680,15 @@ def project_development_story(bundle):
     ]))
     story.append(P("Why not the higher-scoring option? The thermal endpoint scores higher on raw "
                    f"performance ({at['performance']*100:.0f}/100) but is provisional (low confidence, "
-                   "uncalibrated) and not yet buildable. The recommended configuration is the best "
-                   "option that is commit-grade today. Score is absolute (weighted satisfaction of "
+                   "uncalibrated) and not yet buildable. The preferred strategic pathway is the highest-value "
+                   "pathway under current assumptions that is commit-grade today. Score is absolute (weighted satisfaction of "
                    "all eight drivers, including PFAS which no digestion route alone can meet), not "
                    "relative to the field &mdash; so mid-range is a strong result.", S_SMALL))
 
-    story.append(P("1 &nbsp; Configuration Comparison", S_H1))
-    rows = [[P("Configuration", S_CELLH), P("Perf.", S_CRH), P("Conf.", S_CRH),
+    story.append(P("1 &nbsp; Pathway Comparison", S_H1))
+    rows = [[P("Pathway", S_CELLH), P("Perf.", S_CRH), P("Conf.", S_CRH),
              P("Net energy", S_CRH), P("Net OPEX", S_CRH), P("Capacity", S_CRH), P("Class", S_CRH)]]
-    for nm, p, ax in [("Conventional MAD + land", cp, ac), ("THP + MAD + struvite + land (rec.)", wp, aw),
+    for nm, p, ax in [("Conventional MAD + land", cp, ac), ("THP + MAD + struvite + land (preferred)", wp, aw),
                       ("THP + MAD + thermal endpoint", tp, at)]:
         o = S.opex_view(p); c = S.capacity_view(p)
         rows.append([P(nm, S_CELL), P(f"{ax['performance']*100:.0f}", S_CR),
