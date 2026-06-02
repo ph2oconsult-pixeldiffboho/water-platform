@@ -15,6 +15,14 @@ from engine.tier1_data import (
     check_data_gate, assemble_report_data, REGULATORY_CONTEXTS,
 )
 from engine.tier1_report import generate_tier1_report
+try:
+    from engine.biopoint_v2_bridge import (
+        v1_data_to_v2_plant, generate_v2_report_bytes, V2_MODES, V2_MODE_LABELS,
+    )
+    _V2_AVAILABLE = True
+except Exception as _v2_imp_err:   # V2 is optional; never take down the V1 page
+    _V2_AVAILABLE = False
+    _V2_IMPORT_ERROR = _v2_imp_err
 
 
 REGULATORY_OPTIONS = {
@@ -156,6 +164,22 @@ def render():
             placeholder="e.g. Melbourne Water evaluating THP options at ETP ahead of 2027 EPA Class A deadline...",
             key="t1_client_context")
 
+    # ── BioPoint V2 strategic report ─────────────────────────
+    v2_mode = None
+    if _V2_AVAILABLE:
+        st.subheader("BioPoint V2 strategic report")
+        v2_mode = st.selectbox(
+            "V2 report view",
+            list(V2_MODES),
+            format_func=lambda m: V2_MODE_LABELS[m],
+            key="t1_v2_mode",
+        )
+        st.caption(
+            "V2 runs the conserved-quantity (C/N/P/energy) engine on the same plant "
+            "inputs as V1. Note: the V2 reports are authored on the ETP reference basis — "
+            "the computed numbers reflect your inputs, but some narrative labels still say ETP."
+        )
+
     st.divider()
 
     # ── Generate + download ────────────────────────────────────────────────
@@ -179,6 +203,17 @@ def render():
                     ss["t1_report_pdf"]  = pdf
                     ss["t1_report_name"] = project_name.replace(" ", "_")
                     st.success(f"Report ready — {len(pdf)//1024} kB", icon="✅")
+                    if _V2_AVAILABLE and v2_mode:
+                        try:
+                            v2_plant = v1_data_to_v2_plant(data)
+                            ss["t1_v2_pdf"]  = generate_v2_report_bytes(v2_mode, v2_plant)
+                            ss["t1_v2_mode_done"] = v2_mode
+                            st.success(
+                                f"V2 {V2_MODE_LABELS[v2_mode]} ready — "
+                                f"{len(ss['t1_v2_pdf'])//1024} kB", icon="✅")
+                        except Exception as ex_v2:
+                            ss.pop("t1_v2_pdf", None)
+                            st.warning(f"V2 report could not be generated: {ex_v2}")
                 except Exception as ex:
                     st.error(f"Generation failed: {ex}")
                     st.exception(ex)
@@ -186,7 +221,7 @@ def render():
     with col_dl:
         if "t1_report_pdf" in ss:
             st.download_button(
-                "⬇  Download PDF",
+                "⬇  Download V1 Tier 1 PDF",
                 data=ss["t1_report_pdf"],
                 file_name=f"BioPoint_Tier1_{ss.get('t1_report_name','Report')}.pdf",
                 mime="application/pdf",
@@ -195,3 +230,14 @@ def render():
             )
         else:
             st.caption("Generate the report first, then download here.")
+
+        if "t1_v2_pdf" in ss:
+            _vm = ss.get("t1_v2_mode_done", "project")
+            st.download_button(
+                f"⬇  Download V2 — {V2_MODE_LABELS.get(_vm, _vm)}",
+                data=ss["t1_v2_pdf"],
+                file_name=f"BioPoint_V2_{_vm}_{ss.get('t1_report_name','Report')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="t1_v2_dl",
+            )
