@@ -131,6 +131,39 @@ def build(bundle):
                    mk("ins", parent=S_BODY, textColor=INK, backColor=LIGHT, borderPadding=6,
                       spaceBefore=4, leftIndent=4, rightIndent=4)))
 
+    # ===== Decision hierarchy (V3 U1) =====
+    dh = S.decision_hierarchy(plant)
+    story.append(P("Decision Hierarchy (L1-L5) &amp; Least-Regret Pathway", S_H1))
+    story.append(P("Constraint diagnosis drives the ordering; it does not prune. Every viable pathway "
+                   "stays active. A pathway is flagged where a shock at or above "
+                   f"{dh['risk_threshold']:.0%} likelihood would break it &mdash; it stays on the table "
+                   "but must be paired with the named hedge to be commit-grade.", S_SMALL))
+    story.append(P("L1 &nbsp; Constraint Diagnosis", S_H2))
+    rows=[[P("Constraint", S_CELLH), P("Status", S_CELLH), P("State", S_CELLH), P("Flips under", S_CELLH)]]
+    for c in dh["L1_constraints"]:
+        rows.append([P(c["constraint"].replace("_"," "), S_CELL),
+                     P("BINDING" if c["binding"] else "watch", S_CELL),
+                     P(c["state"], S_CELL), P(", ".join(c["shocks"]) or "-", S_CELL)])
+    story.append(styled(Table(rows, colWidths=[34*mm, 16*mm, 78*mm, 42*mm])))
+    L2=dh["L2_capacity"]; L3=dh["L3_resource_recovery"]; L4=dh["L4_carbon"]
+    story.append(kv([
+        ("L2 Capacity intensification", f"{L2.get('digesters_avoided',0):.1f} digesters avoided; {L2.get('capacity_headroom_tds',0):,.0f} tDS/d headroom"),
+        ("L3 Resource recovery", f"nutrient value ${L3['nutrient_value_m_aud_yr']:.2f}M/yr (P {L3['P_security_pct']:.0f}% recovered)"),
+        ("L4 Carbon strategy", f"removed {L4['net_removal_tCO2e_yr']:,.0f} + avoided {L4['avoided_fossil_tCO2e_yr']:,.0f} tCO2e/yr (separate)"),
+        ("L5 Thermal endpoint", "evidence-graded; held open as a hedge"),
+    ], w=(52, 118)))
+    story.append(P("Pathways &mdash; regret profile (none pruned)", S_H2))
+    rows=[[P("Pathway", S_CELLH), P("Perf", S_CRH), P("Conf", S_CRH), P("Resil", S_CRH), P("Risk", S_CRH), P("Breaks under (hedge needed)", S_CELLH)]]
+    for p in dh["pathways"]:
+        rows.append([P(p["pathway"], S_CELL), P(f"{p['performance']*100:.0f}", S_CR),
+                     P(p["confidence"], S_CR), P(f"{p['resilience']:.2f}", S_CR),
+                     P("OK" if p["acceptable_risk"] else "HEDGE", S_CR),
+                     P("-" if p["acceptable_risk"] else ", ".join(x["shock"] for x in p["high_likelihood_shocks"]), S_CELL)])
+    story.append(styled(Table(rows, colWidths=[54*mm, 12*mm, 12*mm, 14*mm, 16*mm, 62*mm])))
+    story.append(P("Risk OK = no shock at/above the threshold breaks it; HEDGE = one does. HEDGE pathways "
+                   "are retained, not removed &mdash; the recommendation pairs them with a kept-open option "
+                   "(e.g. a thermal endpoint against a PFAS land-application ban).", S_SMALL))
+
     # ===== 1 objective =====
     story.append(P("1 &nbsp; Strategic Objective", S_H1))
     story.append(P("Pathways are weighted against the utility's stated driver ranking. The "
@@ -736,13 +769,27 @@ def project_development_story(bundle):
     story.append(P("Scope 1 is dominated by fugitive CH4; controlling gas capture is the largest "
                    "GHG lever and is independent of configuration.", S_SMALL))
 
-    story.append(P("5 &nbsp; Nutrient Recovery", S_H1))
-    Pstr = wp.ledgers["phosphorus"].outflows["struvite_P"]
-    ncen = wp.ledgers["nitrogen"].outflows["return_liquor_NH4_to_WWTW"]
-    story.append(P(f"Struvite recovers ~{Pstr:,.0f} kg P/d as slow-release fertiliser. The residual "
-                   f"return-liquor nitrogen ({ncen:,.0f} kg N/d) can be recovered as ammonium sulphate "
-                   "or destroyed via PN/A &mdash; recover-before-destroy where the nutrient driver matters "
-                   "(see Strategic Pathway report for the full hierarchy)."))
+    story.append(P("5 &nbsp; Nutrient Recovery (co-equal value stream)", S_H1))
+    nv = S.nutrient_value(wp)
+    story.append(P(f"Nutrient recovery is quantified as a value stream in its own right. Struvite "
+                   f"recovers {nv['P_recovered_kgd']:,.0f} kg P/d ({nv['P_security_pct']:.0f}% of feed P). "
+                   f"The return-liquor nitrogen ({nv['return_liquor_N_kgd']:,.0f} kg N/d) is addressed two "
+                   "ways, reported separately and never summed: PN/A <i>destroys</i> it (avoided treatment "
+                   "cost) or ammonium sulphate <i>recovers</i> it as fertiliser."))
+    story.append(kv([
+        ("Struvite P recovered", f"{nv['P_recovered_kgd']:,.0f} kgP/d ({nv['struvite_t_yr']:,.0f} t/yr)"),
+        ("Struvite revenue", f"${nv['struvite_revenue_m_aud_yr']:.2f}M/yr"),
+        ("Return-liquor N (treatable)", f"{nv['return_liquor_N_kgd']:,.0f} kgN/d"),
+        ("N via PN/A (destroy)", f"{nv['pna_N_destroyed_kgd']:,.0f} kgN/d, ${nv['pna_avoided_cost_m_aud_yr']:.2f}M/yr avoided"),
+        ("N via ammonium sulphate (recover)", f"{nv['as_N_recovered_kgd']:,.0f} kgN/d, ${nv['as_revenue_m_aud_yr']:.2f}M/yr"),
+        ("Recommended N route", nv["recommended_N_route"]),
+        ("Sidestream load reduction", f"{nv['sidestream_N_removed_kgd']:,.0f} kgN/d removed"),
+        ("Fertiliser-replacement value", f"${nv['fertiliser_value_m_aud_yr']:.2f}M/yr"),
+        ("Future nutrient security", f"P {nv['P_security_pct']:.0f}% / N {nv['N_recovered_pct']:.0f}% recovered"),
+    ], w=(64, 106)))
+    story.append(P(f"<b>Headline nutrient value ${nv['nutrient_value_m_aud_yr']:.2f}M/yr</b> against digestion "
+                   f"net OPEX ${ox['net_m_aud']:+.2f}M/yr &mdash; nutrient recovery is a value stream on par "
+                   "with digestion optimisation, not a by-product.", S_SMALL))
 
     story.append(P("6 &nbsp; Key Risks &amp; Assumptions", S_H1))
     for b in ["WAS hydrolysis HRT may limit conventional performance &mdash; confirm with BMP testing.",
