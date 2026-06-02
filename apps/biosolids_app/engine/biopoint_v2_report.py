@@ -390,6 +390,29 @@ def build(bundle):
                    "Mangere band brought it to 36%, and the check now passes.", S_SMALL))
 
     # ===== 12 constants register =====
+    # ===== ETP Calibration Basis (measured 2006-2017) =====
+    if "ETP" in plant.get("name", ""):
+        cal = S.ETP_CAL
+        story.append(P("ETP Calibration Basis (measured 2006-2017)", S_H1))
+        story.append(P("The ETP feedstock model is anchored in the measured ETP primary sedimentation "
+                       "record (2006-2017), not generic literature factors. Flow, feed/effluent quality "
+                       "and clarifier performance below are site data; P10/P50/P90 give the operating "
+                       "envelope.", S_SMALL))
+        story.append(kv([
+            ("IPS flow P10/P50/P90 (MLD)", f"{cal['flow_mld'][0]:.0f} / {cal['flow_mld'][1]:.0f} / {cal['flow_mld'][2]:.0f}"),
+            ("Feed SS / COD / BOD5 / TKN (P50, mg/L)", f"{cal['feed_ss_mgL'][1]:.0f} / {cal['feed_cod_mgL'][1]:.0f} / {cal['feed_bod5_mgL'][1]:.0f} / {cal['feed_tkn_mgL'][1]:.0f}"),
+            ("Clarifier removal SS / COD / BOD5 / TKN", f"{cal['removal_ss']*100:.0f}% / {cal['removal_cod']*100:.0f}% / {cal['removal_bod5']*100:.0f}% / {cal['removal_tkn']*100:.0f}%"),
+            ("PS production measured band (tDS/d)", f"{cal['ps_ds_band_tpd'][0]:.0f} / {cal['ps_ds_band_tpd'][1]:.0f} / {cal['ps_ds_band_tpd'][2]:.0f} (P10/P50/P90; mean 99)"),
+            ("PS production recent 2015-2017 (tDS/d)", f"~{cal['ps_ds_recent_tpd']:.0f}"),
+            ("PS adopted design basis (tDS/d)", f"{cal['ps_ds_design_tpd']:.1f} (inside measured envelope)"),
+            ("PS nitrogen capture (t N/d)", f"~{cal['ps_n_capture_tpd']:.1f} (only {cal['removal_tkn']*100:.0f}% of influent TKN)"),
+            ("Feedstock confidence", cal["confidence"]),
+        ], w=(80, 90)))
+        story.append(P("The adopted PS design load (120.7 tDS/d) sits inside the measured envelope "
+                       "(P90 150; recent-years mean ~115). Most influent nitrogen stays soluble and "
+                       "passes to secondary treatment - the digester N load and return-liquor N arrive "
+                       "predominantly via WAS, which this PST dataset does not measure (flagged).", S_SMALL))
+
     story.append(P("12 &nbsp; Parameter Register &amp; Provenance", S_H1))
     story.append(P("The honest backbone of the model: every parameter with its value and status "
                    "&mdash; <b>calibrated</b> against a reference plant, <b>estimate</b> "

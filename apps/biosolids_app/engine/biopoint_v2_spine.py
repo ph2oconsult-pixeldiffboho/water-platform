@@ -369,6 +369,22 @@ def capacity_view(pw: Pathway) -> dict:
     return out
 
 
+ETP_CAL = {  # Measured ETP PST calibration record (2006-2017). Design PS_tds=120.7 RETAINED;
+    # measured values document the site basis and validate the design point against real data.
+    "flow_mld": (308, 358, 475),            # IPS flow P10/P50/P90 (mean 384)
+    "feed_ss_mgL": (280, 400, 540), "feed_cod_mgL": (650, 780, 970),   # COD 2015-2017
+    "feed_bod5_mgL": (290, 370, 560), "feed_tkn_mgL": (50, 63, 75),
+    "eff_ss_mgL": (100, 140, 220), "eff_bod5_mgL": (220, 300, 380), "eff_tkn_mgL": (47, 57, 67),
+    "removal_ss": 0.645, "removal_cod": 0.29, "removal_bod5": 0.27, "removal_tkn": 0.136,
+    "ps_ds_band_tpd": (50, 92, 150),        # measured PS DS production P10/P50/P90 (mean 99)
+    "ps_ds_recent_tpd": 115,                # 2015-2017 mean
+    "ps_ds_design_tpd": 120.7,              # ADOPTED design basis (retained); inside measured band
+    "ps_n_capture_tpd": 3.1,                # measured TKN capture into PS (only ~14% of influent TKN)
+    "confidence": "site-calibrated (A, 90-95); 2006-2017 ETP PST record",
+    "was_basis": "WAS not measured in this dataset - PS/WAS ratio left as design (flagged)",
+}
+
+
 class KO:  # opex constants (AUD)
     ELEC_PRICE_MWH = 120.0
     TRANSPORT_PER_T = 15.0       # effective $/wet-t incl. ~100 km haul
