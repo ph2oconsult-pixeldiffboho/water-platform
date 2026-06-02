@@ -124,8 +124,8 @@ class Ledger:
 # ---------------------------------------------------------------------------
 class K:
     # St Marys Cambi THP full-scale (Sydney Water) — confidence 95/100
-    VSR = 0.566                 # VS reduction, calibrated (St Marys; Mangere THP 0.582)
-    VSR_CONV = 0.49             # conventional blended MAD VSR (ETP HRT-constrained; V1 ~44-49%)
+    VSR = 0.657                 # full pre-digestion THP VSR - rebased to 2026 basis (conv 0.575 + uplift)
+    VSR_CONV = 0.575            # conventional blended MAD VSR - Cambi 2026 (Mangere P50 0.585 cross-check)
     VS_TS = 0.808               # VS/TS, PFD Note 3
     METHANE_YIELD_NM3_TDS = 258 # Nm3 CH4 / tDS feed (St Marys == Davyhulme)
     STEAM_T_PER_TDS = 0.94      # THP steam, t/tDS THP feed (band 0.85-1.00)
@@ -139,7 +139,7 @@ class K:
     P_PER_DS = 0.012            # gP / gDS feed
     CH4_LHV_KWH_NM3 = 9.97      # lower heating value
     CH4_C_KG_PER_NM3 = 0.535    # kg C per Nm3 CH4
-    BIOGAS_NM3_PER_KG_VSD = 0.95
+    BIOGAS_NM3_PER_KG_VSD = 0.90  # Nm3 biogas/kg VS destroyed - ETP Cambi 2015 (was 0.95)
     CH4_FRACTION = 0.63         # THP-AD biogas CH4 by volume
     FUGITIVE_CH4_FRAC = 0.015   # methane slip -> Scope 1 (capture performance, not gas volume)
     CHP_ELEC = 0.40
@@ -161,6 +161,12 @@ class K:
     P_SOLUBILISED_FRAC = 0.40   # of feed P released to liquor in MAD
     STRUVITE_P_RECOVERY = 0.85  # of soluble P captured as struvite
     STRUVITE_N_PER_P_MOLAR = 1.0  # struvite is 1:1 N:P -> N recovery is P-limited
+    # V3 U4 separate PS/WAS kinetics (Mangere-anchored; per-stream values flagged estimates,
+    # calibrated so VS-weighted recombination reproduces the measured Mangere blend VSR).
+    PS_WAS_VS_RATIO = 1.15   # PS:WAS volatile-solids ratio (PS slightly more volatile)
+    VSR_PS = 0.60            # PS VSR conventional MAD - 2026 basis (own train, no THP)
+    VSR_WAS_THP = 0.69       # THP-WAS VSR - 2026 basis (own train)
+    MANGERE_VSR_BAND = (0.495, 0.702)  # measured P10-P90 closure/calibration gate
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +380,19 @@ def capacity_view(pw: Pathway) -> dict:
     return out
 
 
+ETP_THP_2015 = {  # ETP Cambi/AECOM THP conceptual-design calibration case (2015).
+    "basis": {"total_tds": 169.8, "ps_frac": 0.60, "was_frac": 0.40, "vs_ts": 0.81,
+              "digesters": "8 x 4300 m3 (34,400 useful)", "existing_hrt_d": 16.9},
+    # plant-level targets: (VSR, CH4 Nm3/d, biogas Nm3/d, cake DS, HRT d)
+    "conventional":  {"vsr": 0.476, "ch4_nm3_d": 37117, "biogas_nm3_d": 58916, "cake_ds": 0.23},
+    "full_thp":      {"vsr": 0.556, "ch4_nm3_d": 43499, "biogas_nm3_d": 69046, "cake_ds": 0.31, "hrt_d": 20.3},
+    "was_only_thp":  {"vsr": 0.538, "ch4_nm3_d": 42026, "biogas_nm3_d": 66707, "cake_ds": 0.28, "hrt_d": 13.7},
+    # per-stream VSR solved from the three plant-level targets (VS split = DS split, VS 81% both)
+    "per_stream_vsr": {"ps_conv": 0.58, "was_conv": 0.32, "ps_thp": 0.61, "was_thp": 0.475},
+    "confidence": "site-calibrated (A, 90-95); full-scale Cambi/AECOM ETP design",
+}
+
+
 ETP_CAL = {  # Measured ETP PST calibration record (2006-2017). Design PS_tds=120.7 RETAINED;
     # measured values document the site basis and validate the design point against real data.
     "flow_mld": (308, 358, 475),            # IPS flow P10/P50/P90 (mean 384)
@@ -387,6 +406,30 @@ ETP_CAL = {  # Measured ETP PST calibration record (2006-2017). Design PS_tds=12
     "ps_n_capture_tpd": 3.1,                # measured TKN capture into PS (only ~14% of influent TKN)
     "confidence": "site-calibrated (A, 90-95); 2006-2017 ETP PST record",
     "was_basis": "WAS not measured in this dataset - PS/WAS ratio left as design (flagged)",
+}
+
+
+ETP_SS_2026 = {  # Cambi SolidStream conceptual-design calibration case (TM-07035, 20.05.2026).
+    # Post-digestion THP on full digestate + hot centrate recycle to digesters. CURRENT ETP basis.
+    "basis": {"total_tds": 219.5, "ps_frac": 0.55, "was_frac": 0.45, "digesters": "8 x 8000 (64,000)",
+              "feed_flow_m3d": 3540.0, "water_temp_c": 15.0},
+    "scenario1_65vs": {
+        "vs_ts": 0.65,
+        "conventional": {"hrt_d": 18.1, "vsr": 0.575, "biogas_nm3_d": 74163, "ch4_nm3_d": 46723,
+                         "elec_mwh_yr": 67490, "cake_ds": 0.22, "dig_heat_kw": 3458.7, "wet_cake_t_yr": 216659},
+        "solidstream": {"hrt_d": 13.4, "vsr": 0.703, "biogas_nm3_d": 91014, "ch4_nm3_d": 57339,
+                        "elec_mwh_yr": 81461, "cake_ds": 0.38, "dig_heat_kw": 1081.0, "wet_cake_t_yr": 106958,
+                        "recycle_m3d": 1233.0, "recycle_temp_c": 76.8, "recycle_ds": 0.038},
+    },
+    "scenario2_72vs": {
+        "vs_ts": 0.72,
+        "conventional": {"hrt_d": 18.3, "vsr": 0.575, "biogas_nm3_d": 87502, "ch4_nm3_d": 55126, "cake_ds": 0.20},
+        "solidstream": {"hrt_d": 13.6, "vsr": 0.704, "biogas_nm3_d": 107300, "ch4_nm3_d": 67599,
+                        "cake_ds": 0.38, "recycle_m3d": 1214.0, "recycle_temp_c": 76.8, "recycle_ds": 0.039},
+    },
+    "yield_confirmed": {"biogas_nm3_per_kg_vsd": 0.90, "ch4_fraction": 0.63},  # both memos agree
+    "heat_recovery_kw": 2378.0,  # conventional 3458.7 -> SolidStream 1081 digester heating
+    "confidence": "site-calibrated (A, 90-95); full mass+energy balance, Cambi/Aurecon current ETP basis",
 }
 
 
@@ -622,7 +665,429 @@ def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
 
 
 # ---------------------------------------------------------------------------
-# 7b. THERMAL-ENDPOINT PATHWAY — exercises the PROVISIONAL ledger machinery
+def build_separate_pswas_pathway(plant: dict = GENERIC) -> Pathway:
+    """V3 U4. PS and WAS digested in SEPARATE trains with distinct kinetics: PS in a
+    conventional MAD train (no THP), WAS through THP then its own MAD. Per-stream VS is a
+    mass-conserving split of the plant's measured blend by PS_WAS_VS_RATIO; per-stream VSR
+    is Mangere-anchored. The closure/calibration gate is that the VS-weighted recombined
+    VSR lands inside the measured Mangere band. Land endpoint with struvite, like the spine."""
+    PS_tds = plant["PS_tds"]; WAS_tds = plant["WAS_tds"]
+    total_tds = PS_tds + WAS_tds; vs_ts = plant["vs_ts"]
+    VS_in = total_tds * vs_ts
+    # mass-conserving per-stream VS split of the measured blend
+    was_vs = vs_ts * total_tds / (K.PS_WAS_VS_RATIO * PS_tds + WAS_tds)
+    ps_vs = K.PS_WAS_VS_RATIO * was_vs
+    VS_PS = PS_tds * ps_vs; VS_WAS = WAS_tds * was_vs
+    VS_destroyed = VS_PS * K.VSR_PS + VS_WAS * K.VSR_WAS_THP
+    VSR_eff = VS_destroyed / VS_in
+    lo, hi = K.MANGERE_VSR_BAND
+    assert lo <= VSR_eff <= hi, f"separate-train VSR {VSR_eff:.3f} outside Mangere band {K.MANGERE_VSR_BAND}"
+    VS_remaining = VS_in - VS_destroyed
+
+    C_in = VS_in * K.C_PER_VS; C_biogas = VS_destroyed * K.C_PER_VS
+    C_digestate = C_in - C_biogas
+    C_liquor = C_digestate * K.C_LIQUOR_FRAC; C_cake = C_digestate - C_liquor
+    CH4_nm3 = VS_destroyed * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    C_CH4 = CH4_nm3 * K.CH4_C_KG_PER_NM3 / 1000.0
+    C_CO2_biogas = C_biogas - C_CH4
+    C_fugitive = C_CH4 * K.FUGITIVE_CH4_FRAC; C_combusted = C_CH4 - C_fugitive
+    carbon = Ledger("carbon", "tC/d", inflows={"feed_volatile_carbon": C_in},
+        outflows={"soil_land_application": C_cake, "return_liquor_to_WWTW": C_liquor,
+                  "atmosphere_biogenic_CO2": C_combusted + C_CO2_biogas,
+                  "atmosphere_fugitive_CH4_scope1": C_fugitive})
+
+    biogas_chem = CH4_nm3 * K.CH4_LHV_KWH_NM3 / 1000.0
+    gas_util = plant.get("gas_utilisation_frac", K.GAS_UTILISATION_DEFAULT)
+    elec_gen, heat_gen, chp_losses, gas_flared = _chp_split(biogas_chem, gas_util)
+    steam_t = WAS_tds * K.STEAM_T_PER_TDS           # THP steam on WAS train only
+    steam_demand = steam_t * 1000 * K.STEAM_KWH_PER_KG / 1000.0
+    heat_demand = steam_demand + K.DIGESTER_HEAT_MWH_D
+    heat_used = min(heat_gen, heat_demand)
+    heat_surplus_unused = max(0.0, heat_gen - heat_demand)
+    dewater_par = (VS_remaining + total_tds*(1-vs_ts)) * K.DEWATER_KWH_PER_TDS / 1000.0
+    cooling_par = WAS_tds * K.COOLING_WATER_T_PER_TDS * K.COOLING_PUMP_KWH_PER_T / 1000.0
+    parasitics = (dewater_par + K.STRUVITE_PARASITIC_MWH_D + K.THP_PUMP_PARASITIC_MWH_D
+                  + K.PLANT_PARASITIC_MWH_D + cooling_par)
+    net_elec = elec_gen - parasitics + K.PRIMARY_AERATION_CREDIT_MWH_D
+    energy = Ledger("energy", "MWh/d", inflows={"biogas_chemical_energy": biogas_chem},
+        outflows={"chp_electricity_generated": elec_gen, "ad_heat_used_thp_and_digester": heat_used,
+                  "heat_surplus_unused": heat_surplus_unused, "chp_conversion_losses": chp_losses,
+                  "biogas_flared_unused": gas_flared})
+
+    N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
+    N_released = N_in * VSR_eff * K.N_SOLUBILISATION_EFF
+    P_in = total_tds * plant.get("P_per_ds", K.P_PER_DS) * 1000.0
+    P_soluble = P_in * K.P_SOLUBILISED_FRAC; P_struvite = P_soluble * K.STRUVITE_P_RECOVERY
+    N_struvite = P_struvite * (14.0/31.0) * K.STRUVITE_N_PER_P_MOLAR
+    N_cake = N_in - N_released; N_liquor_return = N_released - N_struvite
+    nitrogen = Ledger("nitrogen", "kgN/d", inflows={"feed_nitrogen": N_in},
+        outflows={"cake_organic_N_to_land": N_cake, "struvite_N": N_struvite,
+                  "return_liquor_NH4_to_WWTW": N_liquor_return})
+    P_cake = P_in - P_soluble; P_liquor_return = P_soluble - P_struvite
+    phosphorus = Ledger("phosphorus", "kgP/d", inflows={"feed_phosphorus": P_in},
+        outflows={"cake_P_to_land": P_cake, "struvite_P": P_struvite,
+                  "return_liquor_P_to_WWTW": P_liquor_return})
+
+    A = lambda: Confidence(Conf.A, Conf.A, Conf.A)
+    moves = [
+        Move("Run PS and WAS as separate digestion trains",
+             addresses=["capacity", "energy_neutrality"],
+             reward="THP only the stream that needs it (WAS); PS digests well untreated - "
+                    "saves THP duty/steam on the PS fraction; trains sized to each kinetics",
+             residual_risk="Two trains = more assets/footprint; per-stream VSR is estimated",
+             confidence=Confidence(Conf.B, Conf.B, Conf.B), derisk_task=None, tag=Tag.COMMIT),
+        Move("THP of WAS (Cambi-class) on the WAS train",
+             addresses=["capacity", "energy_neutrality", "opex"],
+             reward="Higher WAS VSR + cake DS; Class A; defers digester volume",
+             residual_risk="Return-liquor NH4 load (quantified in N ledger)",
+             confidence=Confidence(Conf.A, Conf.A, Conf.B), derisk_task=None, tag=Tag.COMMIT),
+        Move("Struvite recovery from combined digestate liquor",
+             addresses=["nutrient_recovery"], reward="Recovers P as product; cuts return-liquor P",
+             residual_risk="P-limited N recovery", confidence=Confidence(Conf.A, Conf.B, Conf.A),
+             derisk_task=None, tag=Tag.COMMIT),
+        Move("Ammonium-sulphate / PN-A for return-liquor N",
+             addresses=["nutrient_recovery", "scope1_emissions"],
+             reward="Closes the N gap struvite leaves", residual_risk="Process complexity",
+             confidence=Confidence(Conf.A, Conf.B, Conf.A),
+             derisk_task="Sidestream N pilot", tag=Tag.KEEP_OPEN),
+        Move("Thermal endpoint (pyrolysis/gasification) for residual cake",
+             addresses=["pfas", "scope1_emissions"],
+             reward="Only family that destroys PFAS; stabilises C as char",
+             residual_risk="Endpoint balances not closed full-scale",
+             confidence=Confidence(Conf.C, Conf.C, Conf.C),
+             derisk_task="Reference-plant balance + demo", tag=Tag.KEEP_OPEN),
+        Move("Commit land application as terminal disposal",
+             addresses=["opex", "capex"], reward="Cheapest endpoint today",
+             residual_risk="Strands strategy if PFAS land application restricted",
+             confidence=Confidence(Conf.A, Conf.A, Conf.D), derisk_task=None, tag=Tag.AVOID,
+             forecloses=["Thermal endpoint (pyrolysis/gasification) for residual cake"]),
+    ]
+
+    pw = Pathway(
+        name="Separate PS + WAS(THP) trains + MAD + Struvite + Land",
+        description="V3 U4: PS conventional MAD train + WAS THP+MAD train, distinct per-stream "
+                    "kinetics (Mangere-anchored), recombined to land in the measured VSR band.",
+        ledgers={"carbon": carbon, "energy": energy, "nitrogen": nitrogen, "phosphorus": phosphorus},
+        moves=moves, net_export_mwh_d=net_elec, generation_mwh_d=biogas_chem,
+        basis={"total_tds": total_tds, "has_thp": True, "vs_ts": vs_ts,
+               "ps_tds": PS_tds, "was_tds": WAS_tds, "ps_ts": plant["ps_ts"], "was_ts": plant["was_ts"],
+               "separate_trains": True, "ps_vs_ts": ps_vs, "was_vs_ts": was_vs,
+               "vsr_effective": VSR_eff, "digester_vol_m3": plant.get("digester_vol_m3"),
+               "product_wet_tpd": (VS_remaining + total_tds*(1-vs_ts)) / 0.28,
+               "chemicals_m_aud": 0.30 * total_tds / 100.0, "om_m_aud": 1.55 * total_tds / 100.0},
+    )
+    _attach(pw, endpoint="land", conf=Conf.B)
+    return pw
+
+
+# ---------------------------------------------------------------------------
+# PATHWAY E - Cambi SolidStream (post-digestion THP + hot centrate recycle)
+class KSS:  # Anchored to ETP_SS_2026 (Cambi/Aurecon TM-07035, 2026), Scenario 1 (65% VS).
+    VSR = 0.703                  # overall VS reduction incl. recycle loop (vs conventional 0.575)
+    CAKE_DS = 0.38               # final hygienised Class-A cake DS (vs 0.22 conventional)
+    THP_FEED_FRAC = 0.756        # digestate-to-THP / raw feed (166/219.5, memo Sc1) - sizes THP steam
+    RECYCLE_M3_PER_TDS = 5.62    # hot soluble-COD centrate recycle, m3/d per tDS feed (1233/219.5)
+    RECYCLE_TEMP_C = 76.8
+    RECYCLE_HEAT_MWH_PER_TDS = 0.260  # recovered digester heat per tDS (57.1/219.5; 3458.7->1081 kW)
+
+
+def build_solidstream_pathway(plant: dict = GENERIC) -> Pathway:
+    """V3 Pathway E. Cambi SolidStream: COMBINED PS+WAS conventional digestion, then
+    post-digestion THP on the full digestate, with hot soluble-COD-rich centrate recycled
+    to the digesters. Anchored to ETP_SS_2026: VSR ~70%, cake 38% DS, recycle ~1,233 m3/d
+    @ 76.8C, ~2.4 MW digester-heat recovery. Same digester volume as conventional -
+    SolidStream does NOT release capacity (HRT falls as recycle adds flow); the capacity
+    play lives in the separate-digestion pathway (K)."""
+    WAS_tds = plant["WAS_tds"]; PS_tds = plant["PS_tds"]
+    total_tds = WAS_tds + PS_tds; vs_ts = plant["vs_ts"]
+    VS_in = total_tds * vs_ts
+    VS_destroyed = VS_in * KSS.VSR
+    VS_remaining = VS_in - VS_destroyed
+
+    C_in = VS_in * K.C_PER_VS; C_biogas = VS_destroyed * K.C_PER_VS
+    C_digestate = C_in - C_biogas
+    C_liquor = C_digestate * K.C_LIQUOR_FRAC; C_cake = C_digestate - C_liquor
+    CH4_nm3 = VS_destroyed * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    C_CH4 = CH4_nm3 * K.CH4_C_KG_PER_NM3 / 1000.0
+    C_CO2_biogas = C_biogas - C_CH4
+    C_fugitive = C_CH4 * K.FUGITIVE_CH4_FRAC; C_combusted = C_CH4 - C_fugitive
+    carbon = Ledger("carbon", "tC/d", inflows={"feed_volatile_carbon": C_in},
+        outflows={"soil_land_application": C_cake, "return_liquor_to_WWTW": C_liquor,
+                  "atmosphere_biogenic_CO2": C_combusted + C_CO2_biogas,
+                  "atmosphere_fugitive_CH4_scope1": C_fugitive})
+
+    biogas_chem = CH4_nm3 * K.CH4_LHV_KWH_NM3 / 1000.0
+    gas_util = plant.get("gas_utilisation_frac", K.GAS_UTILISATION_DEFAULT)
+    elec_gen, heat_gen, chp_losses, gas_flared = _chp_split(biogas_chem, gas_util)
+    thp_feed_tds = total_tds * KSS.THP_FEED_FRAC          # post-digestion THP throughput
+    steam_t = thp_feed_tds * K.STEAM_T_PER_TDS
+    steam_demand = steam_t * 1000 * K.STEAM_KWH_PER_KG / 1000.0
+    recycle_heat = total_tds * KSS.RECYCLE_HEAT_MWH_PER_TDS    # hot-centrate digester-heat recovery
+    net_heat_demand = max(0.0, steam_demand + K.DIGESTER_HEAT_MWH_D - recycle_heat)
+    heat_used = min(heat_gen, net_heat_demand)
+    heat_surplus_unused = max(0.0, heat_gen - net_heat_demand)
+    dewater_par = (VS_remaining + total_tds*(1-vs_ts)) * K.DEWATER_KWH_PER_TDS / 1000.0
+    cooling_par = thp_feed_tds * K.COOLING_WATER_T_PER_TDS * K.COOLING_PUMP_KWH_PER_T / 1000.0
+    parasitics = (dewater_par + K.STRUVITE_PARASITIC_MWH_D + K.THP_PUMP_PARASITIC_MWH_D
+                  + K.PLANT_PARASITIC_MWH_D + cooling_par)
+    net_elec = elec_gen - parasitics + K.PRIMARY_AERATION_CREDIT_MWH_D
+    energy = Ledger("energy", "MWh/d", inflows={"biogas_chemical_energy": biogas_chem},
+        outflows={"chp_electricity_generated": elec_gen, "ad_heat_used_thp_and_digester": heat_used,
+                  "heat_surplus_unused": heat_surplus_unused, "chp_conversion_losses": chp_losses,
+                  "biogas_flared_unused": gas_flared})
+
+    N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
+    N_released = N_in * KSS.VSR * K.N_SOLUBILISATION_EFF
+    P_in = total_tds * plant.get("P_per_ds", K.P_PER_DS) * 1000.0
+    P_soluble = P_in * K.P_SOLUBILISED_FRAC; P_struvite = P_soluble * K.STRUVITE_P_RECOVERY
+    N_struvite = P_struvite * (14.0/31.0) * K.STRUVITE_N_PER_P_MOLAR
+    N_cake = N_in - N_released; N_liquor_return = N_released - N_struvite
+    nitrogen = Ledger("nitrogen", "kgN/d", inflows={"feed_nitrogen": N_in},
+        outflows={"cake_organic_N_to_land": N_cake, "struvite_N": N_struvite,
+                  "return_liquor_NH4_to_WWTW": N_liquor_return})
+    P_cake = P_in - P_soluble; P_liquor_return = P_soluble - P_struvite
+    phosphorus = Ledger("phosphorus", "kgP/d", inflows={"feed_phosphorus": P_in},
+        outflows={"cake_P_to_land": P_cake, "struvite_P": P_struvite,
+                  "return_liquor_P_to_WWTW": P_liquor_return})
+
+    moves = [
+        Move("Conventional combined PS+WAS mesophilic digestion",
+             addresses=["opex", "energy_neutrality"],
+             reward="Proven base train; SolidStream bolts on downstream as end-of-pipe",
+             residual_risk="Minimal - existing asset", confidence=Confidence(Conf.A, Conf.A, Conf.A),
+             derisk_task=None, tag=Tag.COMMIT),
+        Move("Post-digestion SolidStream THP + hot centrate recycle",
+             addresses=["capacity", "energy_neutrality", "opex", "biosolids_quality"],
+             reward="VSR ~58%->70%; biogas +22.7%; recycles soluble COD + ~2.4 MW heat to digesters",
+             residual_risk="Adds return-liquor NH4 (higher VS destruction); no digester-volume release",
+             confidence=Confidence(Conf.A, Conf.A, Conf.B),  # Cambi design + Geiselbullach/Schijnpoort/Veas refs
+             derisk_task=None, tag=Tag.COMMIT),
+        Move("Class-A hygienised 38% DS cake (no drying)",
+             addresses=["biosolids_quality", "opex", "pfas"],
+             reward="Pathogen-free at 165C; ~50% fewer wet tonnes; ends 3-yr EPA stockpiling; dryer -67%",
+             residual_risk="Cake market still developing (Cambi: positive value at scale)",
+             confidence=Confidence(Conf.A, Conf.A, Conf.A), derisk_task=None, tag=Tag.COMMIT),
+        Move("Struvite + PN-A for the (larger) return-liquor N load",
+             addresses=["nutrient_recovery", "scope1_emissions"],
+             reward="Recovers P; closes the higher SolidStream N return", residual_risk="Process complexity",
+             confidence=Confidence(Conf.A, Conf.B, Conf.A), derisk_task="Sidestream N pilot", tag=Tag.KEEP_OPEN),
+        Move("Commit land application as terminal disposal",
+             addresses=["opex", "capex"], reward="Cheapest endpoint; Class-A cake widens reuse options",
+             residual_risk="PFAS land-application restriction risk (thermal endpoint stays open)",
+             confidence=Confidence(Conf.A, Conf.A, Conf.C), derisk_task=None, tag=Tag.AVOID,
+             forecloses=["Thermal endpoint (pyrolysis/gasification) for residual cake"]),
+    ]
+
+    recycle_m3d = total_tds * KSS.RECYCLE_M3_PER_TDS
+    pw = Pathway(
+        name="SolidStream: MAD + post-digestion THP + centrate recycle + Land",
+        description="V3 Pathway E (Cambi SolidStream, ETP_SS_2026): combined MAD -> pre-dewater "
+                    "-> THP on digestate -> centrifuge -> hot soluble-COD centrate recycled to "
+                    "digesters. Same 64,000 m3, no capacity release; VSR ~70%, cake 38% DS.",
+        ledgers={"carbon": carbon, "energy": energy, "nitrogen": nitrogen, "phosphorus": phosphorus},
+        moves=moves, net_export_mwh_d=net_elec, generation_mwh_d=biogas_chem,
+        basis={"total_tds": total_tds, "has_thp": True, "vs_ts": vs_ts, "solidstream": True,
+               "ps_tds": PS_tds, "was_tds": WAS_tds, "ps_ts": plant["ps_ts"], "was_ts": plant["was_ts"],
+               "vsr_effective": KSS.VSR, "cake_ds": KSS.CAKE_DS,
+               "digester_vol_m3": plant.get("digester_vol_m3"), "capacity_released_m3": 0.0,
+               "recycle_m3d": recycle_m3d, "recycle_temp_c": KSS.RECYCLE_TEMP_C,
+               "recycle_heat_recovery_mwh_d": recycle_heat,
+               "product_wet_tpd": (VS_remaining + total_tds*(1-vs_ts)) / KSS.CAKE_DS,
+               "chemicals_m_aud": 0.35 * total_tds / 100.0, "om_m_aud": 1.60 * total_tds / 100.0},
+    )
+    _attach(pw, endpoint="land", conf=Conf.A)
+    return pw
+
+
+
+# ---------------------------------------------------------------------------
+# PATHWAY K - Separate PS/WAS digestion (short-HRT PS) + WAS-side SolidStream recycle
+class KK:  # Pathway K capacity-release constants (separate-digestion short-PS-HRT). ETP-anchored.
+    PS_HRT_SHORT_D = 10.0       # short-HRT PS digestion (brief); PS digests fast, frees volume
+    DIGESTER_FEED_DS = 0.062    # blended digester feed DS (ETP 2026 memo, mixed 6.2%) - sets flow/HRT
+    DIGESTER_UNIT_M3 = 8000.0   # ETP digester unit (8 x 8000) - for equivalent-digesters count
+
+
+def build_pathway_k(plant: dict = GENERIC) -> Pathway:
+    """V3 Pathway K (strategic). Separate PS/WAS digestion with SHORT-HRT PS (~10 d) + long-HRT
+    WAS, post-digestion SolidStream THP, hot soluble-COD centrate recycled to the WAS digesters.
+    SolidStream performance IS Pathway E's (ETP_SS_2026, confidence A); the DIFFERENTIATOR is the
+    digester volume released by digesting PS separately at short HRT - that capacity claim is a
+    strategic bet (separate short-HRT PS), NOT vendor-validated. K = E + capacity release."""
+    e = build_solidstream_pathway(plant)   # reuse verified SolidStream ledgers (VSR ~70%, recycle, cake 38%)
+    PS_tds = plant["PS_tds"]; WAS_tds = plant["WAS_tds"]; total_tds = PS_tds + WAS_tds
+    V = plant.get("digester_vol_m3")
+    cap = {}
+    if V:
+        total_flow = total_tds / KK.DIGESTER_FEED_DS
+        hrt_current = V / total_flow
+        ps_flow = PS_tds / KK.DIGESTER_FEED_DS
+        was_flow = WAS_tds / KK.DIGESTER_FEED_DS
+        ps_vol_short = ps_flow * KK.PS_HRT_SHORT_D
+        released = max(0.0, ps_flow * (hrt_current - KK.PS_HRT_SHORT_D))
+        was_vol = V - ps_vol_short
+        recycle_m3d = e.basis.get("recycle_m3d", 0.0)
+        denom = was_flow + recycle_m3d
+        was_hrt = (was_vol / denom) if denom > 0 else None
+        cap = {"capacity_released_m3": released,
+               "equivalent_digesters": released / KK.DIGESTER_UNIT_M3,
+               "deferred_capex_m_aud": released * KCAP.CAPEX_PER_M3 / 1e6,
+               "ps_hrt_d": KK.PS_HRT_SHORT_D, "was_hrt_d": was_hrt, "hrt_current_d": hrt_current,
+               "ps_digester_vol_m3": ps_vol_short, "was_digester_vol_m3": was_vol}
+    relm = cap.get("capacity_released_m3", 0.0)
+    eqd = cap.get("equivalent_digesters", 0.0)
+    defc = cap.get("deferred_capex_m_aud", 0.0)
+    moves = [
+        Move("Separate PS and WAS digestion at differentiated HRT (PS ~10 d)",
+             addresses=["capacity", "capex"],
+             reward=f"Frees ~{relm:,.0f} m3 (~{eqd:.1f} digesters); defers ~${defc:.0f}M expansion CAPEX",
+             residual_risk="Short-HRT PS not vendor-validated; two trains = more assets/complexity",
+             confidence=Confidence(Conf.B, Conf.B, Conf.B),
+             derisk_task="PS short-HRT pilot, ~$0.5M / 12 months", tag=Tag.KEEP_OPEN),
+        Move("Post-digestion SolidStream THP + recycle to the WAS digesters",
+             addresses=["capacity", "energy_neutrality", "opex", "biosolids_quality"],
+             reward="VSR ~58%->70%; biogas +22.7%; recycles soluble COD + ~2.4 MW heat to WAS train",
+             residual_risk="Return-liquor NH4; recycle-to-WAS split adds plumbing",
+             confidence=Confidence(Conf.A, Conf.A, Conf.B), derisk_task=None, tag=Tag.COMMIT),
+        Move("Class-A hygienised 38% DS cake (no drying)",
+             addresses=["biosolids_quality", "opex", "pfas"],
+             reward="Pathogen-free at 165C; ~50% fewer wet tonnes; ends 3-yr EPA stockpiling",
+             residual_risk="Cake market still developing (positive value at scale)",
+             confidence=Confidence(Conf.A, Conf.A, Conf.A), derisk_task=None, tag=Tag.COMMIT),
+        Move("Struvite + PN-A for return-liquor N",
+             addresses=["nutrient_recovery", "scope1_emissions"],
+             reward="Recovers P; closes the higher SolidStream N return", residual_risk="Process complexity",
+             confidence=Confidence(Conf.A, Conf.B, Conf.A), derisk_task="Sidestream N pilot", tag=Tag.KEEP_OPEN),
+    ]
+    e.name = "Pathway K: Separate PS/WAS (short-HRT PS) + SolidStream recycle to WAS + Land"
+    e.description = ("V3 Pathway K (strategic): PS digested separately at ~10 d HRT + long-HRT WAS; "
+                     "post-digestion SolidStream THP with hot soluble-COD centrate recycled to the WAS "
+                     "digesters. SolidStream performance = Pathway E (confidence A); capacity release "
+                     "from separate short-HRT PS is a strategic bet (not vendor-validated).")
+    e.moves = moves
+    e.basis.update({"separate_trains": True, "pathway": "K"})
+    e.basis.update(cap)
+    return e
+
+
+
+# ---------------------------------------------------------------------------
+# PATHWAY B - Conventional MAD + sidestream PN/A (return-liquor N destruction)
+def build_pathway_b(plant: dict = GENERIC) -> Pathway:
+    """V3 Pathway B. Conventional blended MAD (no THP) + sidestream PN/A (deammonification) on
+    the return liquor: ~88% of released N destroyed to N2 instead of returned to the host WWTW.
+    Targets the return-liquor N burden / N2O risk that conventional digestion dumps on the plant.
+    Same digestion/biogas/cake as conventional A; the N ledger is the differentiator."""
+    WAS_tds, PS_tds = plant["WAS_tds"], plant["PS_tds"]
+    total_tds = WAS_tds + PS_tds; vs_ts = plant["vs_ts"]
+    VS_in = total_tds * vs_ts; VSR = K.VSR_CONV
+    VS_d = VS_in * VSR; VS_rem = VS_in - VS_d
+
+    C_in = VS_in * K.C_PER_VS; C_biogas = VS_d * K.C_PER_VS
+    C_dig = C_in - C_biogas; C_liq = C_dig * K.C_LIQUOR_FRAC; C_cake = C_dig - C_liq
+    CH4 = VS_d * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    C_CH4 = CH4 * K.CH4_C_KG_PER_NM3 / 1000.0; C_fug = C_CH4 * K.FUGITIVE_CH4_FRAC
+    carbon = Ledger("carbon", "tC/d", inflows={"feed_volatile_carbon": C_in},
+        outflows={"soil_land_application": C_cake, "return_liquor_to_WWTW": C_liq,
+                  "atmosphere_biogenic_CO2": (C_CH4 - C_fug) + (C_biogas - C_CH4),
+                  "atmosphere_fugitive_CH4_scope1": C_fug})
+
+    biogas_chem = CH4 * K.CH4_LHV_KWH_NM3 / 1000.0
+    gas_util = plant.get("gas_utilisation_frac", K.GAS_UTILISATION_DEFAULT)
+    elec_gen, heat_gen, chp_losses, gas_flared = _chp_split(biogas_chem, gas_util)
+    heat_demand = K.DIGESTER_HEAT_MWH_D
+    heat_used = min(heat_gen, heat_demand)
+    N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
+    N_rel = N_in * VSR * K.N_SOLUBILISATION_EFF
+    pna_N = N_rel * KN.PNA_N_REMOVAL
+    pna_parasitic = pna_N * 1.2 / 1000.0          # sidestream deammonification blowers ~1.2 kWh/kgN (vs ~4-6 mainstream)
+    parasitics = ((VS_rem + total_tds*(1-vs_ts)) * K.DEWATER_KWH_PER_TDS / 1000.0
+                  + K.PLANT_PARASITIC_MWH_D + pna_parasitic)
+    net_elec = elec_gen - parasitics + K.PRIMARY_AERATION_CREDIT_MWH_D
+    energy = Ledger("energy", "MWh/d", inflows={"biogas_chemical_energy": biogas_chem},
+        outflows={"chp_electricity_generated": elec_gen, "ad_heat_used_digester": heat_used,
+                  "heat_surplus_unused": max(0.0, heat_gen - heat_demand),
+                  "chp_conversion_losses": chp_losses, "biogas_flared_unused": gas_flared})
+
+    nitrogen = Ledger("nitrogen", "kgN/d", inflows={"feed_nitrogen": N_in},
+        outflows={"cake_organic_N_to_land": N_in - N_rel, "N2_to_atmosphere_via_PNA": pna_N,
+                  "return_liquor_NH4_residual": N_rel - pna_N})
+    P_in = total_tds * plant.get("P_per_ds", K.P_PER_DS) * 1000.0
+    P_sol = P_in * K.P_SOLUBILISED_FRAC
+    phosphorus = Ledger("phosphorus", "kgP/d", inflows={"feed_phosphorus": P_in},
+        outflows={"cake_P_to_land": P_in - P_sol, "return_liquor_P_to_WWTW": P_sol})
+
+    moves = [
+        Move("Conventional blended MAD (no THP)",
+             addresses=["opex"], reward="Proven base train; lowest capital",
+             residual_risk="Class B cake; no capacity headroom", confidence=Confidence(Conf.A, Conf.A, Conf.B),
+             derisk_task=None, tag=Tag.COMMIT),
+        Move("Sidestream PN/A (deammonification) on return liquor",
+             addresses=["nutrient_recovery", "scope1_emissions"],
+             reward="Destroys ~88% of return-liquor N to N2; cuts WWTW sidestream load + N2O; autotrophic low-energy",
+             residual_risk="Cold/dilute liquor control; no N product (destroyed, not recovered)",
+             confidence=Confidence(Conf.A, Conf.A, Conf.A), derisk_task=None, tag=Tag.COMMIT),
+        Move("Commit land application as terminal disposal",
+             addresses=["opex", "capex"], reward="Cheapest endpoint today",
+             residual_risk="Class B; strands strategy under a PFAS land-application ban",
+             confidence=Confidence(Conf.A, Conf.A, Conf.D), derisk_task=None, tag=Tag.AVOID,
+             forecloses=["Thermal endpoint (pyrolysis/gasification) for residual cake"]),
+    ]
+    pw = Pathway(
+        name="Pathway B: Conventional MAD + PN/A (return-liquor N) + Land",
+        description="V3 Pathway B: blended conventional MAD, dewater, land; sidestream PN/A destroys "
+                    "~88% of return-liquor N to N2. Same digestion as A; N ledger differs.",
+        ledgers={"carbon": carbon, "energy": energy, "nitrogen": nitrogen, "phosphorus": phosphorus},
+        moves=moves, pfas_destruction_frac=0.0, net_export_mwh_d=net_elec, generation_mwh_d=biogas_chem,
+        basis={"total_tds": total_tds, "has_thp": False, "vs_ts": vs_ts, "pathway": "B",
+               "ps_tds": PS_tds, "was_tds": WAS_tds, "ps_ts": plant["ps_ts"], "was_ts": plant["was_ts"],
+               "digester_vol_m3": plant.get("digester_vol_m3"), "pna_n_destroyed_kgd": pna_N,
+               "product_wet_tpd": (VS_rem + total_tds*(1-vs_ts)) / 0.22,
+               "chemicals_m_aud": 0.20 * total_tds / 100.0, "om_m_aud": 0.95 * total_tds / 100.0})
+    _attach(pw, endpoint="land", conf=Conf.A)
+    return pw
+
+
+# ---------------------------------------------------------------------------
+# PATHWAY F - Separate PS/WAS digestion + SolidStream recycle (no short-HRT-PS capacity bet)
+def build_pathway_f(plant: dict = GENERIC) -> Pathway:
+    """V3 Pathway F. Separate PS/WAS digestion + post-digestion SolidStream THP with centrate
+    recycle - i.e. Pathway K WITHOUT the short-HRT-PS capacity bet. SolidStream performance =
+    Pathway E (VSR ~70%, cake 38%, recycle, heat recovery); separate trains give operational
+    flexibility and the platform for K, but PS runs at conventional HRT so no capacity release."""
+    e = build_solidstream_pathway(plant)
+    moves = [
+        Move("Separate PS and WAS digestion trains (conventional HRT)",
+             addresses=["energy_neutrality", "opex"],
+             reward="Per-stream optimisation; targeted recycle; platform for short-HRT-PS capacity (K)",
+             residual_risk="Two trains = more assets; no capacity release without the short-HRT-PS bet",
+             confidence=Confidence(Conf.B, Conf.A, Conf.B), derisk_task=None, tag=Tag.COMMIT),
+        Move("Post-digestion SolidStream THP + centrate recycle",
+             addresses=["capacity", "energy_neutrality", "opex", "biosolids_quality"],
+             reward="VSR ~58%->70%; biogas +22.7%; recycles soluble COD + ~2.4 MW heat",
+             residual_risk="Return-liquor NH4 (higher VS destruction)",
+             confidence=Confidence(Conf.A, Conf.A, Conf.B), derisk_task=None, tag=Tag.COMMIT),
+        Move("Class-A hygienised 38% DS cake (no drying)",
+             addresses=["biosolids_quality", "opex", "pfas"],
+             reward="Pathogen-free; ~50% fewer wet tonnes; ends EPA stockpiling",
+             residual_risk="Cake market developing", confidence=Confidence(Conf.A, Conf.A, Conf.A),
+             derisk_task=None, tag=Tag.COMMIT),
+        Move("Struvite + PN-A for return-liquor N",
+             addresses=["nutrient_recovery", "scope1_emissions"], reward="Recovers P; closes N return",
+             residual_risk="Process complexity", confidence=Confidence(Conf.A, Conf.B, Conf.A),
+             derisk_task="Sidestream N pilot", tag=Tag.KEEP_OPEN),
+    ]
+    e.name = "Pathway F: Separate PS/WAS + SolidStream recycle + Land"
+    e.description = ("V3 Pathway F: separate PS/WAS digestion at conventional HRT + post-digestion "
+                     "SolidStream THP with centrate recycle. SolidStream performance = Pathway E; "
+                     "separate trains but no short-HRT-PS capacity bet (that is Pathway K).")
+    e.moves = moves
+    e.basis.update({"separate_trains": True, "pathway": "F", "capacity_released_m3": 0.0})
+    return e
+
+
+
+# # 7b. THERMAL-ENDPOINT PATHWAY — exercises the PROVISIONAL ledger machinery
 # ---------------------------------------------------------------------------
 # Front end identical to the worked pathway (THP+MAD) for comparability; the
 # endpoint swaps land application for dewater -> thermal dry -> gasification.
@@ -1201,31 +1666,37 @@ def carbon_value(pw: Pathway, credit_price_per_t=150.0, credit_price_avoided=35.
                  grid_ef_t_per_mwh=0.6) -> dict:
     """Carbon FATE -> carbon VALUE. Durable REMOVAL (permanent sequestration) and
     AVOIDED fossil emissions are reported SEPARATELY and are NEVER summed into a single
-    'removal' figure (V3 Update 3) - they are physically different and price differently.
+    'removal' figure (V3 Update 3) — they are physically different and price differently.
     'carbon_negative' means genuine net removal: the pathway sequesters more durable
-    carbon than it directly emits, EXCLUDING any avoided-emission credits."""
+    carbon than it directly emits, EXCLUDING any avoided-emission credits.
+    `credit_price_per_t` is the removal (CDR) credit price; avoided priced separately."""
     cl = pw.ledgers["carbon"]
-    perm_C = sum(v * _permanence(k) for k, v in cl.outflows.items() if v > 0)
-    removed_CO2e_d = perm_C * 44/12
+    perm_C = sum(v * _permanence(k) for k, v in cl.outflows.items() if v > 0)   # tC/d durable @100yr
+    removed_CO2e_d = perm_C * 44/12                                             # tCO2e/d removed (CDR)
     fug_C = sum(v for k, v in cl.outflows.items() if "fugitive" in k)
-    fug_CO2e = fug_C * (16/12) * 28
+    fug_CO2e = fug_C * (16/12) * 28                                             # CH4 mass x GWP100
     fossil_C = sum(v for k, v in cl.outflows.items() if "fossil" in k)
-    direct_CO2e_d = fug_CO2e + fossil_C * 44/12
-    avoided_CO2e_d = max(0.0, pw.net_export_mwh_d) * grid_ef_t_per_mwh
-    net_removal_y = (removed_CO2e_d - direct_CO2e_d) * 365
+    direct_CO2e_d = fug_CO2e + fossil_C * 44/12                                 # pathway's OWN emissions
+    avoided_CO2e_d = max(0.0, pw.net_export_mwh_d) * grid_ef_t_per_mwh          # avoided fossil (a credit)
+    net_removal_y = (removed_CO2e_d - direct_CO2e_d) * 365                      # true net CDR; NO avoided
     avoided_y = avoided_CO2e_d * 365
     return {
+        # --- durable carbon removal (CDR), reported on its own ---
         "permanent_C_tC_d": perm_C,
         "removed_gross_tCO2e_d": removed_CO2e_d,
         "direct_emissions_tCO2e_d": direct_CO2e_d,
-        "net_removal_tCO2e_yr": net_removal_y,
-        "carbon_negative": net_removal_y > 0,
+        "net_removal_tCO2e_yr": net_removal_y,        # removal net of direct emissions; EXCLUDES avoided
+        "carbon_negative": net_removal_y > 0,         # genuine CDR > emissions (not propped up by avoided)
+        # --- avoided fossil emissions: a separate credit, NEVER folded into removal ---
         "avoided_fossil_tCO2e_yr": avoided_y,
+        # --- combined GHG benefit: explicitly the SUM of two different things ---
         "combined_ghg_benefit_tCO2e_yr": net_removal_y + avoided_y,
+        # --- value: removal and avoided priced separately (removal credits price higher) ---
         "removal_credit_m_aud_yr": net_removal_y * credit_price_per_t / 1e6,
         "avoided_credit_m_aud_yr": avoided_y * credit_price_avoided / 1e6,
         "credit_value_m_aud_yr": (net_removal_y * credit_price_per_t
                                   + avoided_y * credit_price_avoided) / 1e6,
+        # --- legacy keys retained (corrected semantics) ---
         "sequestered_CO2e_d": removed_CO2e_d,
         "avoided_fossil_CO2e_d": avoided_CO2e_d,
         "fugitive_CO2e_d": fug_CO2e,
@@ -1233,9 +1704,10 @@ def carbon_value(pw: Pathway, credit_price_per_t=150.0, credit_price_avoided=35.
 
 
 def carbon_categories(pw: Pathway, grid_ef_t_per_mwh=0.6) -> dict:
-    """The six V3 carbon categories, reported DISTINCTLY (Update 3). Fate categories are
-    carbon MASS (tC/d) off the closed ledger; 'permanently sequestered' is the durable
-    SUBSET of 'retained'. 'Removed' and 'Avoided' are climate metrics (tCO2e/d), kept apart."""
+    """The six V3 carbon categories, reported DISTINCTLY (Update 3). The fate categories
+    are carbon MASS (tC/d) read off the closed carbon ledger and approximately sum to feed
+    carbon; 'permanently sequestered' is the durable SUBSET of 'retained' (not additive).
+    'Removed' and 'Avoided' are climate metrics (tCO2e/d) and are deliberately kept apart."""
     cl = pw.ledgers["carbon"]
     out = {k: v for k, v in cl.outflows.items() if v > 0}
     feed_C = sum(cl.inflows.values())
@@ -1244,16 +1716,18 @@ def carbon_categories(pw: Pathway, grid_ef_t_per_mwh=0.6) -> dict:
     liquor    = sum(v for k, v in out.items() if "liquor" in k)
     retained  = sum(v for k, v in out.items()
                     if any(t in k for t in ("soil", "land", "char", "ash", "cake")))
-    sequestered = sum(v * _permanence(k) for k, v in out.items())
+    sequestered = sum(v * _permanence(k) for k, v in out.items())   # durable subset of retained
     fug_C    = sum(v for k, v in out.items() if "fugitive" in k)
     fossil_C = sum(v for k, v in out.items() if "fossil" in k)
     return {
         "feed_carbon_tC_d": feed_C,
+        # carbon-mass fate (tC/d) — destroyed/recovered/retained sum ~ feed_C (ledger closes)
         "destroyed_emitted_tC_d": emitted,
         "recovered_in_product_tC_d": recovered,
         "returned_in_liquor_tC_d": liquor,
         "retained_in_solids_tC_d": retained,
         "of_which_permanently_sequestered_tC_d": sequestered,
+        # climate metrics (tCO2e/d) — SEPARATE; never summed into a single 'removal'
         "removed_tCO2e_d": sequestered * 44/12,
         "avoided_tCO2e_d": max(0.0, pw.net_export_mwh_d) * grid_ef_t_per_mwh,
         "direct_emissions_tCO2e_d": fug_C * (16/12) * 28 + fossil_C * 44/12,
@@ -1287,6 +1761,7 @@ def nutrient_value(pw: Pathway) -> dict:
     rl_N = N.outflows.get("return_liquor_NH4_to_WWTW", 0.0)     # kgN/d treatable sidestream
     struvite_tpy = p_struvite * KO.STRUVITE_MW_PER_P / 1000.0 * 365
     struvite_rev = struvite_tpy * KO.STRUVITE_PRICE_T / 1e6     # M$/yr
+    # return-liquor N: two ALTERNATIVES (never summed)
     pna_N = rl_N * KN.PNA_N_REMOVAL
     pna_value = pna_N * 365 * KN.AVOIDED_N_TREAT_PER_KG / 1e6   # M$/yr avoided cost
     as_N = rl_N * KN.AS_RECOVERY
@@ -1311,6 +1786,7 @@ def nutrient_value(pw: Pathway) -> dict:
         "N_recovered_pct": ((n_struvite + as_N) / feed_N * 100) if feed_N else 0.0,
         "nutrient_value_m_aud_yr": struvite_rev + max(pna_value, as_rev),
     }
+
 
 def optionality_value(pw: Pathway) -> dict:
     """Expected value retained (preserved options) vs expected value lost (foreclosed).
@@ -1429,6 +1905,41 @@ def regret_profile(pw, weights, risk_threshold=HIGH_LIKELIHOOD) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# V3.5 - PATHWAY X (strategic front-end) x ENDPOINT FAMILIES + carbon-strategy comparison
+def pathway_x_set(plant: dict = GENERIC) -> dict:
+    """V3.5 Pathway X: the strategic ETP front-end (K = separate PS/WAS short-HRT PS + WAS-side
+    SolidStream recycle) composed with each Stage-3 endpoint. Returns {endpoint: Pathway}. K
+    itself is the land/Retention variant; the thermal endpoints are fresh compositions."""
+    return {ep: compose_pathway(build_pathway_k(plant), ep, plant)
+            for ep in ("land", "pyrolysis", "gasification", "incineration", "htl")}
+
+
+def carbon_strategy_comparison(plant: dict = GENERIC, x_set: dict = None) -> list:
+    """V3.5 'do not combine' carbon-fate comparison. For each endpoint composed on the strategic
+    front-end, report the carbon-strategy family + the six NON-ADDITIVE carbon metrics + PFAS +
+    net-export band + confidence. There is deliberately NO single score: the right endpoint
+    depends on which objective (retain / convert / destroy) the strategy prioritises."""
+    s = x_set or pathway_x_set(plant)
+    rows = []
+    for ep, p in s.items():
+        cc = carbon_categories(p)
+        rows.append({
+            "endpoint": ep, "family": p.basis.get("endpoint_family"),
+            "strategy": p.traits.get("carbon_strategy"),
+            "retained_tC_d": round(cc["retained_in_solids_tC_d"], 1),
+            "sequestered_tC_d": round(cc["of_which_permanently_sequestered_tC_d"], 1),
+            "converted_recovered_tC_d": round(cc["recovered_in_product_tC_d"], 1),
+            "destroyed_emitted_tC_d": round(cc["destroyed_emitted_tC_d"], 1),
+            "removed_tCO2e_d": round(cc["removed_tCO2e_d"], 1),
+            "pfas_destruction": p.pfas_destruction_frac,
+            "net_export_mwh_d": round(p.net_export_mwh_d),
+            "net_band": tuple(round(x) for x in p.bands["energy_neutrality"]) if "energy_neutrality" in p.bands else None,
+            "confidence": p.confidence_level.name if p.confidence_level else "C",
+        })
+    return rows
+
+
 def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> dict:
     """L1-L5 decision hierarchy (V3 U1). Runs the levels in order, keeps ALL viable
     pathways active, attaches a regret profile to each. The recommendation is a
@@ -1436,8 +1947,14 @@ def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> d
     open against the high-likelihood shocks - not a single chosen technology."""
     weights = weights or rank_weights(DRIVER_RANKING_PLUS)
     worked = build_worked_pathway(plant); conv = build_conventional_pathway(plant)
+    sep = build_separate_pswas_pathway(plant)
     thermal = build_thermal_pathway(plant); endpoints = build_thermal_endpoints(plant)
-    pathways = [conv, worked, thermal] + list(endpoints.values())
+    ss = build_solidstream_pathway(plant)
+    k = build_pathway_k(plant)
+    b = build_pathway_b(plant); f = build_pathway_f(plant)
+    x_set = pathway_x_set(plant)
+    x_thermal = [v for ep, v in x_set.items() if ep != "land"]   # K(land) already present as k
+    pathways = [conv, worked, sep, ss, f, k, b, thermal] + list(endpoints.values()) + x_thermal
     return {
         "L1_constraints": diagnose_constraints(plant, pathways),
         "L2_capacity": capacity_view(worked),
@@ -1446,6 +1963,7 @@ def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> d
         "L5_thermal_endpoint": {n: {"pfas": p.pfas_destruction_frac,
                                     "evidence": EVIDENCE.get(n, (Conf.C, ""))[0].name}
                                 for n, p in endpoints.items()},
+        "L6_carbon_endpoints": carbon_strategy_comparison(plant, x_set),
         "risk_threshold": risk_threshold,
         "pathways": [regret_profile(p, weights, risk_threshold) for p in pathways],
         "least_regret_note": ("All viable pathways retained. acceptable_risk=False means a "
