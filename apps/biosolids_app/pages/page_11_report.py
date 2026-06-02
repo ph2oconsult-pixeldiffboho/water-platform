@@ -166,6 +166,7 @@ def render():
 
     # ── BioPoint V2 strategic report ─────────────────────────
     v2_mode = None
+    gas_util_pct = 95
     if _V2_AVAILABLE:
         st.subheader("BioPoint V2 strategic report")
         v2_mode = st.selectbox(
@@ -178,6 +179,13 @@ def render():
             "V2 runs the conserved-quantity (C/N/P/energy) engine on the same plant "
             "inputs as V1. Note: the V2 reports are authored on the ETP reference basis — "
             "the computed numbers reflect your inputs, but some narrative labels still say ETP."
+        )
+        gas_util_pct = st.slider(
+            "CHP gas utilisation (%)", min_value=50, max_value=100, value=95,
+            help="Share of biogas sent to the CHP engines; the remainder is flared. "
+                 "95% assumes the CHP is sized for the gas. Lower it to model an existing "
+                 "plant whose engines are undersized (Mangere ran ~80%).",
+            key="t1_v2_gas_util",
         )
 
     st.divider()
@@ -206,6 +214,7 @@ def render():
                     if _V2_AVAILABLE and v2_mode:
                         try:
                             v2_plant = v1_data_to_v2_plant(data)
+                            v2_plant["gas_utilisation_frac"] = gas_util_pct / 100.0
                             ss["t1_v2_pdf"]  = generate_v2_report_bytes(v2_mode, v2_plant)
                             ss["t1_v2_mode_done"] = v2_mode
                             st.success(
