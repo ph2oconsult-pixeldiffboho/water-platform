@@ -102,32 +102,53 @@ def build(bundle):
 
     # ===== header =====
     story.append(P("Strategic Biosolids Pathway Report", S_TITLE))
-    story.append(P("BioPoint V2 &middot; Pathway Intelligence Engine", S_SUB))
+    story.append(P("BioPoint V3.5 &middot; Carbon, Nutrient, Capacity &amp; Biosolids Strategy Engine", S_SUB))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceBefore=3, spaceAfter=8))
+
+    # ===== V3.5 strategic framing =====
+    story.append(P("The Strategic Question", S_H1))
+    story.append(P("This report does not ask <i>which digestion technology scores highest</i>. It asks four "
+                   "objective-level questions and treats technology as the means to answer them:"))
+    story.append(bullet("<b>Carbon</b> &mdash; where should it go: retained in soil or biochar, converted to "
+                        "energy, or destroyed? This is the Stage-3 endpoint decision."))
+    story.append(bullet("<b>Nutrients</b> &mdash; recover phosphorus (struvite), destroy the return-liquor "
+                        "nitrogen load (PN/A), or return it to the plant?"))
+    story.append(bullet("<b>Capacity</b> &mdash; unlock digester headroom by THP, or by separate PS/WAS "
+                        "digestion at short PS HRT, a lower-risk mechanism with no hydrolysis step?"))
+    story.append(bullet("<b>Biosolids quality</b> &mdash; cake dryness, pathogen grade, transport and storage "
+                        "burden, with SolidStream as the quality platform."))
+    story.append(P("These are three different optimisation problems handled in sequence: <b>separate digestion "
+                   "optimises the biology, SolidStream optimises the biosolids, and the endpoint optimises the "
+                   "carbon</b>. The recommendation is a front-end plus an endpoint chosen for the objective being "
+                   "optimised &mdash; carried with its confidence level, not collapsed into a single technology score."))
 
     # ===== executive summary =====
     story.append(P("Executive Summary", S_H1))
     cap = S.capacity_view(wp); ox = S.opex_view(wp)
     story.append(P(
-        f"For the {plant['name']} ({tot:.0f} tDS/d), the analysis compares biosolids "
-        "pathways against the utility's weighted drivers using conserved-quantity ledgers "
-        "(carbon, energy, nitrogen, phosphorus) that must balance end-to-end. The "
-        "recommendation is a sequenced set of moves, not a single technology. The calibrated "
-        "THP + mesophilic digestion spine is commit-grade: it is strongly energy-positive "
-        f"(~{wp.net_export_mwh_d:,.0f} MWh/d net), runs net cash-positive "
-        f"(~${-ox['net_m_aud']:.1f}M/yr), and intensifies digester capacity by the equivalent "
-        f"of ~{cap['digesters_avoided']:.1f} reference digesters (~${cap['avoided_capex_aud']/1e6:.0f}M "
-        "deferred). It does not, however, address PFAS &mdash; the second-ranked driver &mdash; "
-        "which only a thermal endpoint can. That thermal pathway carries real reward but "
-        "remains provisional (uncalibrated split fractions), so it is held as a priced, "
-        "scheduled option rather than committed. The plan: commit the spine and upstream "
-        "nutrient recovery now; keep the thermal endpoint open and de-risk it."))
-    story.append(P("<b>Key strategic insight:</b> PFAS fate is set by the thermal endpoint, not "
-                   "the digestion technology. Conventional AD, THP and the spine all leave PFAS in "
-                   "the cake; only thermal destruction removes it. The THP decision and the "
-                   "thermal-endpoint decision are therefore <i>independent</i> &mdash; THP earns its "
-                   "place on capacity, energy and disposal regardless of PFAS, but it does not "
-                   "substitute for a thermal decision if PFAS becomes a binding constraint.",
+        f"For the {plant['name']} ({tot:.0f} tDS/d), BioPoint compares biosolids pathways against the "
+        "utility's weighted drivers using conserved-quantity ledgers (carbon, energy, nitrogen, phosphorus) "
+        "that must balance end-to-end. The output is not a chosen technology but a <b>preferred strategic "
+        "pathway</b>: a biology and biosolids-quality front-end, plus a carbon endpoint selected for the "
+        "objective being optimised. The strongest front-end couples <b>separate PS/WAS digestion</b> (which "
+        "unlocks ~2 digesters of capacity with no hydrolysis step) with <b>SolidStream</b> (Class-A cake at "
+        f"~38% DS), running strongly energy-positive (~{wp.net_export_mwh_d:,.0f} MWh/d net on the THP spine) "
+        f"and intensifying capacity by ~{cap['digesters_avoided']:.1f} reference digesters "
+        f"(~${cap['avoided_capex_aud']/1e6:.0f}M deferred)."))
+    story.append(P(
+        "Two objectives dominate the endpoint and nutrient decisions. <b>Nitrogen:</b> conventional digestion "
+        "returns a large sidestream ammonia load to the plant (over 5,000 kgN/d at this scale) &mdash; a "
+        "near-term operational and consenting constraint that sidestream PN/A can cut by ~88%, and that for "
+        "many plants binds sooner than PFAS. <b>Carbon / PFAS:</b> the endpoint sets carbon fate and PFAS "
+        "destruction &mdash; land retention, pyrolysis (durable biochar plus carbon credits), gasification, or "
+        "incineration (maximum PFAS destruction). These are <i>independent</i> of the digestion choice and are "
+        "compared by fate, not collapsed into one score (see Carbon Endpoint Strategy, below)."))
+    story.append(P("<b>Organising principle:</b> biology, biosolids quality and carbon endpoint are three "
+                   "independent decisions. Separate digestion optimises the biology (methane and capacity); "
+                   "SolidStream optimises the biosolids (cake and logistics); the endpoint optimises carbon fate "
+                   "(retention / conversion / destruction). Forcing them into one digestion score hides the "
+                   "interactions &mdash; for example, SolidStream's drier cake roughly halves the drying energy a "
+                   "thermal endpoint needs.",
                    mk("ins", parent=S_BODY, textColor=INK, backColor=LIGHT, borderPadding=6,
                       spaceBefore=4, leftIndent=4, rightIndent=4)))
 
@@ -163,6 +184,43 @@ def build(bundle):
     story.append(P("Risk OK = no shock at/above the threshold breaks it; HEDGE = one does. HEDGE pathways "
                    "are retained, not removed &mdash; the recommendation pairs them with a kept-open option "
                    "(e.g. a thermal endpoint against a PFAS land-application ban).", S_SMALL))
+
+    # ===== V3.5 Carbon Endpoint Strategy (Stage 3) =====
+    comp = S.carbon_strategy_comparison(plant)
+    hdr = [P("Endpoint", S_CELLH), P("Strategy", S_CELLH), P("Retain tC/d", S_CRH), P("Seq.", S_CRH),
+           P("Emit", S_CRH), P("Removed CO2e", S_CRH), P("PFAS", S_CRH), P("Net MWh/d", S_CRH), P("Conf", S_CRH)]
+    rows = [hdr]
+    for r in comp:
+        rows.append([P(r["endpoint"], S_CELL), P(r["family"].replace("Carbon ", ""), S_CELL),
+                     P(f"{r['retained_tC_d']:.1f}", S_CR), P(f"{r['sequestered_tC_d']:.1f}", S_CR),
+                     P(f"{r['destroyed_emitted_tC_d']:.0f}", S_CR), P(f"{r['removed_tCO2e_d']:.1f}", S_CR),
+                     P(f"{r['pfas_destruction']*100:.0f}%", S_CR), P(f"{r['net_export_mwh_d']:.0f}", S_CR),
+                     P(r["confidence"], S_CR)])
+    story.append(KeepTogether([
+        P("Carbon Endpoint Strategy &mdash; Retention / Conversion / Destruction (Stage 3)", S_H1),
+        P("Biology (separate digestion) optimises methane and capacity; biosolids quality "
+          "(SolidStream) optimises the cake; the <i>endpoint</i> optimises where the carbon "
+          "finally goes &mdash; a third, independent decision. BioPoint composes the strategic "
+          "ETP front-end (Pathway K) with each Stage-3 endpoint and groups them by carbon fate "
+          "into three families. The columns are deliberately NOT combined into one score: "
+          "retaining carbon, converting it to energy and destroying it for PFAS resilience are "
+          "different objectives, and each family wins a different one."),
+        styled(Table(rows, colWidths=[22*mm, 24*mm, 16*mm, 12*mm, 12*mm, 18*mm, 13*mm, 16*mm, 11*mm])),
+    ]))
+    story.append(Spacer(1, 3))
+    story.append(P("Reading it by objective, not by score: <b>pyrolysis</b> (Retention) gives the most "
+                   "durable carbon &mdash; it retains less mass than land but sequesters more than twice "
+                   "as much at 100 years, the highest CO2 removal, at confidence B. <b>Incineration</b> "
+                   "(Destruction) retains no carbon or nutrients but maximises PFAS destruction and is "
+                   "most mature (confidence A) &mdash; the regulatory-resilience play. <b>HTL</b> gives "
+                   "the most energy and a biocrude product but is pre-commercial (confidence C). Land "
+                   "stays cheapest today, but its retained carbon is low-permanence and it carries the "
+                   "PFAS land-application risk.", S_SMALL))
+    story.append(P("<b>Preferred Strategic Carbon and Nutrient Pathway</b> is therefore not a single "
+                   "technology but a front-end (separate digestion + SolidStream) plus an endpoint chosen "
+                   "for the objective being optimised &mdash; carbon permanence, energy, or PFAS "
+                   "resilience &mdash; carried with its confidence level, not collapsed into one number.", S_SMALL))
+    story.append(Spacer(1, 6))
 
     # ===== 1 objective =====
     story.append(P("1 &nbsp; Strategic Objective", S_H1))
@@ -603,43 +661,6 @@ def build(bundle):
         story.append(styled(Table(rows, colWidths=[96*mm, 37*mm, 37*mm])))
         story.append(Spacer(1, 4))
 
-    # ===== V3.5 Carbon Endpoint Strategy (Stage 3) =====
-    comp = S.carbon_strategy_comparison(plant)
-    hdr = [P("Endpoint", S_CELLH), P("Strategy", S_CELLH), P("Retain tC/d", S_CRH), P("Seq.", S_CRH),
-           P("Emit", S_CRH), P("Removed CO2e", S_CRH), P("PFAS", S_CRH), P("Net MWh/d", S_CRH), P("Conf", S_CRH)]
-    rows = [hdr]
-    for r in comp:
-        rows.append([P(r["endpoint"], S_CELL), P(r["family"].replace("Carbon ", ""), S_CELL),
-                     P(f"{r['retained_tC_d']:.1f}", S_CR), P(f"{r['sequestered_tC_d']:.1f}", S_CR),
-                     P(f"{r['destroyed_emitted_tC_d']:.0f}", S_CR), P(f"{r['removed_tCO2e_d']:.1f}", S_CR),
-                     P(f"{r['pfas_destruction']*100:.0f}%", S_CR), P(f"{r['net_export_mwh_d']:.0f}", S_CR),
-                     P(r["confidence"], S_CR)])
-    story.append(KeepTogether([
-        P("Carbon Endpoint Strategy &mdash; Retention / Conversion / Destruction (Stage 3)", S_H1),
-        P("Biology (separate digestion) optimises methane and capacity; biosolids quality "
-          "(SolidStream) optimises the cake; the <i>endpoint</i> optimises where the carbon "
-          "finally goes &mdash; a third, independent decision. BioPoint composes the strategic "
-          "ETP front-end (Pathway K) with each Stage-3 endpoint and groups them by carbon fate "
-          "into three families. The columns are deliberately NOT combined into one score: "
-          "retaining carbon, converting it to energy and destroying it for PFAS resilience are "
-          "different objectives, and each family wins a different one."),
-        styled(Table(rows, colWidths=[22*mm, 24*mm, 16*mm, 12*mm, 12*mm, 18*mm, 13*mm, 16*mm, 11*mm])),
-    ]))
-    story.append(Spacer(1, 3))
-    story.append(P("Reading it by objective, not by score: <b>pyrolysis</b> (Retention) gives the most "
-                   "durable carbon &mdash; it retains less mass than land but sequesters more than twice "
-                   "as much at 100 years, the highest CO2 removal, at confidence B. <b>Incineration</b> "
-                   "(Destruction) retains no carbon or nutrients but maximises PFAS destruction and is "
-                   "most mature (confidence A) &mdash; the regulatory-resilience play. <b>HTL</b> gives "
-                   "the most energy and a biocrude product but is pre-commercial (confidence C). Land "
-                   "stays cheapest today, but its retained carbon is low-permanence and it carries the "
-                   "PFAS land-application risk.", S_SMALL))
-    story.append(P("<b>Preferred Strategic Carbon and Nutrient Pathway</b> is therefore not a single "
-                   "technology but a front-end (separate digestion + SolidStream) plus an endpoint chosen "
-                   "for the objective being optimised &mdash; carbon permanence, energy, or PFAS "
-                   "resilience &mdash; carried with its confidence level, not collapsed into one number.", S_SMALL))
-    story.append(Spacer(1, 6))
-
     # ===== 20 future resilience =====
     story.append(P("20 &nbsp; Future Resilience (testing different worlds)", S_H1))
     story.append(P("The decisive uncertainty is no longer engineering performance &mdash; it is "
@@ -710,30 +731,32 @@ def build(bundle):
         story.append(bullet(f"<b>{m.name}</b> &mdash; {m.residual_risk}.{fc}"))
 
     # ===== 22 recommendation =====
-    story.append(P("22 &nbsp; Recommendation", S_H1))
-    story.append(P("The recommendation is an <b>order of moves</b>, not a chosen technology:"))
+    story.append(P("22 &nbsp; Recommendation &mdash; Preferred Strategic Carbon and Nutrient Pathway", S_H1))
+    story.append(P("The recommendation is a <b>front-end plus an endpoint chosen by objective</b>, sequenced "
+                   "across the three stages &mdash; not a single technology:"))
     for i, r in enumerate([
-        "Optimise MAD and dewatering now &mdash; bankable, commit-grade, the foundation for "
-        "everything downstream.",
-        f"Add THP for the capacity it buys (~{cap['digesters_avoided']:.1f} reference digesters "
-        f"avoided, ~${cap['avoided_capex_aud']/1e6:.0f}M deferred) and the cake-solids and "
-        "Class-A biosolids benefits.",
-        "Recover phosphorus via struvite while it is still recoverable &mdash; before any thermal "
-        "step would lock it into ash &mdash; and hold ammonium-sulphate / PN-A open to close the "
-        "nitrogen gap struvite leaves.",
-        "Do <b>not</b> commit land application as a terminal endpoint: it forecloses the only "
-        "family that addresses PFAS, the second-ranked driver.",
-        "Hold the thermal endpoint as a priced, scheduled option (~$1.5M / 18 months to reach "
-        "commit-grade), exercised if PFAS regulation or the carbon case demands it. Its energy "
-        "and Scope-1 outcomes hinge on syngas recovery that cannot yet be calibrated, so the "
-        "decision is staged, not pre-empted."], 1):
+        "<b>Biology (capacity and methane):</b> optimise MAD and dewatering now (commit-grade), then unlock "
+        "capacity. Test separate PS/WAS digestion at short PS HRT as a lower-risk alternative to THP &mdash; it "
+        f"frees ~2 digesters with no hydrolysis step, where THP frees ~{cap['digesters_avoided']:.1f} but adds a "
+        "thermal-hydrolysis asset and a return-liquor load.",
+        "<b>Biosolids quality (SolidStream):</b> treat SolidStream as the Stage-2 quality platform &mdash; "
+        "Class-A cake at ~38% DS, roughly half the wet tonnes, and far less drying energy for any downstream "
+        "thermal endpoint. This is a value stream in its own right, not merely a digestion add-on.",
+        "<b>Nitrogen:</b> the sidestream return load (over 5,000 kgN/d) is a near-term binding constraint. "
+        "Recover phosphorus via struvite while it is still recoverable, and commit sidestream PN/A to destroy "
+        "~88% of the return-liquor ammonia &mdash; for many plants this binds before PFAS does.",
+        "<b>Carbon endpoint (Stage 3):</b> choose by objective, not by score. Land is cheapest but low-"
+        "permanence and PFAS-exposed; pyrolysis gives durable biochar plus carbon credits; incineration "
+        "maximises PFAS destruction. Do <b>not</b> commit land as a terminal endpoint &mdash; it forecloses the "
+        "carbon and PFAS families. Hold the chosen thermal endpoint as a priced, scheduled option (~$1.5M / 18 "
+        "months to commit-grade); its splits are provisional, so the decision is staged, not pre-empted."], 1):
         story.append(bullet(r, mark=f"{i}."))
 
     story.append(Spacer(1, 8))
     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceAfter=4))
-    story.append(P("Scope &amp; limits. This report is generated by the BioPoint V2 pathway "
-                   "spine and reflects what that model computes: two pathways, four conserved "
-                   "ledgers, calibrated AD/THP physics with provisional thermal endpoints. It "
+    story.append(P("Scope &amp; limits. This report is generated by the BioPoint V3.5 pathway "
+                   "spine and reflects what that model computes: the A-K pathway set composed with carbon endpoints, four conserved "
+                   "ledgers, calibrated AD/THP/SolidStream physics with provisional thermal-endpoint splits. It "
                    "does not yet include the full digestion-kinetics narrative (Damk\u00f6hler / "
                    "HRT analysis) of the production Tier 1 engine, nor the wider pathway set; "
                    "those require porting the mad_v2 physics and additional pathways into the "
