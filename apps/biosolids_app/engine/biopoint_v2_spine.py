@@ -151,6 +151,9 @@ class K:
     THP_PUMP_PARASITIC_MWH_D = 2.0
     PLANT_PARASITIC_MWH_D = 5.0
     PRIMARY_AERATION_CREDIT_MWH_D = 15.0  # UPSTREAM consequence: PS capture cuts aeration
+    # Cooling model (V3 U6) - St Marys: 32.1 t/h cooling water at 45.8 tDS/d THP feed
+    COOLING_WATER_T_PER_TDS = 16.8     # t cooling water / tDS THP feed (32.1 t/h x 24h / 45.8)
+    COOLING_PUMP_KWH_PER_T = 0.10      # circulation + tower fans, kWh per t water (ESTIMATE, flagged)
     # Fate split fractions (calibrated for AD/THP; would be PROVISIONAL for thermal)
     C_LIQUOR_FRAC = 0.02        # of digestate C, to liquor on dewatering
     N_MINERALISED_AS_VSR = True # NH4 release tracks VS destruction
@@ -411,6 +414,19 @@ ETP = dict(name="ETP (220 tDS/d, real basis)", PS_tds=120.7, WAS_tds=98.8,
            feed_N_kgd=12624.0, P_per_ds=0.012, digester_vol_m3=64000.0)
 
 
+# ===========================================================================
+# V3 U6 - ST MARYS THP REFERENCE CARD (Sydney Water) - calibration anchor, 95/100
+# Most figures here already drive class K (VSR, methane yield 258, steam 0.94,
+# CH4 63%). Captured as the documented Tier-1 calibration plant.
+ST_MARYS = dict(
+    plant="St Marys THP (Sydney Water)",
+    peak_load_tds_d=45.8, feed_ds_pct=16.5, thp_temp_C=165, thp_press_barg=6.0,
+    steam_t_per_h=1.8, steam_t_per_tds=0.94, biogas_nm3_per_h=782, ch4_pct=63,
+    ch4_yield_nm3_per_tds=258, flash_ds_pct=9.0, digester_feed_ds_pct=5.8,
+    cooling_water_t_per_h=32.1, confidence_score=95,
+)
+
+
 def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
     # --- Feed basis (from plant) ---
     WAS_tds = plant["WAS_tds"]
@@ -452,8 +468,10 @@ def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
     heat_demand = steam_demand + K.DIGESTER_HEAT_MWH_D
     heat_surplus = heat_gen - heat_demand          # >0 -> no fossil top-up (no Scope1 from heat)
     dewater_par = (VS_remaining + total_tds*(1-vs_ts)) * K.DEWATER_KWH_PER_TDS / 1000.0
+    cooling_water_t = WAS_tds * K.COOLING_WATER_T_PER_TDS         # V3 U6 St Marys cooling model
+    cooling_par = cooling_water_t * K.COOLING_PUMP_KWH_PER_T / 1000.0  # MWh/d circulation parasitic
     parasitics = (dewater_par + K.STRUVITE_PARASITIC_MWH_D
-                  + K.THP_PUMP_PARASITIC_MWH_D + K.PLANT_PARASITIC_MWH_D)
+                  + K.THP_PUMP_PARASITIC_MWH_D + K.PLANT_PARASITIC_MWH_D + cooling_par)
     heat_surplus_unused = heat_gen - heat_demand        # delivered but unused (real output)
     net_elec = elec_gen - parasitics + K.PRIMARY_AERATION_CREDIT_MWH_D  # net incl. upstream credit
     energy = Ledger("energy", "MWh/d",
@@ -552,6 +570,7 @@ def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
             "ps_ts": plant["ps_ts"], "was_ts": plant["was_ts"],
             "digester_vol_m3": plant.get("digester_vol_m3"),
             "product_wet_tpd": (VS_remaining + total_tds*(1-vs_ts)) / 0.28,  # cake @28% DS
+            "cooling_water_tpd": cooling_water_t,   # V3 U6: rejected-heat / integration opportunity
             "chemicals_m_aud": 0.30 * total_tds / 100.0,   # scale with load
             "om_m_aud": 1.50 * total_tds / 100.0,
         },
