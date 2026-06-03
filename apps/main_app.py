@@ -253,6 +253,7 @@ elif _active == "biosolids":
         "⚖️ Config Comparison":     "09_compare",
         "🔀 Mass & Energy Flow":    "10_sankey",
         "📋 Tier 1 Report":         "11_report",
+        "🧭 Strategy (V2)":         "13_strategy",
         "🔀 Separate Digestion":    "12_separate",
         "📖  User Manual":          "06_manual",
     }
@@ -291,6 +292,8 @@ elif _active == "biosolids":
         from apps.biosolids_app.pages import page_10_sankey; page_10_sankey.render()
     elif page_key == "11_report":
         from apps.biosolids_app.pages import page_11_report; page_11_report.render()
+    elif page_key == "13_strategy":
+        from apps.biosolids_app.pages import page_13_strategy; page_13_strategy.render()
     elif page_key == "12_separate":
         from apps.biosolids_app.pages import page_12_separate; page_12_separate.render()
     elif page_key == "06_manual":
