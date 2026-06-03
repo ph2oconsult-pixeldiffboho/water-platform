@@ -15,7 +15,10 @@ if str(_APP_DIR) not in sys.path:
 from engine.separate_digestion import (
     run_separate_analysis, vsr_cstr, vsr_batch,
     K_PS_CENTRAL, K_WAS_CENTRAL, K_BLEND_CENTRAL,
+    F_BIO_PS, F_BIO_WAS, VS_SPLIT_PS,
     Y_PS_SEP, Y_WAS, BIOPOINT_CALIBRATION,
+    bmp_biogas_comparison, BMP_PS_ML_G, BMP_WAS_ML_G, BMP_WAS_THP_ML_G, BMP_BLEND_ML_G,
+    separate_scenario, tradeoff_sweep, F_BIO_WAS_THP,
 )
 
 
@@ -24,9 +27,9 @@ from engine.separate_digestion import (
 def _hrt_biogas_chart(ps_ds, was_ds, ps_ts, was_ts, ps_vs, was_vs,
                       ps_vol, was_vol, k_ps, k_was):
     hrts = list(range(5, 35))
-    ps_cstr  = [vsr_cstr(k_ps,  h) * ps_ds  * (ps_vs/100) * 1000 * Y_PS_SEP * BIOPOINT_CALIBRATION for h in hrts]
-    was_cstr = [vsr_cstr(k_was, h) * was_ds * (was_vs/100) * 1000 * Y_WAS   * BIOPOINT_CALIBRATION for h in hrts]
-    ps_batch = [vsr_batch(k_ps, h) * ps_ds  * (ps_vs/100) * 1000 * Y_PS_SEP * BIOPOINT_CALIBRATION for h in hrts]
+    ps_cstr  = [vsr_cstr(k_ps,  h, F_BIO_PS)  * ps_ds  * (ps_vs/100) * 1000 * Y_PS_SEP * BIOPOINT_CALIBRATION for h in hrts]
+    was_cstr = [vsr_cstr(k_was, h, F_BIO_WAS) * was_ds * (was_vs/100) * 1000 * Y_WAS   * BIOPOINT_CALIBRATION for h in hrts]
+    ps_batch = [vsr_batch(k_ps, h, F_BIO_PS)  * ps_ds  * (ps_vs/100) * 1000 * Y_PS_SEP * BIOPOINT_CALIBRATION for h in hrts]
 
     ps_q  = ps_ds  / (ps_ts/100)  if ps_ts  > 0 else 1
     was_q = was_ds / (was_ts/100) if was_ts > 0 else 1
@@ -49,7 +52,7 @@ def _hrt_biogas_chart(ps_ds, was_ds, ps_ts, was_ts, ps_vs, was_vs,
         fig.add_vline(x=hrt, line_color=col, line_dash="dash", opacity=0.4)
         fig.add_annotation(x=hrt, y=bg_list[idx]*1.1, text=f"{label}: {hrt:.0f}d",
                            font=dict(size=10, color=col), showarrow=False)
-    for xv, txt in [(10, "PS 10d<br>batch target"), (15, "WAS 15d<br>min")]:
+    for xv, txt in [(10, "PS 10d<br>fast"), (12, "WAS 12d<br>floor")]:
         fig.add_vline(x=xv, line_color="grey", line_dash="dot", opacity=0.3)
         fig.add_annotation(x=xv, y=max(max(ps_cstr), max(was_cstr)) * 0.9,
                            text=txt, font=dict(size=9, color="grey"), showarrow=False)
@@ -77,8 +80,8 @@ def _volume_optimisation_chart(ps_ds, was_ds, ps_ts, was_ts, ps_vs, was_vs,
         if hps < 8 or hwas < 10:
             bg_totals.append(None)
         else:
-            bps  = vsr_cstr(k_ps,  hps)  * ps_ds  * (ps_vs/100) * 1000 * Y_PS_SEP * BIOPOINT_CALIBRATION
-            bwas = vsr_cstr(k_was, hwas) * was_ds * (was_vs/100) * 1000 * Y_WAS   * BIOPOINT_CALIBRATION
+            bps  = vsr_cstr(k_ps,  hps,  F_BIO_PS)  * ps_ds  * (ps_vs/100) * 1000 * Y_PS_SEP * BIOPOINT_CALIBRATION
+            bwas = vsr_cstr(k_was, hwas, F_BIO_WAS) * was_ds * (was_vs/100) * 1000 * Y_WAS   * BIOPOINT_CALIBRATION
             bg_totals.append(bps + bwas)
 
     valid = [(f, v) for f, v in zip(fracs, bg_totals) if v is not None]
@@ -111,15 +114,19 @@ def _volume_optimisation_chart(ps_ds, was_ds, ps_ts, was_ts, ps_vs, was_vs,
 def _vsr_chart(k_ps, k_was):
     hrts = list(range(5, 30))
     fig = go.Figure()
-    for k, label, col in [
-        (k_ps,             "PS (separate)",  "#0077b6"),
-        (k_was,            "WAS",            "#52b788"),
-        (K_BLEND_CENTRAL,  "Blended",        "#aaaaaa"),
+    for k, fb, label, col in [
+        (k_ps,  F_BIO_PS,  "PS (separate)",         "#0077b6"),
+        (k_was, F_BIO_WAS, "WAS (ceiling-limited)", "#52b788"),
     ]:
         fig.add_trace(go.Scatter(
-            x=hrts, y=[vsr_cstr(k, h) * 100 for h in hrts],
+            x=hrts, y=[vsr_cstr(k, h, fb) * 100 for h in hrts],
             name=label, line=dict(color=col, width=2)))
-    for xv, txt in [(10, "PS 10d"), (15, "WAS 15d min")]:
+    fig.add_trace(go.Scatter(
+        x=hrts,
+        y=[(VS_SPLIT_PS * vsr_cstr(k_ps, h, F_BIO_PS)
+            + (1 - VS_SPLIT_PS) * vsr_cstr(k_was, h, F_BIO_WAS)) * 100 for h in hrts],
+        name="Blended", line=dict(color="#aaaaaa", width=2)))
+    for xv, txt in [(10, "PS fast"), (12, "WAS 12d floor")]:
         fig.add_vline(x=xv, line_color="grey", line_dash="dot", opacity=0.4,
                       annotation_text=txt, annotation_font=dict(size=9))
     fig.update_layout(
@@ -132,32 +139,54 @@ def _vsr_chart(k_ps, k_was):
     return fig
 
 
+def _tradeoff_chart(sweep, cur_hrt, cur_ch4):
+    hs=[p[0] for p in sweep]; ch4=[p[1] for p in sweep]; freed=[p[2] for p in sweep]
+    fig=go.Figure()
+    fig.add_trace(go.Scatter(x=hs,y=ch4,name="Biomethane (m³ CH4/d)",
+                             line=dict(color="#0077b6",width=2),yaxis="y"))
+    fig.add_trace(go.Scatter(x=hs,y=freed,name="Freed volume (m³)",
+                             line=dict(color="#e76f51",width=2,dash="dot"),yaxis="y2"))
+    fig.add_trace(go.Scatter(x=[cur_hrt],y=[cur_ch4],mode="markers",
+                             marker=dict(size=11,color="#0077b6"),showlegend=False))
+    fig.update_layout(height=320,title="Biogas vs capacity (sweep WAS HRT; dot = selected)",
+        xaxis_title="WAS HRT (days)",
+        yaxis=dict(title="Biomethane m³ CH4/d"),
+        yaxis2=dict(title="Freed volume m³",overlaying="y",side="right",showgrid=False,zeroline=True),
+        legend=dict(orientation="h",yanchor="bottom",y=1.02),
+        margin=dict(t=50,b=40,l=55,r=55),plot_bgcolor="#f8fafc",paper_bgcolor="white")
+    return fig
+
+
 # ── Page ──────────────────────────────────────────────────────────────────
 
 def render():
     st.header("🔀 Separate vs Blended Digestion")
     st.caption(
-        "Analyses the throughput and biogas impact of digesting PS and WAS in separate "
-        "digesters vs a blended feed. Literature shows separate PS digestion yields ~30% "
-        "more biogas per unit VS (Bolzonella 2005; Silvestre 2015; WEF MOP 8)."
+        "Analyses the throughput and capacity impact of digesting PS and WAS in separate "
+        "digesters vs a blended feed, on the V2 BMP basis. The benefit is mainly FREED "
+        "CAPACITY, not more biogas: PS reaches its high biodegradable ceiling quickly at "
+        "short HRT, while WAS is ceiling-limited and gains little from long retention."
     )
 
     with st.expander("📖 Kinetic model basis", expanded=False):
         st.markdown("""
-**CSTR first-order model** (Chen & Hashimoto; Metcalf & Eddy 5th ed.):
+**Ceiling-limited CSTR model** (BMP-fitted; the V2 spine is the source of truth):
 
-VSR = 1 − 1/(1 + k × HRT)
+VSR = f_bio x (k x HRT) / (1 + k x HRT)
 
-| Stream | k central | Range | Rationale |
-|--------|-----------|-------|-----------|
-| PS (separate) | 0.25 /day | 0.20–0.35 | Lipid/carbohydrate substrate; no WAS inhibition |
-| WAS | 0.12 /day | 0.08–0.15 | Cell wall hydrolysis rate-limiting |
-| Blended | 0.13 /day | 0.10–0.18 | WAS-dominated kinetics |
+| Stream | k (BMP) | f_bio ceiling | Behaviour |
+|--------|---------|---------------|-----------|
+| PS  | 0.29 /day | 0.97 | high ceiling, reached fast |
+| WAS | 0.38 /day | 0.31 | hydrolyses AS FAST AS PS, but only ~1/3 is biodegradable |
 
-**"PS >90% in 10 days"** refers to the *batch exponential* model (test condition, not CSTR design).
-For continuous CSTR digesters, target HRT = 12–15 days for PS.
+WAS is **ceiling-limited, not rate-limited**: it reaches its low biodegradable ceiling
+quickly, so extra HRT adds little. This overturns the older "WAS needs long HRT because
+hydrolysis is slow" model (the prior k_WAS 0.12, no ceiling).
 
-**30% yield uplift** is an empirical multiplier on PS biogas when digested separately.
+The separate-digestion advantage is therefore **freed volume** (run PS at a short HRT; give
+WAS only its floor), not a biogas uplift. The old empirical x1.30 PS uplift is removed - the
+high PS ceiling (0.97 vs WAS 0.31) already expresses that difference. (At Mangere/ETP;
+plant-specific until a local BMP - older / colder / industrial WAS can be genuinely slow.)
         """)
 
     # ── Inputs ────────────────────────────────────────────────────────────
@@ -200,8 +229,8 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
     # Advanced kinetics
     with st.expander("Advanced — kinetic constants", expanded=False):
         ka1, ka2 = st.columns(2)
-        k_ps  = ka1.slider("k_PS (/day)",  0.15, 0.40, K_PS_CENTRAL,  0.01, key="sep_kps")
-        k_was = ka2.slider("k_WAS (/day)", 0.06, 0.18, K_WAS_CENTRAL, 0.01, key="sep_kwas")
+        k_ps  = ka1.slider("k_PS (/day)",  0.20, 0.40, K_PS_CENTRAL,  0.01, key="sep_kps")
+        k_was = ka2.slider("k_WAS (/day)", 0.25, 0.50, K_WAS_CENTRAL, 0.01, key="sep_kwas")
     # (sliders always render so these are always defined)
 
     st.divider()
@@ -228,21 +257,51 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
         k_ps=k_ps, k_was=k_was,
     )
 
-    # ── Summary metrics ───────────────────────────────────────────────────
-    st.subheader("Results")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Blended biogas",  f"{r.blend_biogas:,.0f}", "Nm³/day")
-    m2.metric("Separate biogas",
-              f"{r.sep_biogas:,.0f}" if r.sep_biogas else "—",
-              f"+{r.sep_biogas - r.blend_biogas:,.0f} Nm³/d" if r.sep_biogas else None)
-    m3.metric("Biogas uplift",
-              f"+{r.biogas_uplift_pct:.1f}%" if r.sep_biogas else "—",
-              f"range {r.biogas_uplift_lo_pct:.1f}–{r.biogas_uplift_hi_pct:.1f}%")
-    if r.ps:
-        m4.metric("PS HRT", f"{r.ps.hrt_days:.1f} days",
-                  "✓ <15d" if r.ps.hrt_days < 15 else "⚠ >15d")
-        m5.metric("WAS HRT", f"{r.was.hrt_days:.1f} days",
-                  "✓ ≥15d" if r.was.hrt_days >= 15 else "⚠ below 15d")
+    # ── Separate digestion: biogas vs capacity (HRT-driven, CHE4180 BMP curves) ──
+    vs_ps_t  = ps_ds  * ps_vs  / 100.0
+    vs_was_t = was_ds * was_vs / 100.0
+    ps_flow  = ps_ds  / (ps_ts  / 100.0) if ps_ts  > 0 else 0.0
+    was_flow = was_ds / (was_ts / 100.0) if was_ts > 0 else 0.0
+    installed_vol = ps_vol + was_vol      # total existing tankage
+
+    st.markdown("**Operating point — pick the HRTs; biogas comes off the BMP curves, volume off the HRT**")
+    hc1, hc2, hc3 = st.columns(3)
+    hrt_ps  = hc1.slider("TPS HRT (days)", 6.0, 25.0, 10.0, 0.5, key="sep_hrt_ps",
+                         help="PS reaches ~94% of its 470 BMP by 10 d, ~96% by 12 d (CHE4180 curve).")
+    hrt_was = hc2.slider("WAS HRT (days)", 8.0, 30.0, 18.0, 0.5, key="sep_hrt_was",
+                         help="WAS is at its ceiling by ~15-18 d.")
+    recup = hc3.checkbox("Recuperative thickening (WAS)", value=False, key="sep_recup",
+                         help="Decouples WAS SRT from HRT: holds the biology at a target SRT while the HRT "
+                              "(and volume) drops, keeping WAS gas at a fraction of the tankage.")
+    recup_srt = hc3.slider("WAS target SRT (days)", 12.0, 25.0, 18.0, 0.5,
+                           key="sep_recup_srt") if recup else None
+    ss_on = st.checkbox(
+        "Add SolidStream THP on the WAS stream (additional, inferred, confidence D)",
+        value=False, key="sep_solidstream",
+        help="Lifts ONLY the WAS BMP from the measured 152 to an inferred ~320 mL CH4/gVS, backed out of "
+             "the Cambi 0.703 overall VSR (ETP). PS is untouched. Cross-plant transfer, unproven at this plant.",
+    )
+    scn = separate_scenario(vs_ps_t, vs_was_t, ps_flow, was_flow, installed_vol,
+                            hrt_ps_d=hrt_ps, hrt_was_d=hrt_was, solidstream=ss_on,
+                            recup_was_srt_d=recup_srt)
+
+    st.subheader("Results — biogas vs capacity")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Blended (base case)", f"{scn['ch4_blend_m3d']:,.0f}", "m³ CH4/d · BMP 258")
+    m2.metric("Separate biomethane", f"{scn['ch4_sep_m3d']:,.0f}",
+              f"+{scn['ch4_sep_m3d']-scn['ch4_blend_m3d']:,.0f} ({scn['uplift_pct']:+.0f}%)")
+    m3.metric("Freed digester volume", f"{scn['freed_vol_m3']:,.0f}",
+              f"{scn['freed_vol_pct']:+.0f}% of installed")
+    m4.metric("WAS SRT / HRT", f"{scn['srt_was_d']:.0f} / {scn['hrt_was_d']:.0f} d",
+              "recuperative" if scn['recup'] else "SRT = HRT")
+    st.caption(
+        f"Biogas is read off the CHE4180 BMP curves at each stream's retention (PS {scn['bmp_realised_ps_pct']:.0f}% "
+        f"of its 470 ceiling at {hrt_ps:.0f} d; WAS {scn['bmp_realised_was_pct']:.0f}% of {scn['was_bmp_used']:.0f} "
+        f"at {scn['srt_was_d']:.0f} d). Volume is set by HRT, so dropping HRT frees tankage but gives up a little "
+        "biogas — the trade-off chart below. Recuperative thickening breaks the trade-off by holding WAS SRT while "
+        "the HRT drops; SolidStream THP raises the WAS ceiling (inferred, confidence D). The blended base case (258) "
+        "is depressed by real-plant losses per the CHE4180 note, so part of the uplift recovers that, not separation alone."
+    )
 
     st.divider()
 
@@ -253,32 +312,30 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
 
     # ── TAB 1: Comparison ─────────────────────────────────────────────────
     with tab_compare:
-        if not r.ps:
-            st.info("No separate results yet — run with Separate or Optimise mode.")
-        else:
-            ca, cb = st.columns(2)
-            with ca:
-                st.markdown("**Blended digestion**")
-                st.metric("HRT",             f"{r.blend_hrt:.1f} days")
-                st.metric("Combined VSR",    f"{r.blend_vsr_pct:.1f}%")
-                st.metric("Biogas",          f"{r.blend_biogas:,.0f} Nm³/day")
-                st.metric("Net electricity", f"{r.blend_elec_kw:,.0f} kW")
-                st.metric("Wet cake",        f"{r.blend_cake_tpd:.1f} t/day")
-            with cb:
-                st.markdown("**Separate digestion**")
-                st.metric("PS HRT",          f"{r.ps.hrt_days:.1f} days")
-                st.metric("WAS HRT",         f"{r.was.hrt_days:.1f} days")
-                st.metric("Biogas",          f"{r.sep_biogas:,.0f} Nm³/day",
-                          f"+{r.sep_biogas-r.blend_biogas:,.0f} ({r.biogas_uplift_pct:+.1f}%)")
-                st.metric("Net electricity", f"{r.sep_elec_kw:,.0f} kW",
-                          f"+{r.elec_uplift_kw:,.0f} kW")
-                st.metric("Wet cake",        f"{r.sep_cake_tpd:.1f} t/day")
-            st.caption(
-                f"Biogas uplift sensitivity: {r.biogas_uplift_lo_pct:.1f}–"
-                f"{r.biogas_uplift_hi_pct:.1f}% (literature kinetic constant range). "
-                "30% PS yield uplift factor applied per Bolzonella 2005 / Silvestre 2015. "
-                "All values screening-grade ±15%."
-            )
+        sweep = tradeoff_sweep(vs_ps_t, vs_was_t, ps_flow, was_flow, installed_vol,
+                               hrt_ps_d=hrt_ps, solidstream=ss_on, recup_was_srt_d=recup_srt)
+        st.plotly_chart(_tradeoff_chart(sweep, scn["hrt_was_d"], scn["ch4_sep_m3d"]),
+                        use_container_width=True)
+        ca, cb = st.columns(2)
+        with ca:
+            st.markdown("**Blended (current plant)**")
+            st.metric("Biomethane",      f"{scn['ch4_blend_m3d']:,.0f} m³ CH4/d")
+            st.metric("Blended HRT",      f"{r.blend_hrt:.1f} days")
+            st.metric("Installed volume", f"{installed_vol:,.0f} m³")
+        with cb:
+            st.markdown("**Separate (your operating point)**")
+            st.metric("Biomethane",  f"{scn['ch4_sep_m3d']:,.0f} m³ CH4/d",
+                      f"+{scn['ch4_sep_m3d']-scn['ch4_blend_m3d']:,.0f} ({scn['uplift_pct']:+.0f}%)")
+            st.metric("Volume used", f"{scn['vol_sep_m3']:,.0f} m³",
+                      f"freed {scn['freed_vol_m3']:+,.0f}")
+            st.metric("PS / WAS HRT", f"{scn['hrt_ps_d']:.0f} / {scn['hrt_was_d']:.0f} d")
+        st.caption(
+            "Longer HRT pushes biomethane toward the +28% ceiling (CHE4180) but needs more tankage; shorter HRT "
+            "frees volume at a small biogas cost. Recuperative thickening lifts the freed-volume curve at constant "
+            "biogas (holds WAS SRT while the HRT drops); SolidStream lifts the biomethane curve. The dot marks your "
+            "selected WAS HRT. This tab is driven by the HRT sliders above, independent of the mode selector (which "
+            "drives the Stream Detail / Throughput / Volume Optimiser tabs)."
+        )
 
     # ── TAB 2: Stream Detail ───────────────────────────────────────────────
     with tab_streams:
@@ -301,14 +358,17 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
                         "HRT (days)":             f"{stream.hrt_days:.1f}",
                         "VS loading (kgVS/m³/d)": f"{stream.vs_loading_kgVS_m3_d:.2f}",
                         "VSR (CSTR)":             f"{stream.vsr_pct:.1f}%",
-                        "Biogas (Nm³/day)":       f"{stream.biogas_nm3d:,.0f}",
+                        "Biomethane (m³ CH4/d)":  f"{stream.vs_tpd * (BMP_PS_ML_G if stream.stream=='PS' else scn['was_bmp_used']):,.0f}",
                         "Electricity (kW)":       f"{stream.elec_gross_kw:,.0f}",
                         "Wet cake (t/day)":       f"{stream.wet_cake_tpd:.1f}",
                         "k used (/day)":          f"{stream.k_used:.2f}",
                     }.items():
                         st.markdown(f"**{k}:** {v}")
                     if stream.stream == "PS":
-                        st.markdown("**Yield uplift:** ×1.30 (separate, literature)")
+                        st.markdown(f"**BMP:** {BMP_PS_ML_G:.0f} mL CH4/gVS (f_bio 0.97, high - CHE4180)")
+                    else:
+                        _tag = "THP-lifted, inferred conf. D" if scn['solidstream'] else "raw, measured CHE4180"
+                        st.markdown(f"**BMP:** {scn['was_bmp_used']:.0f} mL CH4/gVS ({_tag})")
 
             st.divider()
             st.plotly_chart(
@@ -342,7 +402,7 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
         t1.metric("PS HRT",  f"{r.ps.hrt_days:.1f}d" if r.ps else "—",
                   "✓ below 15d" if r.ps and r.ps.hrt_days < 15 else "⚠ above 15d")
         t2.metric("WAS HRT", f"{r.was.hrt_days:.1f}d" if r.was else "—",
-                  "✓ ≥15d" if r.was and r.was.hrt_days >= 15 else "⚠ below 15d min")
+                  "✓ ≥12d" if r.was and r.was.hrt_days >= 12 else "⚠ below 12d floor")
         t3.metric("Volume freed (PS@15d)", f"{max(0, vol_freed):,.0f} m³",
                   f"{max(0, vol_freed)/8000:.1f}× 8,000 m³")
 
@@ -363,7 +423,7 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
             h_was = v_total / (ps_q_flow + was_q_flow) if label == "Blended (current)" \
                     else (V_WAS_s / was_q_flow if was_q_flow > 0 else 0)
             ps_max  = V_PS_s  / 10 * (ps_ts/100)  * 1000 * 365 / 1000 if V_PS_s  > 0 else 0
-            was_max = V_WAS_s / 15 * (was_ts/100) * 1000 * 365 / 1000 if V_WAS_s > 0 else 0
+            was_max = V_WAS_s / 12 * (was_ts/100) * 1000 * 365 / 1000 if V_WAS_s > 0 else 0
             rows.append({
                 "Scenario":      label,
                 "PS HRT (d)":    f"{h_ps:.1f}",
@@ -372,7 +432,7 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
                 "WAS max (tDS/yr)": f"{was_max:,.0f}" if label != "Blended (current)" else "—",
             })
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-        st.caption("Min HRT assumptions: PS=10d, WAS=15d. Capacity = volume ÷ HRT_min × TS% × 1000 × 365. Screening-grade ±20%.")
+        st.caption("Min HRT assumptions: PS=10d, WAS=12d (V2 floor). Capacity = volume / HRT_min x TS% x 1000 x 365. Screening-grade.")
 
         st.divider()
         st.plotly_chart(
@@ -434,7 +494,7 @@ For continuous CSTR digesters, target HRT = 12–15 days for PS.
                 break
 
         st.caption(
-            "PS designed for 12-day CSTR HRT (adequate for PS kinetics). "
-            "WAS gets remaining volume. 30% PS yield uplift applied (empirical literature). "
-            "All values screening-grade ±15%."
+            "PS designed for a 12-day CSTR HRT (adequate for PS kinetics). WAS gets the "
+            "remaining volume. Capacity is the robust separate-digestion benefit; the biomethane "
+            "uplift is shown on the Comparison tab (CHE4180 per-stream BMP). Values screening-grade."
         )
