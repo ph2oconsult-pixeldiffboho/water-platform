@@ -134,14 +134,19 @@ class K:
     # Physical / stoichiometric
     C_PER_VS = 0.51             # gC / gVS, municipal sludge (band 0.45-0.53)
     N_PER_VS = 0.050            # gN / gVS feed (used only when no measured feed N)
-    # Soluble NH4 reporting to centrate = feed_N x VSR x this efficiency. Calibrated so a
-    # THP case lands in the Mangere MEASURED centrate band (32-43% of feed N), NOT = VSR.
-    # Setting release = VSR (the legacy approach) over-predicts centrate N (the old "8,814").
-    N_SOLUBILISATION_EFF = 0.70
+    # Soluble NH4 reporting to centrate, as a fraction of FEED N. Calibrated to the ETP Cambi
+    # mass balances (2015/2026): single-pass (conventional + front-end THP) clusters at ~25-27%
+    # of feed N and is essentially VSR-independent; the SolidStream centrate RECYCLE concentrates
+    # N internally and lifts it to ~37%. The legacy feed_N x VSR x 0.70 form over-predicted -
+    # it gave conventional 5,081 (vs measured 3,164) and SolidStream 5,808 (vs measured 4,645).
+    F_CENTRATE_BASE = 0.26      # single-pass centrate N / feed N (ETP conv 0.251, THP 0.264-0.267)
+    F_CENTRATE_RECYCLE = 0.37   # SolidStream recycle centrate N / feed N (ETP SolidStream 0.368)
     P_PER_DS = 0.012            # gP / gDS feed
     CH4_LHV_KWH_NM3 = 9.97      # lower heating value
     CH4_C_KG_PER_NM3 = 0.535    # kg C per Nm3 CH4
-    BIOGAS_NM3_PER_KG_VSD = 0.90  # Nm3 biogas/kg VS destroyed - ETP Cambi 2015 (was 0.95)
+    BIOGAS_NM3_PER_KG_VSD = 0.78  # Nm3 biogas/kg VS destroyed - DEFAULT (typical municipal); plants
+                                  # override via biogas_yield. ETP 0.70 / Mangere 0.78 (measured).
+                                  # NB the old 0.90 was an artifact of the mislabeled ETP VS/DS (see ETP dict).
     CH4_FRACTION = 0.63         # THP-AD biogas CH4 by volume
     FUGITIVE_CH4_FRAC = 0.015   # methane slip -> Scope 1 (capture performance, not gas volume)
     CHP_ELEC = 0.40
@@ -288,9 +293,14 @@ class Pathway:
         p_rec = P.fraction_to("struvite_P")
         nutrient_recovery = 0.5 * n_managed + 0.5 * p_rec
 
-        # Energy neutrality: net pathway energy / gross generation (set per pathway).
-        energy_neutrality = (min(1.0, max(0.0, self.net_export_mwh_d / self.generation_mwh_d))
-                             if self.generation_mwh_d else 0.0)
+        # Energy: net export as YIELD per tonne VS fed, normalised. The old net/gross RATIO was
+        # ~0.38 for every pathway (mathematically near-constant), which washed out the real net-energy
+        # differences (Conv ~182 vs SolidStream ~219 MWh/d) and flattened the performance score. Net
+        # yield per tVS discriminates and is plant-fair (independent of plant size); REF ~1.5 MWh/tVS
+        # puts the strongest pathway near 0.9. THP parasitics correctly pull THP-WAS below conventional.
+        _vs_fed = self.basis.get("total_tds", 0.0) * self.basis.get("vs_ts", 0.0)
+        energy_neutrality = (min(1.0, max(0.0, (self.net_export_mwh_d / _vs_fed) / 1.5))
+                             if _vs_fed else 0.0)
 
         # OPEX and capacity: ledger/basis views (calibrated to Thames/Blue Plains/St Marys).
         opex = opex_view(self)["score"]
@@ -499,6 +509,70 @@ def capacity_view(pw: Pathway) -> dict:
     return out
 
 
+def capacity_decision_table(plant=None):
+    """Board-level capacity comparison on EQUIVALENT terms (vs the conventional baseline),
+    built to defuse the double-counting risk. K+ and THP both relieve the SAME thing - the
+    conventional long HRT / over-provisioned tankage - so their volume savings OVERLAP and are
+    NOT additive. The decision variable is the THP PREMIUM over no-capex K+. SolidStream adds a
+    biodegradable-ceiling / yield uplift (pilot-gated), not extra digester volume. The 'current'
+    governing constraint is read per-plant from capacity_view (hydrolysis at ETP, OLR at Mangere)."""
+    plant = plant if plant is not None else GENERIC
+    cap = capacity_view(build_worked_pathway(plant))
+    unit = KCAP.DIGESTER_UNIT_M3
+    kplus_m3 = build_pathway_k_plus(plant).basis.get("kplus_freed_m3", 0.0)
+    thp_m3 = cap.get("avoided_m3", 0.0)
+    cur = cap.get("conv_governing", "hydrolysis")
+    rows = [
+        {"pathway": "Conventional", "constraint": cur, "digesters_avoided": 0.0,
+         "capex_deferred_aud": 0.0, "mechanism": "current sizing (baseline)"},
+        {"pathway": "K+ (WAS at ~12 d floor)", "constraint": "OLR / hydraulic floor",
+         "digesters_avoided": kplus_m3 / unit, "capex_deferred_aud": kplus_m3 * KCAP.CAPEX_PER_M3,
+         "mechanism": "run WAS at the floor - NO new asset (BMP: ceiling-limited)"},
+        {"pathway": "THP (front-end)", "constraint": "OLR",
+         "digesters_avoided": thp_m3 / unit, "capex_deferred_aud": cap.get("avoided_capex_aud", 0.0),
+         "mechanism": "raise OLR ~2x via cell lysis - front-end THP capex"},
+        {"pathway": "THP + SolidStream", "constraint": "OLR + biodegradable ceiling",
+         "digesters_avoided": thp_m3 / unit, "capex_deferred_aud": cap.get("avoided_capex_aud", 0.0),
+         "mechanism": "+ raises the WAS ceiling -> yield uplift (pilot-gated, unquantified)"},
+    ]
+    thp_premium = (thp_m3 - kplus_m3) / unit
+    return {"rows": rows, "conv_governing": cur, "thp_premium_digesters": thp_premium,
+            "note": ("K+ and THP both relieve the conventional long HRT / over-provisioning, so their "
+                     "volume savings OVERLAP - they are NOT additive. The board variable is the THP "
+                     "PREMIUM over no-capex K+, which is {:.1f} digesters here. THP + SolidStream adds the "
+                     "WAS biodegradable-ceiling / yield uplift, not extra digester volume.".format(thp_premium))}
+
+
+def constraint_migration(plant=None):
+    """Per-pathway governing constraint - 'which constraint governs the plant', which is BioPoint's
+    real finding (the technology is almost secondary). Conventional/K read the plant's MEASURED
+    governing constraint (hydrolysis at ETP, OLR at the over-provisioned Mangere); K+ runs at the
+    OLR/hydraulic floor; THP shifts the bind to OLR; THP+SolidStream is biodegradable-ceiling-limited."""
+    plant = plant if plant is not None else GENERIC
+    cur = capacity_view(build_worked_pathway(plant)).get("conv_governing", "hydrolysis")
+    olr = (cur == "OLR")
+    conv_label = "OLR (conventional ceiling ~2.5)" if olr else "hydrolysis (long HRT)"
+    conv_why = ("tankage is over-provisioned, so it already sits at the conventional OLR ceiling - "
+                "hydrolysis HRT is not the bind") if olr else "long HRT needed to complete slow WAS hydrolysis"
+    rows = [
+        ("Conventional", conv_label, conv_why),
+        ("K (PS short-HRT)", conv_label, "same bind; PS shortened, WAS unchanged"),
+        ("K+ (WAS at ~12 d floor)", "hydraulic / OLR floor", "WAS run to the practical floor (BMP: ceiling-limited)"),
+        ("THP (front-end)", "OLR relieved (~2x, ~5.0)", "cell lysis pre-completes hydrolysis - the OLR ceiling roughly doubles"),
+        ("THP + SolidStream", "biodegradable ceiling", "OLR relieved; the WAS biodegradable ceiling now binds (yield, not volume)"),
+    ]
+    if olr:
+        headline = ("This plant already sits at the conventional OLR ceiling - its tanks are over-provisioned, so "
+                    "hydrolysis HRT is not the bind. The migration is: conventional OLR -> practical hydraulic floor "
+                    "(K+) -> OLR relieved ~2x (THP) -> biodegradable ceiling (SolidStream). The two OLR states are "
+                    "different ceilings (~2.5 vs ~5.0 kgVS/m3.d); THP raises the ceiling, it does not return to it.")
+    else:
+        headline = ("This plant is hydrolysis-limited. The migration is: hydrolysis (long HRT) -> practical hydraulic "
+                    "floor (K+) -> OLR relieved ~2x (THP) -> biodegradable ceiling (SolidStream). The technology is the "
+                    "consequence; the real question is which constraint governs the plant and which one each move shifts to.")
+    return {"conv_governing": cur, "rows": rows, "headline": headline}
+
+
 ETP_THP_2015 = {  # ETP Cambi/AECOM THP conceptual-design calibration case (2015).
     "basis": {"total_tds": 169.8, "ps_frac": 0.60, "was_frac": 0.40, "vs_ts": 0.81,
               "digesters": "8 x 4300 m3 (34,400 useful)", "existing_hrt_d": 16.9},
@@ -600,12 +674,21 @@ GENERIC = dict(name="Generic 100 tDS/d", PS_tds=40.0, WAS_tds=60.0,
                feed_N_kgd=None, P_per_ds=0.012, digester_vol_m3=None)
 
 # ETP real basis (from production cutover fixture + centrate case study):
-# PS 120.7 tDS @7.5%TS, WAS 98.8 tDS @3.5%TS, VS 65% both, feed N 12,624 kg/d
-# (PS 3.5%, WAS 8.5% of DS), existing conventional digesters 64,000 m3. P not
-# measured at ETP -> retained as estimate, flagged.
+# PS 120.7 tDS @7.5%TS, WAS 98.8 tDS @3.5%TS, feed N 12,624 kg/d, digesters 64,000 m3.
+# vs_ts is the FEED VS/DS ~0.84 (similar to Mangere). NB: the prior 0.65 was the DIGESTED-sludge
+# VS/DS mislabeled into the feed slot - that inflated the apparent biogas yield to 0.90; with the
+# correct 0.84 feed the yield is 0.70 (biogas 74,163 Nm3/d is the anchor, invariant to the split).
+# Digested VS/DS recomputes to ~0.69. P not measured at ETP -> estimate, flagged.
 ETP = dict(name="ETP (220 tDS/d, real basis)", PS_tds=120.7, WAS_tds=98.8,
-           ps_ts=7.5, was_ts=3.5, vs_ts=0.65,
+           ps_ts=7.5, was_ts=3.5, vs_ts=0.84, biogas_yield=0.70,
            feed_N_kgd=12624.0, P_per_ds=0.012, digester_vol_m3=64000.0)
+
+# Mangere real basis (BioPoint calibration xlsx + AECOM strategy report). Digester feed 124.2 tDS/d
+# @5.8%TS, VS/DS 0.842 (measured), 7 digesters ~49,000 m3 (HRT ~21.7 d), VSR 0.585 (gas method),
+# biogas 47,763 Nm3/d -> yield 0.78. PS/WAS split and feed N are scaled estimates (flagged).
+MANGERE = dict(name="Mangere WWTP (124 tDS/d, measured)", PS_tds=70.0, WAS_tds=54.2,
+               ps_ts=5.8, was_ts=5.0, vs_ts=0.842, biogas_yield=0.78,
+               feed_N_kgd=7142.0, feed_N_estimated=True, P_per_ds=0.012, digester_vol_m3=49000.0)
 
 
 # ===========================================================================
@@ -630,6 +713,13 @@ def _chp_split(biogas_chem, gas_util):
             biogas_chem * (1 - gas_util))
 
 
+def centrate_N(N_in: float, recycle: bool = False) -> float:
+    """Soluble NH4 returning to the plant in centrate (kgN/d). ETP-calibrated as a fraction of
+    FEED N: single-pass (conventional / front-end THP) ~26%, SolidStream centrate recycle ~37%.
+    Replaces the legacy feed_N x VSR x 0.70 form, which over-predicted centrate N at ETP."""
+    return N_in * (K.F_CENTRATE_RECYCLE if recycle else K.F_CENTRATE_BASE)
+
+
 def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
     # --- Feed basis (from plant) ---
     WAS_tds = plant["WAS_tds"]
@@ -647,7 +737,7 @@ def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
     C_liquor = C_digestate * K.C_LIQUOR_FRAC
     C_cake = C_digestate - C_liquor
     # biogas carbon -> CH4-C and CO2-C; CH4 combusted -> biogenic CO2 to atm, slip -> Scope1
-    CH4_nm3 = VS_destroyed * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    CH4_nm3 = VS_destroyed * 1000 * plant.get("biogas_yield", K.BIOGAS_NM3_PER_KG_VSD) * K.CH4_FRACTION
     C_CH4 = CH4_nm3 * K.CH4_C_KG_PER_NM3 / 1000.0
     C_CO2_biogas = C_biogas - C_CH4
     C_fugitive = C_CH4 * K.FUGITIVE_CH4_FRAC
@@ -689,7 +779,7 @@ def build_worked_pathway(plant: dict = GENERIC) -> Pathway:
 
     # ---------------- NITROGEN (kgN/d) ----------------
     N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
-    N_released = N_in * K.VSR * K.N_SOLUBILISATION_EFF   # calibrated to Mangere centrate band
+    N_released = centrate_N(N_in, recycle=False)   # ETP-calibrated single-pass (~26% of feed N)
     N_cake = N_in - N_released                           # organic N retained in cake to land
     # struvite N recovery is P-limited (1:1 molar with recovered P)
     P_in = total_tds * plant.get("P_per_ds", K.P_PER_DS) * 1000.0
@@ -806,7 +896,7 @@ def build_separate_pswas_pathway(plant: dict = GENERIC) -> Pathway:
     C_in = VS_in * K.C_PER_VS; C_biogas = VS_destroyed * K.C_PER_VS
     C_digestate = C_in - C_biogas
     C_liquor = C_digestate * K.C_LIQUOR_FRAC; C_cake = C_digestate - C_liquor
-    CH4_nm3 = VS_destroyed * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    CH4_nm3 = VS_destroyed * 1000 * plant.get("biogas_yield", K.BIOGAS_NM3_PER_KG_VSD) * K.CH4_FRACTION
     C_CH4 = CH4_nm3 * K.CH4_C_KG_PER_NM3 / 1000.0
     C_CO2_biogas = C_biogas - C_CH4
     C_fugitive = C_CH4 * K.FUGITIVE_CH4_FRAC; C_combusted = C_CH4 - C_fugitive
@@ -834,7 +924,7 @@ def build_separate_pswas_pathway(plant: dict = GENERIC) -> Pathway:
                   "biogas_flared_unused": gas_flared})
 
     N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
-    N_released = N_in * VSR_eff * K.N_SOLUBILISATION_EFF
+    N_released = centrate_N(N_in, recycle=False)
     P_in = total_tds * plant.get("P_per_ds", K.P_PER_DS) * 1000.0
     P_soluble = P_in * K.P_SOLUBILISED_FRAC; P_struvite = P_soluble * K.STRUVITE_P_RECOVERY
     N_struvite = P_struvite * (14.0/31.0) * K.STRUVITE_N_PER_P_MOLAR
@@ -926,7 +1016,7 @@ def build_solidstream_pathway(plant: dict = GENERIC) -> Pathway:
     C_in = VS_in * K.C_PER_VS; C_biogas = VS_destroyed * K.C_PER_VS
     C_digestate = C_in - C_biogas
     C_liquor = C_digestate * K.C_LIQUOR_FRAC; C_cake = C_digestate - C_liquor
-    CH4_nm3 = VS_destroyed * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    CH4_nm3 = VS_destroyed * 1000 * plant.get("biogas_yield", K.BIOGAS_NM3_PER_KG_VSD) * K.CH4_FRACTION
     C_CH4 = CH4_nm3 * K.CH4_C_KG_PER_NM3 / 1000.0
     C_CO2_biogas = C_biogas - C_CH4
     C_fugitive = C_CH4 * K.FUGITIVE_CH4_FRAC; C_combusted = C_CH4 - C_fugitive
@@ -956,7 +1046,7 @@ def build_solidstream_pathway(plant: dict = GENERIC) -> Pathway:
                   "biogas_flared_unused": gas_flared})
 
     N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
-    N_released = N_in * KSS.VSR * K.N_SOLUBILISATION_EFF
+    N_released = centrate_N(N_in, recycle=True)   # SolidStream centrate recycle (~37% of feed N)
     P_in = total_tds * plant.get("P_per_ds", K.P_PER_DS) * 1000.0
     P_soluble = P_in * K.P_SOLUBILISED_FRAC; P_struvite = P_soluble * K.STRUVITE_P_RECOVERY
     N_struvite = P_struvite * (14.0/31.0) * K.STRUVITE_N_PER_P_MOLAR
@@ -1104,7 +1194,7 @@ def build_pathway_b(plant: dict = GENERIC) -> Pathway:
 
     C_in = VS_in * K.C_PER_VS; C_biogas = VS_d * K.C_PER_VS
     C_dig = C_in - C_biogas; C_liq = C_dig * K.C_LIQUOR_FRAC; C_cake = C_dig - C_liq
-    CH4 = VS_d * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    CH4 = VS_d * 1000 * plant.get("biogas_yield", K.BIOGAS_NM3_PER_KG_VSD) * K.CH4_FRACTION
     C_CH4 = CH4 * K.CH4_C_KG_PER_NM3 / 1000.0; C_fug = C_CH4 * K.FUGITIVE_CH4_FRAC
     carbon = Ledger("carbon", "tC/d", inflows={"feed_volatile_carbon": C_in},
         outflows={"soil_land_application": C_cake, "return_liquor_to_WWTW": C_liq,
@@ -1117,7 +1207,7 @@ def build_pathway_b(plant: dict = GENERIC) -> Pathway:
     heat_demand = K.DIGESTER_HEAT_MWH_D
     heat_used = min(heat_gen, heat_demand)
     N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
-    N_rel = N_in * VSR * K.N_SOLUBILISATION_EFF
+    N_rel = centrate_N(N_in, recycle=False)
     pna_N = N_rel * KN.PNA_N_REMOVAL
     pna_parasitic = pna_N * 1.2 / 1000.0          # sidestream deammonification blowers ~1.2 kWh/kgN (vs ~4-6 mainstream)
     parasitics = ((VS_rem + total_tds*(1-vs_ts)) * K.DEWATER_KWH_PER_TDS / 1000.0
@@ -1312,7 +1402,7 @@ def build_thermal_pathway(plant: dict = GENERIC) -> Pathway:
     C_digestate = C_in - C_biogas
     C_liquor = C_digestate * K.C_LIQUOR_FRAC
     C_cake = C_digestate - C_liquor                       # carbon into the dryer/gasifier
-    CH4_nm3 = VS_destroyed * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    CH4_nm3 = VS_destroyed * 1000 * plant.get("biogas_yield", K.BIOGAS_NM3_PER_KG_VSD) * K.CH4_FRACTION
     C_CH4 = CH4_nm3 * K.CH4_C_KG_PER_NM3 / 1000.0
     C_CO2_biogas = C_biogas - C_CH4
     C_fugitive = C_CH4 * K.FUGITIVE_CH4_FRAC
@@ -1465,7 +1555,7 @@ def build_conventional_pathway(plant: dict = GENERIC) -> Pathway:
     C_dig = C_in - C_biogas
     C_liq = C_dig * K.C_LIQUOR_FRAC
     C_cake = C_dig - C_liq
-    CH4 = VS_d * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    CH4 = VS_d * 1000 * plant.get("biogas_yield", K.BIOGAS_NM3_PER_KG_VSD) * K.CH4_FRACTION
     C_CH4 = CH4 * K.CH4_C_KG_PER_NM3 / 1000.0
     C_fug = C_CH4 * K.FUGITIVE_CH4_FRAC
     carbon = Ledger("carbon", "tC/d",
@@ -1488,7 +1578,7 @@ def build_conventional_pathway(plant: dict = GENERIC) -> Pathway:
                   "chp_conversion_losses": chp_losses, "biogas_flared_unused": gas_flared})
 
     N_in = plant["feed_N_kgd"] if plant.get("feed_N_kgd") else VS_in * K.N_PER_VS * 1000.0
-    N_rel = N_in * VSR * K.N_SOLUBILISATION_EFF
+    N_rel = centrate_N(N_in, recycle=False)
     nitrogen = Ledger("nitrogen", "kgN/d",
         inflows={"feed_nitrogen": N_in},
         outflows={"cake_organic_N_to_land": N_in - N_rel,
@@ -1578,6 +1668,10 @@ SCENARIOS = [
     Scenario("Utility becomes net energy exporter", 0.30, lambda t: (
         True, _clip(0.30 + 0.60*t["net_energy_norm"]),
         "rewards high net-energy pathways")),
+    Scenario("Return-liquor N levy / N2O pricing", 0.55, lambda t: (
+        True, _clip(0.30 + 0.70*t["nutrient"]),
+        "prices sidestream N and N2O: rewards genuine N recovery/management (struvite, PN/A); "
+        "conventional dumps N to the return liquor and thermal volatilises it, so both score low")),
 ]
 
 
@@ -1627,8 +1721,138 @@ def optionality(pw: Pathway) -> dict:
     (foreclosed if thermal else preserved).append("N recovery (AS)")        # thermal volatilises N
     (preserved if t["net_energy"] > 0 else foreclosed).append("energy export")
     (preserved if (t["thp"] and t["headroom_norm"] > 0.05) else foreclosed).append("FOGO co-digestion capacity")
-    return {"preserved": preserved, "foreclosed": foreclosed,
-            "score": len(preserved) / len(OPTION_SET)}
+    # Reversibility: optionality is not only options-kept-open but also low sunk-capital / operating
+    # flexibility. Big committed front-end capital (full THP, thermal) is less reversible than an
+    # operational play (conventional, K+), so it earns a modest haircut - K+ stays above THP.
+    if not t["thp"]:
+        rev = 1.0
+    elif pw.basis.get("kplus_freed_m3"):
+        rev = 0.80
+    elif t["endpoint"] == "thermal":
+        rev = 0.45
+    else:
+        rev = 0.65
+    score = 0.8 * (len(preserved) / len(OPTION_SET)) + 0.2 * rev
+    return {"preserved": preserved, "foreclosed": foreclosed, "reversibility": rev, "score": score}
+
+
+def regret_table(pathways):
+    """Explicit least-regret calculation across the future worlds (SCENARIOS). For each scenario,
+    regret = (best perf achievable in the set) - (this pathway's perf). Total regret is the
+    likelihood-weighted mean regret; the LEAST-REGRET pathway minimises it. This computes what the
+    board narrative previously only asserted. Pass the pathways to compare (e.g. Conventional, K+,
+    THP, Thermal); labels are taken from pathway.name."""
+    res = [resilience(p)["results"] for p in pathways]
+    matrix, totals, wsum = [], [0.0]*len(pathways), 0.0
+    for i, sc in enumerate(SCENARIOS):
+        perfs = [res[j][i]["perf"] for j in range(len(pathways))]
+        viab = [res[j][i]["viable"] for j in range(len(pathways))]
+        best = max(perfs)
+        matrix.append({"scenario": sc.name, "likelihood": sc.likelihood,
+                       "perf": perfs, "viable": viab, "regret": [best - x for x in perfs]})
+        for j in range(len(pathways)):
+            totals[j] += sc.likelihood * (best - perfs[j])
+        wsum += sc.likelihood
+    perf_regret = [t / wsum if wsum else 0.0 for t in totals]
+    # Commitment (stranded-capital) regret: building a large, irreversible asset that a benign future
+    # does not need is itself a regret - the Hunter Water lesson. Without this term, regret structurally
+    # favours the highest-capability/highest-capex option (the THP+thermal train) regardless of how
+    # likely its triggering future is. Weighted by (1 - reversibility) from the optionality view.
+    COMMIT_W = 0.25
+    commit_regret = [COMMIT_W * (1.0 - optionality(p).get("reversibility", 1.0)) for p in pathways]
+    totals = [perf_regret[j] + commit_regret[j] for j in range(len(pathways))]
+    order = sorted(range(len(pathways)), key=lambda j: totals[j])
+    return {"labels": [p.name for p in pathways], "matrix": matrix, "perf_regret": perf_regret,
+            "commit_regret": commit_regret, "total_regret": totals,
+            "least_regret_idx": order[0], "rank_order": order}
+
+
+def capital_allocation(plant=None):
+    """Board capital-allocation framing: Commit Now / Preserve / Monitor. Boards allocate capital,
+    not technologies. Each item is graded by evidence maturity from the confidence framework, so the
+    list is honest about what is bankable now vs what must stay an option vs what is still emerging."""
+    plant = plant if plant is not None else GENERIC
+    kc = kplus_was_capacity(plant)
+    return {
+        "commit_now": [
+            ("Digester optimisation (PS short-HRT, mixing, control)", "Conf A - no new asset; immediate VSR/throughput gain"),
+            ("Struvite / phosphorus recovery", "Conf A - mature; de-risks centrate P and downstream scaling"),
+            ("Sidestream N monitoring + PN/A readiness", "Conf A/B - nitrogen is the emerging binding constraint"),
+        ],
+        "preserve": [
+            ("SolidStream conditioning", "Cambi VSR 0.703 proven elsewhere; transfer to this WAS pending BMP - keep the design space"),
+            ("Thermal endpoint corridor (pyrolysis / gasification / HTL)", "the only PFAS-robust route; keep the cake thermal-ready, do not foreclose"),
+            ("Separate-digestion / retrofit footprint", "preserves the K+ / separate route without committing front-end THP capex"),
+        ],
+        "monitor": [
+            ("K+ (WAS at the %.0f d floor)" % kc["floor_d"],
+             "capacity confidence %s (BMP-backed); yield uplift %s" % (kc["capacity_confidence"], kc["yield_uplift_status"])),
+            ("HTL", "pre-commercial; watch for full-scale references before pricing it in"),
+            ("PFAS land-application regulation", "watch the ban trigger - it flips the endpoint decision, not the digestion decision"),
+        ],
+        "note": ("Boards make capital-allocation decisions, not technology decisions. Commit only the "
+                 "high-confidence, low-regret moves now; preserve the option space at low cost; monitor "
+                 "the evidence (above all the SolidStream-treated-WAS BMP) that converts a Monitor item "
+                 "into a Commit. Note THP-of-WAS is NOT a commit-now item on current evidence - it is a "
+                 "Preserve item pending the K+ vs THP capacity comparison."),
+    }
+
+
+def regret_sensitivity(pathways, pfas_probs=(0.20, 0.40, 0.60, 0.80)):
+    """Sweep the PFAS-land-application-ban likelihood and report the least-regret pathway at each.
+    Exposes how much the 'thermal wins' result depends on the (high, 0.70 default) PFAS-ban
+    probability - the single assumption that otherwise dominates the resilience ranking."""
+    res = [resilience(p)["results"] for p in pathways]
+    pfas_idx = next(i for i, sc in enumerate(SCENARIOS) if "PFAS" in sc.name)
+    out = []
+    for prob in pfas_probs:
+        totals, wsum = [0.0] * len(pathways), 0.0
+        for i, sc in enumerate(SCENARIOS):
+            lk = prob if i == pfas_idx else sc.likelihood
+            perfs = [res[j][i]["perf"] for j in range(len(pathways))]
+            best = max(perfs)
+            for j in range(len(pathways)):
+                totals[j] += lk * (best - perfs[j])
+            wsum += lk
+        totals = [t / wsum for t in totals]
+        totals = [totals[j] + 0.25 * (1.0 - optionality(pathways[j]).get("reversibility", 1.0))
+                  for j in range(len(pathways))]   # same commitment term as regret_table
+        win = min(range(len(pathways)), key=lambda j: totals[j])
+        out.append({"pfas_prob": prob, "winner": pathways[win].name, "winner_idx": win, "total_regret": totals})
+    return out
+
+
+def constraint_radar(plant=None):
+    """Single-page unifier of the two report questions: which constraint governs the plant TODAY
+    (the Strategic question) and which FUTURE breaks the pathway (the Resilience question). Gives a
+    current-vs-10-year risk per constraint and how each pathway moves it. Risk: Low/Medium/High/Very High."""
+    plant = plant if plant is not None else GENERIC
+    cur = capacity_view(build_worked_pathway(plant)).get("conv_governing", "hydrolysis")
+    nliq = build_conventional_pathway(plant).ledgers["nitrogen"].outflows.get("return_liquor_NH4_to_WWTW", 0.0)
+    feed_n = plant.get("feed_N_kgd") or 0.0
+    n_frac = (nliq / feed_n) if feed_n else 0.0
+    cap_today = "High" if cur == "hydrolysis" else "Medium"
+    n_today = "High" if n_frac > 0.30 else ("Medium" if n_frac > 0.15 else "Low")
+    constraints = [
+        ("Capacity", cap_today, "High"),
+        ("Nitrogen (sidestream)", n_today, "High"),
+        ("PFAS", "Low", "Very High"),
+        ("Carbon", "Medium", "High"),
+        ("Energy", "Medium", "Medium"),
+    ]
+    moves = {
+        "Capacity":              {"Conventional": "--", "K+": "lowers", "THP": "lowers++", "Thermal": "lowers++"},
+        "Nitrogen (sidestream)": {"Conventional": "raises", "K+": "raises", "THP": "raises", "Thermal": "to air"},
+        "PFAS":                  {"Conventional": "--", "K+": "--", "THP": "--", "Thermal": "destroys"},
+        "Carbon":                {"Conventional": "--", "K+": "lowers", "THP": "lowers", "Thermal": "lowers++"},
+        "Energy":                {"Conventional": "--", "K+": "lowers", "THP": "lowers", "Thermal": "mixed"},
+    }
+    return {"conv_governing": cur, "constraints": constraints, "pathway_moves": moves,
+            "note": ("Today the binding constraint is %s; the 10-year risk is dominated by PFAS and a tightening "
+                     "sidestream-nitrogen consent. Read across a row to see how each pathway moves that risk - no "
+                     "single pathway relieves all of them, which is exactly why the endpoint (PFAS) is a separate "
+                     "decision from digestion (capacity / nitrogen). It unites the two questions: which constraint "
+                     "governs now, and which future breaks the pathway." % cur)}
 
 
 # ===========================================================================
@@ -1688,7 +1912,7 @@ def build_thermal_endpoints(plant: dict = GENERIC) -> dict:
     C_in = VS_in * K.C_PER_VS
     C_biogas = VS_d * K.C_PER_VS
     C_digestate = C_in - C_biogas                       # cake carbon entering the thermal unit
-    CH4 = VS_d * 1000 * K.BIOGAS_NM3_PER_KG_VSD * K.CH4_FRACTION
+    CH4 = VS_d * 1000 * plant.get("biogas_yield", K.BIOGAS_NM3_PER_KG_VSD) * K.CH4_FRACTION
     C_CH4 = CH4 * K.CH4_C_KG_PER_NM3 / 1000.0
     C_fug = C_CH4 * K.FUGITIVE_CH4_FRAC
     biogas_chem = CH4 * K.CH4_LHV_KWH_NM3 / 1000.0

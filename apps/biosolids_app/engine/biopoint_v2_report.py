@@ -150,7 +150,7 @@ def build(bundle):
         f"(~${cap['avoided_capex_aud']/1e6:.0f}M deferred)."))
     story.append(P(
         "Two objectives dominate the endpoint and nutrient decisions. <b>Nitrogen:</b> conventional digestion "
-        "returns a large sidestream ammonia load to the plant (over 5,000 kgN/d at this scale) &mdash; a "
+        "returns a large sidestream ammonia load to the plant (~3,300 kgN/d conventional, rising to ~4,650 on the SolidStream recycle, measured against ETP\u2019s Cambi mass balances) &mdash; a "
         "near-term operational and consenting constraint that sidestream PN/A can cut by ~88%, and that for "
         "many plants binds sooner than PFAS. <b>Carbon / PFAS:</b> the endpoint sets carbon fate and PFAS "
         "destruction &mdash; land retention, pyrolysis (durable biochar plus carbon credits), gasification, or "
@@ -198,8 +198,39 @@ def build(bundle):
                    "are retained, not removed &mdash; the recommendation pairs them with a kept-open option "
                    "(e.g. a thermal endpoint against a PFAS land-application ban).", S_SMALL))
 
+    story.append(P("Driver breakdown &mdash; where the scores actually differ", S_H2))
+    story.append(P("Performance is a weighted view of six ledger-derived drivers (0-1). The single number "
+                   "can look close; the differentiation lives in the drivers. PFAS is a flat zero for every "
+                   "digestion route (an endpoint property, not a digestion one) and Scope 1 is uniformly low "
+                   "&mdash; so the digestion choice is decided by capacity, net-energy yield and OPEX.", S_SMALL))
+    dpaths = [("Conv", S.build_conventional_pathway(plant)), ("K+", S.build_pathway_k_plus(plant)),
+              ("THP", S.build_worked_pathway(plant)), ("SolidS", S.build_solidstream_pathway(plant)), ("Therm", tp)]
+    drows = [[P("Driver", S_CELLH)] + [P(nm, S_CRH) for nm, _ in dpaths]]
+    for key, lab in [("scope1_emissions","Scope 1"),("pfas","PFAS"),("nutrient_recovery","Nutrient"),
+                     ("opex","OPEX"),("energy_neutrality","Energy yield"),("capacity","Capacity")]:
+        drows.append([P(lab, S_CELL)] + [P(f"{pw.driver_scores().get(key,0):.2f}", S_CR) for _, pw in dpaths])
+    drows.append([P("<b>Performance</b>", S_CELLB)] +
+                 [P(f"<b>{S.three_axis(pw, weights)['performance']*100:.0f}</b>", S_CR) for _, pw in dpaths])
+    story.append(styled(Table(drows, colWidths=[30*mm, 22*mm, 22*mm, 22*mm, 24*mm, 22*mm])))
+    story.append(P("The energy driver is net-export YIELD per tonne VS (not the old net/gross ratio, which was "
+                   "near-constant and flattened the score). Capacity and energy yield are where K+ and SolidStream "
+                   "separate from conventional, and THP-WAS sits below them on energy because of its parasitic load.", S_SMALL))
+
     # ===== V3.5 Carbon Endpoint Strategy (Stage 3) =====
     comp = S.carbon_strategy_comparison(plant)
+    _arg = lambda metric: max(comp, key=lambda x: x[metric])["endpoint"]
+    story.append(P("Carbon &amp; PFAS Endpoint &mdash; the third, independent decision", S_H1))
+    story.append(P("Before digestion architecture, the board-level question is where the carbon finally goes. "
+                   "No single endpoint wins on every objective &mdash; the endpoint is chosen for the objective "
+                   "being optimised, separately from the digestion decision.", S_SMALL))
+    obj_tbl = [[P("If the objective is\u2026", S_CELLH), P("\u2026the endpoint is", S_CRH)]]
+    for o, e in [("Carbon permanence / CO\u2082 removal", _arg("removed_tCO2e_d")),
+                 ("Maximum energy", _arg("net_export_mwh_d")),
+                 ("PFAS destruction", _arg("pfas_destruction")),
+                 ("Lowest cost / simplicity (today)", "Land application")]:
+        obj_tbl.append([P(o, S_CELL), P(e, S_CR)])
+    story.append(styled(Table(obj_tbl, colWidths=[85*mm, 65*mm])))
+    story.append(Spacer(1, 4))
     hdr = [P("Endpoint", S_CELLH), P("Strategy", S_CELLH), P("Retain tC/d", S_CRH), P("Seq.", S_CRH),
            P("Emit", S_CRH), P("Removed CO2e", S_CRH), P("PFAS", S_CRH), P("Net MWh/d", S_CRH), P("Conf", S_CRH)]
     rows = [hdr]
@@ -210,7 +241,7 @@ def build(bundle):
                      P(f"{r['pfas_destruction']*100:.0f}%", S_CR), P(f"{r['net_export_mwh_d']:.0f}", S_CR),
                      P(r["confidence"], S_CR)])
     story.append(KeepTogether([
-        P("Carbon Endpoint Strategy &mdash; Retention / Conversion / Destruction (Stage 3)", S_H1),
+        P("Endpoint ledgers &mdash; by carbon-fate family (retention / conversion / destruction)", S_H2),
         P("Biology (separate digestion) optimises methane and capacity; biosolids quality "
           "(SolidStream) optimises the cake; the <i>endpoint</i> optimises where the carbon "
           "finally goes &mdash; a third, independent decision. BioPoint composes the strategic "
@@ -366,10 +397,27 @@ def build(bundle):
         ("Existing tanks: HRT conv -&gt; THP", f"{cap.get('hrt_conv_existing_d',0):.1f} d -&gt; {cap.get('hrt_thp_existing_d',0):.1f} d"),
         ("Existing-tank throughput headroom", f"+{cap.get('capacity_headroom_tds',0):,.0f} tDS/d ({cap.get('existing_governing','')}-limited)"),
     ]))
-    story.append(P("Conventional sizing is hydrolysis-governed (slow WAS hydrolysis forces long "
-                   "HRT); THP sizing is OLR-governed. Sizing THP on a conventional HRT understates "
-                   "the benefit &mdash; the earlier single-constraint model gave ~$72M; the "
-                   "three-constraint model gives ${:.0f}M.".format(cap['avoided_capex_aud']/1e6), S_SMALL))
+    _cc = cap["conv_constraints"]; _cg = cap["conv_governing"]
+    _runner = max((k for k in _cc if k != _cg), key=lambda k: _cc[k])
+    _gap = (cap["vol_conv_m3"] - _cc[_runner]) / cap["vol_conv_m3"] * 100.0 if cap["vol_conv_m3"] else 0.0
+    _cross = (" &mdash; within {:.0f}%, so this plant sits right at the OLR/hydrolysis crossover".format(_gap)) if _gap < 5 else ""
+    story.append(P("At this plant, conventional sizing is <b>{}-governed</b> ({:,.0f} m\u00b3; {} would need "
+                   "{:,.0f} m\u00b3{}); THP sizing is <b>{}-governed</b>. Sizing THP on a conventional HRT "
+                   "understates the benefit &mdash; the three-constraint model gives ${:.0f}M deferred. The "
+                   "governing constraint is computed per plant, not assumed.".format(
+                       _cg, cap["vol_conv_m3"], _runner, _cc[_runner], _cross, cap["thp_governing"],
+                       cap["avoided_capex_aud"]/1e6), S_SMALL))
+    # Board-level capacity comparison on equivalent terms (defuses double-counting)
+    cdt = S.capacity_decision_table(plant)
+    story.append(P("Capacity options on equivalent terms (digesters avoided vs the conventional baseline)",
+                   mk("cdt", parent=S_SMALL, textColor=ACCENT, fontName="Helvetica-Bold", spaceBefore=6, spaceAfter=2)))
+    _r = [[P("Pathway", S_CELLH), P("Governing constraint", S_CRH), P("Digesters avoided", S_CRH), P("CAPEX deferred", S_CRH)]]
+    for r in cdt["rows"]:
+        _da = "0 (baseline)" if r["digesters_avoided"] == 0 else "{:.1f}".format(r["digesters_avoided"])
+        _cx = "&mdash;" if r["capex_deferred_aud"] == 0 else "${:.0f}M".format(r["capex_deferred_aud"]/1e6)
+        _r.append([P(r["pathway"], S_CELL), P(r["constraint"], S_CR), P(_da, S_CR), P(_cx, S_CR)])
+    story.append(styled(Table(_r, colWidths=[50*mm, 46*mm, 24*mm, 24*mm])))
+    story.append(P("<b>Not additive:</b> " + cdt["note"], S_SMALL))
     story.append(P("THP capacity intensification mechanisms", mk("cm", parent=S_SMALL,
                    textColor=ACCENT, fontName="Helvetica-Bold", spaceBefore=4, spaceAfter=2)))
     for m in ["Increased feed solids concentration (~5.5% -&gt; 10% DS) &mdash; lower hydraulic load",
@@ -424,6 +472,13 @@ def build(bundle):
         hrt = (f"{r['was_hrt_d']:.1f} d" if isinstance(r.get("was_hrt_d"), (int, float)) else "n/a")
         rows.append([P(r["config"], S_CELL), P(hrt, S_CR), P(r["limit"], S_CR), P(r["evidence"], S_CR)])
     story.append(styled(Table(rows, colWidths=[46*mm, 18*mm, 56*mm, 40*mm])))
+    cm = S.constraint_migration(plant)
+    story.append(P("Constraint migration &mdash; which constraint governs the plant", S_H2))
+    cmrows = [[P("Configuration", S_CELLH), P("Governing constraint", S_CRH), P("Why", S_CELLH)]]
+    for cfg, con, why in cm["rows"]:
+        cmrows.append([P(cfg, S_CELL), P(con, S_CR), P(why, S_CELL)])
+    story.append(styled(Table(cmrows, colWidths=[40*mm, 38*mm, 72*mm])))
+    story.append(P(cm["headline"], S_SMALL))
     story.append(Spacer(1, 3))
     story.append(P("<b>Verdict:</b> WAS is ceiling-limited, not rate-limited. So K+'s capacity claim &mdash; run the "
                    f"WAS digester at the {kc['floor_d']:.0f} d floor &mdash; is justified by measured BMP kinetics "
@@ -437,6 +492,21 @@ def build(bundle):
                    "Cambi-calibrated VSR 0.703 basis as Pathways E and K, but its transfer to this plant's WAS is "
                    f"<b>{kc['yield_uplift_status']}</b>. The decisive pilot is a BMP on SolidStream-treated WAS versus "
                    "raw WAS, measuring the ceiling uplift directly &mdash; not a hydrolysis-rate measurement.", S_SMALL))
+
+    story.append(P("Evidence separation &mdash; proven vs assumed vs unproven", S_H2))
+    for grade, col, items in [
+        ("PROVEN", GOOD, ["WAS kinetics from per-stream BMP (k_WAS ~0.38/d, f_bio ~0.31)",
+                          "K+ capacity benefit &mdash; short-HRT WAS retains ~94% of conventional VSR"]),
+        ("ASSUMED", ACCENT, ["SolidStream raises the WAS biodegradable ceiling (inferred from Cambi VSR 0.703 elsewhere)"]),
+        ("UNPROVEN", MUTED, ["Plant-specific SolidStream methane gain on THIS WAS (pending the treated-WAS BMP)"]),
+    ]:
+        story.append(P(f"<b>{grade}</b>", mk("eg_"+grade, parent=S_BODY, textColor=col, spaceBefore=3, spaceAfter=1)))
+        for it in items:
+            story.append(bullet(it))
+    story.append(P("The capacity case rests entirely on PROVEN items. The yield case depends on the ASSUMED "
+                   "ceiling uplift and is not bankable until the UNPROVEN plant-specific gain is measured. "
+                   "BioPoint never lets the proven capacity logic borrow confidence from the unproven yield claim.",
+                   mk("evn", parent=S_SMALL, backColor=LIGHT, borderPadding=6, spaceBefore=3)))
 
     # ===== 8 opex =====
     story.append(P("8 &nbsp; OPEX Breakdown", S_H1))
@@ -498,25 +568,35 @@ def build(bundle):
     story.append(P("Levels: A proven, B strong evidence, C emerging, D hypothesis.", S_SMALL))
 
     # ===== 11 validation / road test =====
-    story.append(P("11 &nbsp; Validation (ETP road test)", S_H1))
+    _pn = plant.get("name", "plant").split("(")[0].strip()
+    story.append(P(f"11 &nbsp; Validation ({_pn} road test)", S_H1))
     N_in = wp.ledgers["nitrogen"].total_in
     nliq = wp.ledgers["nitrogen"].outflows["return_liquor_NH4_to_WWTW"]; frac = nliq/N_in*100
+    feedN_est = plant.get("feed_N_estimated", False)
+    _stat = {"PASS": ("PASS", "#1f7a43"), "CALIB": ("CALIBRATED", "#1f5fa6"), "OPEN": ("OPEN", "#9a5b00")}
     rows = [[P("Check", S_CELLH), P("Result", S_CELLH), P("Status", S_CRH)]]
     vchecks = [
-        ("All eight ledgers close (4 per pathway)", "imbalance <0.01% across all", True),
-        ("Feed N matches production figure", f"{N_in:,.0f} kg/d", abs(N_in-12624) < 50),
-        ("Return-liquor N within Mangere 32-43% band", f"{frac:.0f}% of feed N ({nliq:,.0f} kg/d)", 32 <= frac <= 43),
-        ("THP avoids >2 reference digesters", f"{cap['digesters_avoided']:.1f} digesters / ${cap['avoided_capex_aud']/1e6:.0f}M", cap['digesters_avoided'] > 2),
-        ("Worked pathway net-energy positive", f"{wp.net_export_mwh_d:,.0f} MWh/d", wp.net_export_mwh_d > 0),
+        ("All eight ledgers close (4 per pathway)", "imbalance <0.01% across all", "PASS"),
+        ("Feed N basis", f"{N_in:,.0f} kgN/d ({'scaled estimate' if feedN_est else 'measured / production fixture'})",
+         "OPEN" if feedN_est else "PASS"),
+        ("Return-liquor N tracks the ETP-measured fraction", f"{frac:.0f}% of feed N ({nliq:,.0f} kgN/d)",
+         "CALIB" if 18 <= frac <= 40 else "OPEN"),
+        ("THP avoids >2 reference digesters", f"{cap['digesters_avoided']:.1f} digesters / ${cap['avoided_capex_aud']/1e6:.0f}M",
+         "PASS" if cap['digesters_avoided'] > 2 else "OPEN"),
+        ("Worked pathway net-energy positive", f"{wp.net_export_mwh_d:,.0f} MWh/d", "PASS" if wp.net_export_mwh_d > 0 else "OPEN"),
     ]
-    for lab, det, ok in vchecks:
-        rows.append([P(lab, S_CELL), P(det, S_CELL),
-                     P("<font color='#1f7a43'><b>PASS</b></font>" if ok else "<font color='#9a5b00'><b>FLAG</b></font>", S_CR)])
+    for lab, det, st in vchecks:
+        txt, col = _stat[st]
+        rows.append([P(lab, S_CELL), P(det, S_CELL), P(f"<font color='{col}'><b>{txt}</b></font>", S_CR)])
     story.append(styled(Table(rows, colWidths=[78*mm, 62*mm, 30*mm])))
-    story.append(P("The nitrogen check originally flagged: the spine first set ammonia release "
-                   "equal to VSR (53% of feed N), over-predicting centrate N &mdash; the same error "
-                   "the production engine had to correct. Recalibrating soluble-N release to the "
-                   "Mangere band brought it to 36%, and the check now passes.", S_SMALL))
+    story.append(P("Status key: <b>PASS</b> = hard check met; <b>CALIBRATED</b> = value tied to measured data "
+                   "(here the ETP Cambi centrate balances, single-pass ~26% / recycle ~37% of feed N); <b>OPEN</b> = "
+                   "an input that is still an estimate, not yet validated against plant data. " +
+                   ("At Mangere the PS/WAS split and feed N are scaled estimates, so the feed-N basis is OPEN, not a "
+                    "fail &mdash; the energy and capacity results do not depend on it. " if feedN_est else
+                    "All inputs at this plant are on the measured/production basis. ") +
+                   "The earlier draft set ammonia release equal to VSR (~53% of feed N), which over-predicted centrate "
+                   "N; recalibrating to the measured feed-N fractions brought it into line.", S_SMALL))
 
     # ===== 12 constants register =====
     # ===== ETP Calibration Basis (measured 2006-2017) =====
@@ -552,7 +632,7 @@ def build(bundle):
         ("Methane yield", f"{K.METHANE_YIELD_NM3_TDS} Nm\u00b3/tDS", "Calibrated", "St Marys / Davyhulme"),
         ("THP steam demand", f"{K.STEAM_T_PER_TDS} t/tDS", "Calibrated", "St Marys (band 0.85-1.00)"),
         ("Biogas CH\u2084 fraction", f"{K.CH4_FRACTION*100:.0f}%", "Calibrated", "THP-AD reference"),
-        ("Soluble-N release efficiency", f"{K.N_SOLUBILISATION_EFF:.2f}", "Calibrated", "Mangere centrate 32-43% band"),
+        ("Centrate-N return (single-pass / recycle)", f"{K.F_CENTRATE_BASE*100:.0f}% / {K.F_CENTRATE_RECYCLE*100:.0f}% of feed N", "Calibrated", "ETP Cambi mass balances 2015/2026"),
         ("Carbon per VS", f"{K.C_PER_VS} gC/gVS", "Estimate", "Municipal sludge literature"),
         ("Phosphorus content", f"{K.P_PER_DS*100:.1f}% DS", "Estimate", "Plant P not measured"),
         ("Struvite P recovery", f"{K.STRUVITE_P_RECOVERY*100:.0f}%", "Estimate", "Process literature"),
@@ -832,7 +912,7 @@ def build(bundle):
         "<b>Biosolids quality (SolidStream):</b> treat SolidStream as the Stage-2 quality platform &mdash; "
         "Class-A cake at ~38% DS, roughly half the wet tonnes, and far less drying energy for any downstream "
         "thermal endpoint. This is a value stream in its own right, not merely a digestion add-on.",
-        "<b>Nitrogen:</b> the sidestream return load (over 5,000 kgN/d) is a near-term binding constraint. "
+        "<b>Nitrogen:</b> the sidestream return load (~4,650 kgN/d on the SolidStream route, ETP-measured) is a near-term binding constraint. "
         "Recover phosphorus via struvite while it is still recoverable, and commit sidestream PN/A to destroy "
         "~88% of the return-liquor ammonia &mdash; for many plants this binds before PFAS does.",
         "<b>Carbon endpoint (Stage 3):</b> choose by objective, not by score. Land is cheapest but low-"
@@ -917,7 +997,7 @@ def project_development_story(bundle):
                  P(f"<b>{cap['vol_conv_m3']:,.0f} ({cap['conv_governing']})</b>", S_CR),
                  P(f"<b>{cap['vol_thp_m3']:,.0f} ({cap['thp_governing']})</b>", S_CR)])
     story.append(styled(Table(rows, colWidths=[80*mm, 45*mm, 45*mm])))
-    story.append(P(f"Conventional is hydrolysis-governed; THP is OLR-governed (runs at "
+    story.append(P(f"Conventional is {cap['conv_governing']}-governed; THP is {cap['thp_governing']}-governed (runs at "
                    f"{S.KCAP.OLR_THP} vs {S.KCAP.OLR_CONV} kgVS/m\u00b3\u00b7d). Avoided volume "
                    f"{cap['avoided_m3']:,.0f} m\u00b3 = {cap['digesters_avoided']:.1f} digesters. "
                    f"Deferred CAPEX ${cap['capex_low_aud']/1e6:.0f}M / "
@@ -996,7 +1076,9 @@ def project_development_story(bundle):
 def future_resilience_story(bundle):
     plant, wp, tp, cp = bundle["plant"], bundle["wp"], bundle["tp"], bundle["cp"]
     weights = bundle["weights"]
-    trio = [cp, wp, tp]
+    kp = S.build_pathway_k_plus(plant)
+    trio = [cp, kp, wp, tp]
+    qlabels = ["Conventional", "K+ (WAS at floor)", "THP-WAS", "Thermal endpoint"]
     story = []
     story.append(P("Board &amp; Future Resilience Report", S_TITLE))
     story.append(P("BioPoint &middot; What survives the future?", S_SUB))
@@ -1008,44 +1090,106 @@ def future_resilience_story(bundle):
                    "robustness it wants."))
     rows = [[P("Pathway", S_CELLH), P("Performance", S_CRH), P("Confidence", S_CRH),
              P("Resilience", S_CRH), P("Optionality", S_CRH), P("PFAS ban", S_CRH)]]
-    for p in trio:
+    for p, lab in zip(trio, qlabels):
         ax = S.three_axis(p, weights); rz = S.resilience(p); op = S.optionality(p)
-        rows.append([P(p.name.replace(" (baseline)", "").replace(" (endpoint)", ""), S_CELL),
+        rows.append([P(lab, S_CELL),
                      P(f"{ax['performance']*100:.0f}", S_CR), P(f"{ax['confidence']*100:.0f}", S_CR),
                      P(f"{ax['resilience']*100:.0f}", S_CR), P(f"{op['score']*100:.0f}", S_CR),
                      P("survives" if rz["survives_pfas_ban"] else "fails", S_CR)])
     story.append(styled(Table(rows, colWidths=[58*mm, 24*mm, 23*mm, 22*mm, 23*mm, 20*mm])))
-    story.append(P("Reading: the spine leads on performance, confidence and optionality but fails a "
-                   "PFAS land-application ban; the thermal endpoint is the most resilient and the "
-                   "only PFAS-robust option, but is the least proven and forecloses nutrient "
-                   "recovery; conventional is proven but low-value and low-resilience.", S_SMALL))
+    story.append(P("Reading: <b>K+ matches the THP spine's optionality</b> (it forecloses nothing) at "
+                   "materially lower capex and complexity &mdash; the lower-commitment route to most of the "
+                   "capacity benefit. The thermal endpoint is the most resilient and the only PFAS-robust "
+                   "option but the least proven and forecloses nutrient recovery; conventional is proven but "
+                   "low-value and low-resilience. All four fail a PFAS land-application ban except thermal "
+                   "&mdash; which is why the endpoint is a separate decision.", S_SMALL))
     story.append(P("<b>Key strategic insight:</b> PFAS fate is set by the thermal endpoint, not the "
                    "digestion technology. The THP decision and the thermal-endpoint decision are "
                    "independent &mdash; THP earns its place on capacity and energy regardless, but "
                    "does not substitute for a thermal decision if PFAS binds.",
                    mk("ins", parent=S_BODY, backColor=LIGHT, borderPadding=6, spaceBefore=4)))
 
+    story.append(P("Constraint Radar &mdash; today vs 10 years (uniting the two questions)", S_H1))
+    cr = S.constraint_radar(plant)
+    story.append(P("The Strategic report asks which constraint governs the plant <i>today</i>; this report asks which "
+                   "<i>future</i> breaks the pathway. The radar puts both on one page &mdash; risk per constraint now "
+                   "and in ~10 years, and how each pathway moves it (lowers / raises / -- neutral).", S_SMALL))
+    crrows = [[P("Constraint", S_CELLH), P("Today", S_CRH), P("~10 yr", S_CRH)] +
+              [P(x, S_CRH) for x in ["Conv", "K+", "THP", "Therm"]]]
+    for cname, today, future in cr["constraints"]:
+        mv = cr["pathway_moves"].get(cname, {})
+        crrows.append([P(cname, S_CELL), P(today, S_CR), P(future, S_CR),
+                       P(mv.get("Conventional", "--"), S_CR), P(mv.get("K+", "--"), S_CR),
+                       P(mv.get("THP", "--"), S_CR), P(mv.get("Thermal", "--"), S_CR)])
+    story.append(styled(Table(crrows, colWidths=[32*mm, 15*mm, 16*mm, 18*mm, 18*mm, 18*mm, 26*mm])))
+    story.append(P(cr["note"], S_SMALL))
+
     story.append(P("1 &nbsp; Future Scenarios (different worlds)", S_H1))
     mats = [S.resilience(p)["results"] for p in trio]
     rows = [[P("Future world", S_CELLH), P("Likely", S_CRH), P("Conv", S_CRH),
-             P("Spine", S_CRH), P("Thermal", S_CRH)]]
+             P("K+", S_CRH), P("THP", S_CRH), P("Thermal", S_CRH)]]
     for i, sc in enumerate(S.SCENARIOS):
         cells = [P(sc.name, S_CELL), P(f"{sc.likelihood:.2f}", S_CR)]
         for m in mats:
             v = m[i]; cells.append(P(f"{v['perf']:.2f}" + ("" if v["viable"] else " (x)"), S_CR))
         rows.append(cells)
-    story.append(styled(Table(rows, colWidths=[62*mm, 18*mm, 23*mm, 23*mm, 24*mm])))
+    story.append(styled(Table(rows, colWidths=[54*mm, 14*mm, 22*mm, 18*mm, 20*mm, 22*mm])))
     story.append(P("(x) = non-viable in that world. Only the thermal endpoint survives a PFAS ban; "
                    "both THP pathways absorb FOGO co-feed via OLR headroom; phosphorus scarcity "
                    "rewards the struvite spine over thermal-to-ash.", S_SMALL))
+
+    story.append(P("Least-Regret &mdash; computed across the worlds (not asserted)", S_H2))
+    rt = S.regret_table(trio)
+    story.append(P("For each world, regret = the best result achievable in that world minus this pathway's "
+                   "result. Total regret is the likelihood-weighted mean &mdash; the least-regret pathway is "
+                   "the one least often badly wrong, which is the board's actual question.", S_SMALL))
+    rrows = [[P("Future world", S_CELLH), P("Likely", S_CRH)] +
+             [P(x, S_CRH) for x in ["Conv", "K+", "THP", "Thermal"]]]
+    for r in rt["matrix"]:
+        cells = [P(r["scenario"], S_CELL), P(f"{r['likelihood']:.2f}", S_CR)]
+        for j in range(len(trio)):
+            cells.append(P(f"{r['regret'][j]:.2f}" + ("" if r["viable"][j] else " (x)"), S_CR))
+        rrows.append(cells)
+    for lab, key in [("Performance regret (weighted)", "perf_regret"),
+                     ("Commitment regret (stranded capital)", "commit_regret")]:
+        row = [P(lab, S_CELLB), P("", S_CR)]
+        for j in range(len(trio)):
+            row.append(P(f"{rt[key][j]:.2f}", S_CR))
+        rrows.append(row)
+    treg = [P("<b>Total regret</b>", S_CELLB), P("", S_CR)]
+    for j in range(len(trio)):
+        treg.append(P(f"<b>{rt['total_regret'][j]:.2f}</b>", S_CR))
+    rrows.append(treg)
+    story.append(styled(Table(rrows, colWidths=[54*mm, 14*mm, 22*mm, 18*mm, 20*mm, 22*mm])))
+    _least = qlabels[rt["least_regret_idx"]]
+    story.append(P("Per-world cells are <i>regret</i> (0 = best in that world; (x) = non-viable). Total = "
+                   "likelihood-weighted performance regret PLUS a commitment term: building a large, irreversible "
+                   "asset that a benign future does not need is itself a regret &mdash; the Hunter Water lesson. "
+                   "Without it, regret structurally favours the highest-capex option regardless of how likely its "
+                   f"triggering future is. <b>Least regret at the default 70% PFAS-ban likelihood: {_least}</b> &mdash; "
+                   "it carries the PFAS hedge but pays the largest commitment regret, so its lead is conditional on "
+                   "that probability.", S_SMALL))
+
+    story.append(P("Regret sensitivity to the PFAS-ban probability", S_H2))
+    story.append(P("The 70% PFAS-ban likelihood is the single assumption that most drives the ranking. Sweeping it "
+                   "shows the recommendation is NOT &lsquo;thermal always&rsquo;: below roughly half, the reversible "
+                   "K+ is least-regret; only when a ban is more likely than not does the committed thermal train "
+                   "justify its capital.", S_SMALL))
+    rs = S.regret_sensitivity(trio)
+    srows = [[P("PFAS-ban probability", S_CELLH), P("Least-regret pathway", S_CRH)]]
+    for rr in rs:
+        srows.append([P(f"{rr['pfas_prob']*100:.0f}%", S_CELL), P(qlabels[rr["winner_idx"]], S_CR)])
+    story.append(styled(Table(srows, colWidths=[80*mm, 70*mm])))
+    story.append(P("This is the crossover earlier drafts hid: &lsquo;thermal wins&rsquo; is conditional on a high "
+                   "PFAS-ban probability, not a universal conclusion.", S_SMALL))
 
     story.append(P("2 &nbsp; Optionality (which futures each pathway keeps open)", S_H1))
     story.append(P("The Hunter Water lesson: some moves preserve future options, others foreclose "
                    "them. High optionality is itself strategic value."))
     rows = [[P("Pathway", S_CELLH), P("Options kept open", S_CELLH), P("Forecloses", S_CELLH)]]
-    for p in trio:
+    for p, lab in zip(trio, qlabels):
         op = S.optionality(p)
-        rows.append([P(p.name.replace(" (baseline)", "").replace(" (endpoint)", ""), S_CELL),
+        rows.append([P(lab, S_CELL),
                      P(f"{op['score']*100:.0f}% &mdash; " + ", ".join(op["preserved"][:3]) +
                        ("&hellip;" if len(op["preserved"]) > 3 else ""), S_CELL),
                      P(", ".join(op["foreclosed"]) or "none", S_CELL)])
@@ -1080,17 +1224,18 @@ def future_resilience_story(bundle):
                    "and char carbon have very different permanence, which will materially affect the "
                    "carbon case once priced.", S_SMALL))
 
-    story.append(P("6 &nbsp; Strategic Roadmap", S_H1))
-    commit = [m for m in wp.moves if m.tag == S.Tag.COMMIT]
-    keep = [m for m in wp.moves if m.tag == S.Tag.KEEP_OPEN]
-    story.append(P("<b>Commit now</b> (high performance, confidence and optionality):",
-                   mk("c", parent=S_BODY, textColor=GOOD, spaceAfter=3)))
-    for m in commit:
-        story.append(bullet(m.name))
-    story.append(P("<b>Keep open</b> (priced, de-risked, decided as the future clarifies):",
-                   mk("k", parent=S_BODY, textColor=ACCENT, spaceBefore=4, spaceAfter=3)))
-    for m in keep:
-        story.append(bullet(f"{m.name} &mdash; {m.derisk_task}"))
+    story.append(P("6 &nbsp; Capital Allocation &mdash; Commit Now / Preserve / Monitor", S_H1))
+    ca = S.capital_allocation(plant)
+    story.append(P("Boards allocate capital, not technologies. The decision is not which technology wins, "
+                   "but what to commit today while preserving future options. Each item is graded by "
+                   "evidence maturity.", S_SMALL))
+    for hd, ky, col in [("Commit now (high confidence, low regret)", "commit_now", GOOD),
+                        ("Preserve (keep the option open at low cost)", "preserve", ACCENT),
+                        ("Monitor (evidence still emerging)", "monitor", MUTED)]:
+        story.append(P(f"<b>{hd}</b>", mk("ca_"+ky, parent=S_BODY, textColor=col, spaceBefore=4, spaceAfter=2)))
+        for item, why in ca[ky]:
+            story.append(bullet(f"<b>{item}</b> &mdash; {why}"))
+    story.append(P(ca["note"], mk("can", parent=S_SMALL, backColor=LIGHT, borderPadding=6, spaceBefore=4)))
     story.append(Spacer(1, 6))
     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceAfter=4))
     story.append(P("One BioPoint engine; this is the future-focused board view. The same pathway "
