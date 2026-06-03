@@ -1174,6 +1174,74 @@ def build_pathway_f(plant: dict = GENERIC) -> Pathway:
 
 
 
+# ---------------------------------------------------------------------------
+# PATHWAY K+ - K with kinetically-grounded WAS HRT (recycle-to-WAS-only, OLR-governed)
+def build_pathway_k_plus(plant: dict = GENERIC) -> Pathway:
+    """V3.5 Pathway K+ (recycle-to-WAS-only). K, but the WAS digester runs at the OLR/hydraulic
+    floor instead of a long hydrolysis-limited HRT - justified by the hydrolysis-kinetics layer:
+    the SolidStream recycle shifts the WAS train from hydrolysis-governed to OLR-governed once the
+    solubilisation assist exceeds a* (~0.18), which SolidStream clears with margin. Ledgers are K's
+    (total VSR is conserved at ~0.703 - routing does not change destruction); the difference is the
+    capacity claim. Where K's release was the NOTIONAL PS-share reduction (WAS absorbed it), K+ frees
+    REAL volume by shortening WAS to its kinetically-justified HRT. Confidence C - pilot-gated."""
+    k = build_pathway_k(plant)                  # reuse K's closing ledgers + basis (recycle, flows)
+    V = plant.get("digester_vol_m3")
+    kc = kplus_was_constraint(plant)
+    cap = {}
+    if V:
+        Q_PS = plant["PS_tds"] / KK.DIGESTER_FEED_DS
+        Q_WAS = plant["WAS_tds"] / KK.DIGESTER_FEED_DS
+        recycle = k.basis.get("recycle_m3d", 0.0)
+        ps_vol = Q_PS * KK.PS_HRT_SHORT_D
+        was_vol = (Q_WAS + recycle) * KIN.HRT_FLOOR_D     # WAS at OLR/hydraulic floor (kinetically justified)
+        total = ps_vol + was_vol
+        freed = max(0.0, V - total)
+        cap = {"pathway": "K+", "kplus_freed_m3": freed,
+               "kplus_equiv_digesters": freed / KK.DIGESTER_UNIT_M3,
+               "kplus_deferred_capex_m_aud": freed * KCAP.CAPEX_PER_M3 / 1e6,
+               "ps_hrt_kplus_d": KK.PS_HRT_SHORT_D, "was_hrt_kplus_d": KIN.HRT_FLOOR_D,
+               "crossover_assist": kc["crossover_assist"], "kplus_total_vol_m3": total,
+               # supersede K's notional release with the kinetically-grounded figure
+               "capacity_released_m3": freed, "equivalent_digesters": freed / KK.DIGESTER_UNIT_M3,
+               "deferred_capex_m_aud": freed * KCAP.CAPEX_PER_M3 / 1e6}
+    relm = cap.get("kplus_freed_m3", 0.0); eqd = cap.get("kplus_equiv_digesters", 0.0)
+    defc = cap.get("kplus_deferred_capex_m_aud", 0.0); astar = cap.get("crossover_assist", 0.0)
+    moves = [
+        Move("Separate PS (~10 d) + WAS at the OLR/hydraulic floor (~12 d)",
+             addresses=["capacity", "capex"],
+             reward=f"Frees ~{relm:,.0f} m3 (~{eqd:.1f} digesters); defers ~${defc:.0f}M - the REAL release "
+                    f"(WAS no longer sprawls to absorb the PS reduction)",
+             residual_risk=f"WAS runs OLR-governed only if SolidStream solubilisation assist >= a*~{astar:.2f}; "
+                           "unproven (confidence C)",
+             confidence=Confidence(Conf.C, Conf.C, Conf.C),
+             derisk_task="BMP-on-centrate + recycle-ratio pilot to measure the assist, ~$0.6M / 12 months",
+             tag=Tag.KEEP_OPEN),
+        Move("Post-digestion SolidStream THP, hot centrate recycled to the WAS digesters only",
+             addresses=["capacity", "energy_neutrality", "biosolids_quality"],
+             reward="Shifts WAS hydrolysis->OLR-governed without a THP front end; VSR ~58%->70%; biogas +22.7%",
+             residual_risk="Recycle-to-WAS plumbing; return-liquor NH4 concentrated on the WAS train",
+             confidence=Confidence(Conf.A, Conf.A, Conf.B), derisk_task=None, tag=Tag.COMMIT),
+        Move("Class-A hygienised 38% DS cake (no drying)",
+             addresses=["biosolids_quality", "opex", "pfas"],
+             reward="Pathogen-free; ~50% fewer wet tonnes; ends EPA stockpiling",
+             residual_risk="Cake market developing", confidence=Confidence(Conf.A, Conf.A, Conf.A),
+             derisk_task=None, tag=Tag.COMMIT),
+        Move("Struvite + PN-A for the (WAS-concentrated) return-liquor N",
+             addresses=["nutrient_recovery", "scope1_emissions"], reward="Recovers P; closes the N return",
+             residual_risk="Higher sidestream N density on the WAS train",
+             confidence=Confidence(Conf.A, Conf.B, Conf.A), derisk_task="Sidestream N pilot", tag=Tag.KEEP_OPEN),
+    ]
+    k.name = "Pathway K+: Separate PS (10d) + OLR-governed WAS (SolidStream-assisted) + recycle-to-WAS + Land"
+    k.description = ("V3.5 Pathway K+ (recycle-to-WAS-only): PS at ~10 d; WAS at the ~12 d OLR/hydraulic floor, "
+                     "justified by the hydrolysis-kinetics layer (SolidStream recycle shifts WAS to OLR-governed "
+                     "at assist >= a*~0.18). Same ledgers as K (VSR conserved); the capacity release is the "
+                     "kinetically-grounded REAL figure, not K's notional PS-share. Confidence C, pilot-gated.")
+    k.moves = moves
+    k.basis.update(cap)
+    return k
+
+
+
 # # 7b. THERMAL-ENDPOINT PATHWAY — exercises the PROVISIONAL ledger machinery
 # ---------------------------------------------------------------------------
 # Front end identical to the worked pathway (THP+MAD) for comparability; the
@@ -2041,7 +2109,8 @@ def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> d
     b = build_pathway_b(plant); f = build_pathway_f(plant)
     x_set = pathway_x_set(plant)
     x_thermal = [v for ep, v in x_set.items() if ep != "land"]   # K(land) already present as k
-    pathways = [conv, worked, sep, ss, f, k, b, thermal] + list(endpoints.values()) + x_thermal
+    kp = build_pathway_k_plus(plant)
+    pathways = [conv, worked, sep, ss, f, k, kp, b, thermal] + list(endpoints.values()) + x_thermal
     return {
         "L1_constraints": diagnose_constraints(plant, pathways),
         "L2_capacity": capacity_view(worked),
@@ -2051,6 +2120,7 @@ def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> d
                                     "evidence": EVIDENCE.get(n, (Conf.C, ""))[0].name}
                                 for n, p in endpoints.items()},
         "L6_carbon_endpoints": carbon_strategy_comparison(plant, x_set),
+        "L2_kplus_kinetics": kplus_was_constraint(plant),
         "risk_threshold": risk_threshold,
         "pathways": [regret_profile(p, weights, risk_threshold) for p in pathways],
         "least_regret_note": ("All viable pathways retained. acceptable_risk=False means a "
