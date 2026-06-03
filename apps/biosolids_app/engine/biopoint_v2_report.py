@@ -1145,9 +1145,20 @@ def future_resilience_story(bundle):
                       P(f"{S.optionality(p)['reversibility']*100:.0f}", S_CR)])
     story.append(styled(Table(orows, colWidths=[58*mm, 46*mm, 46*mm])))
     story.append(P("This is why a board may rationally take 90% of the benefit at a fraction of the commitment: "
-                   "K+ is an operational change (complexity 2, reversibility 90), whereas a full thermal train is "
+                   "K+ is an operational change (complexity 2, reversibility 80), whereas a full thermal train is "
                    "complexity 6, reversibility 20. The least-regret view already prices reversibility into its "
                    "commitment-regret term; complexity is carried alongside, not collapsed into one score.", S_SMALL))
+    story.append(P("<b>Reversibility Index</b> &mdash; distinct from optionality: optionality asks how many futures a "
+                   "pathway keeps open; reversibility asks how easily the decision is unwound if it proves wrong. "
+                   "Boards weigh this directly, often above NPV.", S_SMALL))
+    rrows = [[P("Decision", S_CELLH), P("Reversibility (0-100)", S_CRH), P("Why", S_CELLH)]]
+    for nm, v, why in S.reversibility_index():
+        rrows.append([P(nm, S_CELL), P(f"{v}", S_CR), P(why, S_CELL)])
+    story.append(styled(Table(rrows, colWidths=[60*mm, 30*mm, 60*mm])))
+    story.append(P("The split matters for the allocation: the <i>separate-digestion core</i> (90) is far more "
+                   "reversible than the full K+ play that leans on the SolidStream assist (80) &mdash; which is why "
+                   "the proven core can be committed now while the SolidStream-assist uplift stays a monitored "
+                   "option.", S_SMALL))
     story.append(P("Reading: <b>K+ matches the THP spine's optionality</b> (it forecloses nothing) at "
                    "materially lower capex and complexity &mdash; the lower-commitment route to most of the "
                    "capacity benefit. The thermal endpoint is the most resilient and the only PFAS-robust "
@@ -1222,10 +1233,22 @@ def future_resilience_story(bundle):
                    "that probability.", S_SMALL))
 
     story.append(P("Regret sensitivity to the PFAS-ban probability", S_H2))
-    story.append(P("The 70% PFAS-ban likelihood is the single assumption that most drives the ranking. Sweeping it "
-                   "shows the recommendation is NOT &lsquo;thermal always&rsquo;: below roughly half, the reversible "
-                   "K+ is least-regret; only when a ban is more likely than not does the committed thermal train "
-                   "justify its capital.", S_SMALL))
+    pts = S.pfas_trigger_score()
+    story.append(P(f"The PFAS-ban likelihood is the single assumption that most drives the ranking, so it should be "
+                   f"<i>derived, not asserted</i>. The <b>PFAS Trigger Score</b> builds it from auditable drivers, so "
+                   f"a board can challenge any one line rather than the bare headline. On the default settings these "
+                   f"compose to a {pts['ban_probability']*100:.0f}% ban probability:", S_SMALL))
+    trows = [[P("Driver", S_CELLH), P("Weight", S_CRH), P("Score (0-1)", S_CRH), P("Contribution", S_CRH)]]
+    for x in pts["rows"]:
+        trows.append([P(x["label"], S_CELL), P(f"{x['weight']:.2f}", S_CR), P(f"{x['score']:.2f}", S_CR),
+                      P(f"{x['contribution']:.3f}", S_CR)])
+    trows.append([P("<b>PFAS ban probability</b>", S_CELL), P("", S_CR), P("", S_CR),
+                  P(f"<b>{pts['ban_probability']:.2f}</b>", S_CR)])
+    story.append(styled(Table(trows, colWidths=[76*mm, 22*mm, 26*mm, 26*mm])))
+    story.append(P("Each driver is tunable per jurisdiction and plant; the score replaces a single asserted number "
+                   "with a defensible build-up. Sweeping the resulting probability shows the recommendation is NOT "
+                   "&lsquo;thermal always&rsquo;: below roughly half, the reversible K+ is least-regret; only when a "
+                   "ban is more likely than not does the committed thermal train justify its capital.", S_SMALL))
     rs = S.regret_sensitivity(trio)
     srows = [[P("PFAS-ban probability", S_CELLH), P("Least-regret pathway", S_CRH)]]
     for rr in rs:

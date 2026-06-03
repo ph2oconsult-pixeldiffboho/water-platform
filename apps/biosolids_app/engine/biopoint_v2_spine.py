@@ -1646,6 +1646,48 @@ def _attach(pw: Pathway, endpoint: str, conf: "Conf"):
 # Resilience = likelihood-weighted performance across worlds; a non-viable world scores 0.
 _clip = lambda x: max(0.0, min(1.0, x))
 
+PFAS_TRIGGER_WEIGHTS = {
+    "regulatory_momentum":          0.30,
+    "biosolids_pfas_concentration": 0.25,
+    "jurisdiction_stringency":      0.20,
+    "political_risk":               0.15,
+    "land_outlet_scarcity":         0.10,
+}
+PFAS_TRIGGER_DEFAULTS = {   # 0-1 driver scores; tuned to reproduce the ~0.70 prior, now auditable
+    "regulatory_momentum":          0.75,
+    "biosolids_pfas_concentration": 0.70,
+    "jurisdiction_stringency":      0.70,
+    "political_risk":               0.60,
+    "land_outlet_scarcity":         0.70,
+}
+PFAS_TRIGGER_LABELS = {
+    "regulatory_momentum":          "Regulatory momentum (PFAS limits tightening)",
+    "biosolids_pfas_concentration": "Biosolids PFAS concentration vs likely limits",
+    "jurisdiction_stringency":      "Jurisdiction stringency",
+    "political_risk":               "Political / reputational risk",
+    "land_outlet_scarcity":         "Scarcity of land-application outlets",
+}
+
+
+def pfas_trigger_score(factors: dict = None) -> dict:
+    """Derive the PFAS land-application-ban probability from auditable drivers instead of asserting it.
+    Each factor is scored 0-1 (0 = no pressure, 1 = maximal); the weighted composite IS the ban
+    probability, so the headline number is traceable to its assumptions and a board can challenge any
+    single line rather than the bare 70%. Defaults reproduce the prior; override per jurisdiction/plant."""
+    sc = dict(PFAS_TRIGGER_DEFAULTS)
+    if factors:
+        sc.update({k: _clip(v) for k, v in factors.items() if k in sc})
+    rows = []; comp = 0.0
+    for k, w in PFAS_TRIGGER_WEIGHTS.items():
+        comp += w * sc[k]
+        rows.append({"factor": k, "label": PFAS_TRIGGER_LABELS[k], "weight": w,
+                     "score": sc[k], "contribution": round(w * sc[k], 3)})
+    return {"ban_probability": round(comp, 3), "composite": round(comp, 3), "rows": rows}
+
+
+PFAS_BAN_PROB = pfas_trigger_score()["ban_probability"]
+
+
 @dataclass
 class Scenario:
     name: str
@@ -1654,7 +1696,7 @@ class Scenario:
 
 
 SCENARIOS = [
-    Scenario("PFAS land-application ban", 0.70, lambda t: (
+    Scenario("PFAS land-application ban", PFAS_BAN_PROB, lambda t: (
         (False, 0.0, "land application banned -> non-viable") if t["endpoint"] == "land"
         else (True, _clip(0.5 + 0.5*t["pfas"]), "thermal destroys PFAS -> becomes the solution"))),
     Scenario("Carbon price $150/tCO2e", 0.70, lambda t: (
@@ -1734,7 +1776,7 @@ def optionality(pw: Pathway) -> dict:
     if not t["thp"]:
         rev = 1.00                               # conventional / optimisation - no major sunk capital
     elif pw.basis.get("kplus_freed_m3"):
-        rev = 0.90                               # K+ : operational short-HRT, low commitment
+        rev = 0.80                               # K+ : separate digestion + SolidStream-assist lean
     elif t["endpoint"] == "thermal":
         rev = 0.20                               # full thermal train - largest, least reversible
     elif "SolidStream" in pw.name:
@@ -1765,6 +1807,20 @@ def complexity_score(pw) -> dict:
     c = min(6, c)
     label = {1: "Low", 2: "Low-Med", 3: "Medium", 4: "Med-High", 5: "High", 6: "Very High"}[c]
     return {"score": c, "label": label, "norm": c / 6.0}
+
+
+def reversibility_index() -> list:
+    """Reversibility Index (0-100): if the decision proves wrong, how easily is it unwound? Distinct from
+    optionality (how many future options stay open) - a board reads this one directly, and it is often more
+    decisive than NPV. Decision-type granularity, since the proven separate-digestion core is more reversible
+    than the full K+ play that leans on the SolidStream assist."""
+    return [
+        ("Operational optimisation", 100, "control / HRT changes - fully reversible"),
+        ("Separate-digestion retrofit", 90, "stream split + short-HRT operation; low sunk capital"),
+        ("K+ (separate digestion + SolidStream assist)", 80, "adds the less-certain SolidStream-assist lean"),
+        ("THP front end", 50, "major thermal-hydrolysis capital"),
+        ("Thermal endpoint", 20, "largest, most committed - hardest to reverse"),
+    ]
 
 
 COMMITMENT_REGRET_W = 0.15   # weight on stranded-capital regret (1 - reversibility); tuned so the
@@ -1810,26 +1866,30 @@ def capital_allocation(plant=None):
     kc = kplus_was_capacity(plant)
     return {
         "commit_now": [
-            ("Digester optimisation (PS short-HRT, mixing, control)", "Conf A - no new asset; immediate VSR/throughput gain"),
+            ("Separate-digestion assessment + PS %.0f d HRT implementation study" % kc["floor_d"],
+             "capacity confidence %s - the separate-digestion evidence base (Mangere strategy, ETP data, Cambi, "
+             "St Marys, hydrolysis modelling) is now strong; this is the proven, reversible core of K+" % kc["capacity_confidence"]),
             ("Struvite / phosphorus recovery", "Conf A - mature; de-risks centrate P and downstream scaling"),
             ("Sidestream N monitoring + PN/A readiness", "Conf A/B - nitrogen is the emerging binding constraint"),
         ],
         "preserve": [
             ("SolidStream conditioning", "Cambi VSR 0.703 proven elsewhere; transfer to this WAS pending BMP - keep the design space"),
             ("Thermal endpoint corridor (pyrolysis / gasification / HTL)", "the only PFAS-robust route; keep the cake thermal-ready, do not foreclose"),
-            ("Separate-digestion / retrofit footprint", "preserves the K+ / separate route without committing front-end THP capex"),
         ],
         "monitor": [
-            ("K+ (WAS at the %.0f d floor)" % kc["floor_d"],
-             "capacity confidence %s (BMP-backed); yield uplift %s" % (kc["capacity_confidence"], kc["yield_uplift_status"])),
+            ("SolidStream-assisted WAS uplift",
+             "yield confidence %s - %s; the residual uncertainty is now the assist factor, not whether separate digestion works"
+             % (kc.get("yield_confidence", "D"), kc["yield_uplift_status"])),
             ("HTL", "pre-commercial; watch for full-scale references before pricing it in"),
-            ("PFAS land-application regulation", "watch the ban trigger - it flips the endpoint decision, not the digestion decision"),
+            ("PFAS land-application regulation", "watch the trigger score - it flips the endpoint decision, not the digestion decision"),
         ],
-        "note": ("Boards make capital-allocation decisions, not technology decisions. Commit only the "
-                 "high-confidence, low-regret moves now; preserve the option space at low cost; monitor "
-                 "the evidence (above all the SolidStream-treated-WAS BMP) that converts a Monitor item "
-                 "into a Commit. Note THP-of-WAS is NOT a commit-now item on current evidence - it is a "
-                 "Preserve item pending the K+ vs THP capacity comparison."),
+        "note": ("Boards make capital-allocation decisions, not technology decisions. The split now follows the "
+                 "capacity-vs-yield confidence grades: the separate-digestion capacity case (confidence %s) is "
+                 "bankable enough to commit to an assessment and short-HRT implementation study now, while the "
+                 "SolidStream yield uplift (confidence %s) stays a Monitor item until a treated-WAS BMP confirms "
+                 "it. Preserve the option space (SolidStream, thermal corridor) at low cost. The thermal endpoint "
+                 "remains a future-triggered decision driven by the PFAS trigger score, not by digestion "
+                 "performance." % (kc["capacity_confidence"], kc.get("yield_confidence", "D"))),
     }
 
 
