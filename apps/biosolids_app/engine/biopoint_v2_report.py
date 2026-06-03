@@ -380,60 +380,63 @@ def build(bundle):
               "Deferred digester CAPEX &mdash; often the dominant THP value stream over asset life"]:
         story.append(bullet(m))
 
-    # ===== 7b K+ digestion architecture / hydrolysis kinetics =====
-    kc = dh.get("L2_kplus_kinetics") or S.kplus_was_constraint(plant)
+    # ===== 7b K+ digestion architecture / BMP-calibrated kinetics =====
+    kc = dh.get("L2_kplus_kinetics") or S.kplus_was_capacity(plant)
     kpb = S.build_pathway_k_plus(plant).basis
-    story.append(P("7b &nbsp; Digestion Architecture &mdash; Can K+ Reach OLR-Governed Without THP?", S_H1))
-    story.append(P("Section 7 showed THP wins capacity by pre-completing hydrolysis, shifting the binding "
-                   "constraint from hydrolysis-limited HRT to organic loading. Pathway K+ asks whether the "
-                   "<b>SolidStream recycle</b> can do the same on the WAS train &mdash; without a THP front end. "
-                   "Post-digestion SolidStream solubilises the residual the digester missed and returns it (to the "
-                   "WAS digester only) as fast soluble COD, which both speeds hydrolysis and unlocks "
-                   "biodegradability. The hydrolysis-kinetics layer (first-order CSTR, calibrated to the "
-                   "conventional 0.575 and SolidStream 0.703 VSRs) derives the WAS HRT needed for conventional-"
-                   "grade destruction as a function of the SolidStream solubilisation <i>assist</i> a "
-                   "(0 = none, 1 = full-THP-equivalent):"))
-    rows = [[P("SolidStream assist a", S_CELLH), P("k_h (1/d)", S_CRH), P("f_bio", S_CRH),
-             P("Req. WAS HRT", S_CRH), P("Governing", S_CRH)]]
-    for r in kc["rows"]:
-        hrt = (f"{r['req_was_hrt_d']:.1f} d" if r.get("req_was_hrt_d") else "&lt; floor")
-        rows.append([P(f"{r['assist']:.1f}", S_CELL), P(f"{r['k_h']:.2f}", S_CR), P(f"{r['f_bio']:.2f}", S_CR),
-                     P(hrt, S_CR), P(r["governing"], S_CR)])
-    story.append(styled(Table(rows, colWidths=[40*mm, 28*mm, 24*mm, 30*mm, 38*mm])))
+    cc = S.kinetics_calibration_check()
+    story.append(P("7b &nbsp; Digestion Architecture &mdash; WAS is Ceiling-Limited, Not Rate-Limited", S_H1))
+    story.append(P("Section 7 showed THP wins capacity by pre-completing hydrolysis. Pathway K+ asks whether the "
+                   "WAS train can run at a short HRT without a THP front end. Per-stream BMP tests on Mangere "
+                   "primary (TPS) and waste-activated (TWAS) sludge answer it directly &mdash; and overturn the "
+                   "earlier rate-assist hypothesis. The fitted first-order kinetics are:"))
+    rows = [[P("Stream", S_CELLH), P("Ultimate BMP B₀", S_CRH), P("Hydrolysis k (1/d)", S_CRH),
+             P("Biodegradable f_bio", S_CRH)]]
+    rows.append([P("Primary (TPS)", S_CELL), P("473 mL CH₄/gVS", S_CR), P(f"{kc['ps_k']:.2f}", S_CR), P(f"{kc['ps_f_bio']:.2f}", S_CR)])
+    rows.append([P("WAS (TWAS)", S_CELL), P("150 mL CH₄/gVS", S_CR), P(f"{kc['was_k']:.2f}", S_CR), P(f"{kc['was_f_bio']:.2f}", S_CR)])
+    story.append(styled(Table(rows, colWidths=[40*mm, 44*mm, 38*mm, 38*mm])))
     story.append(Spacer(1, 3))
+    story.append(P("Two findings, the second decisive. <b>(1)</b> These per-stream kinetics, blended at the real "
+                   f"VS split, independently reproduce both plants: ETP {cc['ETP_VSR_at_18_1d']:.3f} (measured 0.575) "
+                   f"and Mangere {cc['Mangere_VSR_at_21_7d']:.3f} (measured 0.585) &mdash; a bottom-up validation "
+                   "from lab BMP to full-scale VSR. <b>(2)</b> WAS hydrolyses <i>as fast as PS</i> "
+                   f"(k_WAS {kc['was_k']:.2f} &ge; k_PS {kc['ps_k']:.2f}/d) but its biodegradable fraction is only "
+                   f"~one-third (f_bio {kc['was_f_bio']:.2f} vs {kc['ps_f_bio']:.2f}). WAS is <b>ceiling-limited, "
+                   "not rate-limited</b>: it reaches its low ceiling fast, and the recalcitrant ~70% never converts "
+                   "at any HRT.", S_SMALL))
+    story.append(P("This is why K+ frees capacity &mdash; and it is measured, not assumed. Because WAS reaches its "
+                   f"ceiling fast (batch t₉₀ ~{kc['batch_t90_was_d']:.0f} d), running the WAS digester at "
+                   f"the {kc['floor_d']:.0f} d hydraulic/OLR floor instead of the conventional {kc['conv_hrt_d']:.0f} d "
+                   f"retains <b>~{kc['vsr_retained_at_floor_pct']:.0f}%</b> of its VS destruction "
+                   f"(WAS VSR {kc['was_vsr_floor']:.3f} vs {kc['was_vsr_conv']:.3f}). The freed volume follows from "
+                   "the kinetics alone &mdash; no SolidStream rate-assist required:", S_SMALL))
     story.append(kv([
-        ("Crossover assist a*", f"{kc['crossover_assist']:.2f} &mdash; above this the WAS train is OLR/hydraulic-governed"),
-        ("Conventional WAS HRT (a=0)", f"{kc['conventional_req_hrt_d']:.1f} d (hydrolysis-governed)"),
-        ("Hydraulic / OLR floor", f"{kc['hydraulic_floor_d']:.0f} d"),
-        ("Total VSR (conserved)", f"{kc['total_vsr_conserved']:.3f} &mdash; recycle routing does not change destruction"),
-        ("K+ freed volume (kinetically grounded)", f"{kpb.get('capacity_released_m3',0):,.0f} m\u00b3 = {kpb.get('equivalent_digesters',0):.1f} digesters, ${kpb.get('deferred_capex_m_aud',0):.0f}M deferred"),
+        ("WAS HRT at the floor", f"{kc['floor_d']:.0f} d (vs {kc['conv_hrt_d']:.0f} d conventional)"),
+        ("WAS VS destruction retained", f"~{kc['vsr_retained_at_floor_pct']:.0f}% &mdash; measured BMP kinetics"),
+        ("K+ freed volume", f"{kpb.get('capacity_released_m3',0):,.0f} m\u00b3 = {kpb.get('equivalent_digesters',0):.1f} digesters, ${kpb.get('deferred_capex_m_aud',0):.0f}M deferred"),
+        ("Capacity confidence", f"{kc['capacity_confidence']} &mdash; backed by per-stream BMP, not the retired rate-assist"),
     ]))
     lad = dh.get("L2_constraint_ladder") or S.constraint_ladder(plant)
-    story.append(P("The strategic variable is the <i>constraint</i> released, not just the volume. Where each "
-                   "configuration sits on the hydrolysis &rarr; OLR spectrum, by the WAS HRT it sizes for:", S_SMALL))
-    rows = [[P("Configuration", S_CELLH), P("WAS HRT", S_CRH), P("Constraint state", S_CRH), P("Evidence", S_CRH)]]
+    story.append(P("The strategic variable is the <i>constraint</i> each configuration faces. Short-HRT capacity is "
+                   "available to all of them (WAS rate is fast); what differs is the biodegradable ceiling each "
+                   "unlocks:", S_SMALL))
+    rows = [[P("Configuration", S_CELLH), P("WAS HRT", S_CRH), P("Binding limit", S_CRH), P("Evidence", S_CRH)]]
     for r in lad["rungs"]:
-        hrt = (f"{r['was_hrt_d']:.1f} d" if r.get("was_hrt_d") else "n/a")
-        rows.append([P(r["config"], S_CELL), P(hrt, S_CR), P(r["state"], S_CR), P(r["evidence"], S_CR)])
-    story.append(styled(Table(rows, colWidths=[58*mm, 20*mm, 40*mm, 42*mm])))
+        hrt = (f"{r['was_hrt_d']:.1f} d" if isinstance(r.get("was_hrt_d"), (int, float)) else "n/a")
+        rows.append([P(r["config"], S_CELL), P(hrt, S_CR), P(r["limit"], S_CR), P(r["evidence"], S_CR)])
+    story.append(styled(Table(rows, colWidths=[46*mm, 18*mm, 56*mm, 40*mm])))
     story.append(Spacer(1, 3))
-    story.append(P("Conventional and K sit in the hydrolysis-governed band; K+ moves into the transition zone at "
-                   "the OLR/hydraulic floor; only THP is unambiguously OLR-governed today. K+ reaches the same "
-                   "constraint state as THP <i>if</i> the SolidStream assist clears a* &mdash; which is the "
-                   "pilot question, and why K+ carries confidence C while THP carries A/B.", S_SMALL))
-    story.append(P("<b>Verdict:</b> the WAS train flips from hydrolysis-governed to OLR/hydraulic-governed at "
-                   f"assist a* ~ {kc['crossover_assist']:.2f} &mdash; SolidStream need only deliver a small fraction "
-                   "of full-THP solubilisation to shift the constraint, and its calibrated effectiveness sits well "
-                   "past that. So K+ can capture THP's capacity mechanism without a THP front end. The freed volume "
-                   f"is the kinetically-grounded {kpb.get('capacity_released_m3',0):,.0f} m\u00b3 (WAS at the OLR "
-                   "floor), not Pathway K's notional PS-share reduction, which the WAS train absorbed.",
+    story.append(P("<b>Verdict:</b> WAS is ceiling-limited, not rate-limited. So K+'s capacity claim &mdash; run the "
+                   f"WAS digester at the {kc['floor_d']:.0f} d floor &mdash; is justified by measured BMP kinetics "
+                   f"(it retains ~{kc['vsr_retained_at_floor_pct']:.0f}% of conventional WAS destruction), freeing "
+                   f"{kpb.get('capacity_released_m3',0):,.0f} m\u00b3 (~{kpb.get('equivalent_digesters',0):.1f} "
+                   "digesters). This is now confidence B, not the speculative rate-assist of earlier drafts.",
                    mk("kpv", parent=S_BODY, textColor=INK, backColor=LIGHT, borderPadding=6,
                       spaceBefore=4, leftIndent=4, rightIndent=4)))
-    story.append(P("<b>Confidence C &mdash; pilot-gated.</b> The assist a is screening-grade and unproven: it "
-                   "depends on how fully SolidStream solubilises the residual and on the recycle ratio. A "
-                   "BMP-on-centrate plus recycle-ratio pilot (~$0.6M / 12 months) measures a directly and moves "
-                   "K+ to commit-grade. The kinetics are first-order steady-state and exclude inhibition and "
-                   "temperature dynamics.", S_SMALL))
+    story.append(P("<b>What remains pilot-gated is yield, not capacity.</b> SolidStream's value on WAS is raising the "
+                   "biodegradable <i>ceiling</i> (cell lysis &rarr; more methane). That uplift is carried on the same "
+                   "Cambi-calibrated VSR 0.703 basis as Pathways E and K, but its transfer to this plant's WAS is "
+                   f"<b>{kc['yield_uplift_status']}</b>. The decisive pilot is a BMP on SolidStream-treated WAS versus "
+                   "raw WAS, measuring the ceiling uplift directly &mdash; not a hydrolysis-rate measurement.", S_SMALL))
 
     # ===== 8 opex =====
     story.append(P("8 &nbsp; OPEX Breakdown", S_H1))

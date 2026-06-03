@@ -330,25 +330,27 @@ def _volume_constraints(Q, vs_load_kg, olr_max, hrt_hydrolysis):
     return vols, governing, vols[governing]
 
 # ===========================================================================
-# HYDROLYSIS-KINETICS LAYER (V3.5 Digestion Architecture) - first-order CSTR
+# HYDROLYSIS-KINETICS LAYER (V3.5 Digestion Architecture) - BMP-calibrated
 # ===========================================================================
-# Derives the HRT needed for a target VS destruction from hydrolysis kinetics,
-# instead of hard-coding 18 d / 10 d. Calibrated to two closure-validated anchors:
-# conventional blended VSR 0.575 @ 18.1 d, and SolidStream 0.703 @ 13.4 d.
-# SolidStream is modelled as a partial-THP "assist" a in [0,1] that raises BOTH the
-# hydrolysis rate (recycle returns solubilised residual) AND the accessible
-# biodegradable fraction (THP unlocks recalcitrant VS) - the calibration shows
-# SolidStream's uplift is part-rate, part-accessibility, not rate alone.
-# SCREENING-GRADE, confidence C: the assist a is the pilot-measurable unknown
-# (BMP-on-centrate + recycle ratio), carried as a band, never a point claim.
+# Per-stream first-order CSTR kinetics, FITTED to Mangere TPS/TWAS BMP curves and
+# VALIDATED against full-scale VSR: ETP 0.575 @ 18.1 d, Mangere 0.585 @ 21.7 d.
+# Key BMP finding: WAS is CEILING-limited, NOT rate-limited. WAS hydrolyses about as
+# fast as PS (k_WAS 0.38 >= k_PS 0.29 /d) but its ultimate biodegradable fraction is
+# ~1/3 of PS (BMP B0 150 vs 473 mL CH4/gVS). WAS reaches its low ceiling fast; the
+# recalcitrant ~70% never converts at any HRT. Implications:
+#  - Short WAS HRT loses little VS destruction -> capacity is justified by MEASURED
+#    kinetics, not by any SolidStream hydrolysis-rate "assist" (that model is RETIRED).
+#  - The only lever on WAS yield is RAISING the ceiling (cell lysis: THP / SolidStream),
+#    a yield benefit UNQUANTIFIED at ETP/Mangere pending SolidStream-treated-WAS BMP.
+# Conservative band: van Kleek (mass-balance) VSR ~0.52 vs gas-method 0.585 -> f_bio x0.89.
 class KIN:
-    F_BIO_0 = 0.68          # blended biodegradable VS fraction (conventional); calib to 0.575 @ 18.1 d
-    K_H_0 = 0.30            # blended first-order hydrolysis rate (1/d), conventional
-    SS_DELTA_FBIO = 0.09    # SolidStream full-assist accessibility uplift (THP unlock); calib to 0.703
-    SS_K_MULT = 2.8         # SolidStream full-assist rate multiplier (recycle); vs full-THP ~3x
-    TAU_CONV_REF = 18.1     # ETP conventional digester HRT (calibration reference)
-    TAU_SS_REF = 13.4       # SolidStream effective HRT (Cambi 2026)
+    K_PS = 0.286            # /d  PS hydrolysis rate (BMP fit, Mangere TPS)
+    K_WAS = 0.380           # /d  WAS hydrolysis rate (BMP fit, Mangere TWAS) - as fast as PS
+    F_BIO_PS = 0.97         # ultimate biodegradable VS fraction, PS  (BMP B0 473 mLCH4/gVS)
+    F_BIO_WAS = 0.31        # ultimate biodegradable VS fraction, WAS (BMP B0 150) - ~1/3 of PS
+    VS_SPLIT_PS = 0.563     # PS share of feed VS (Mangere/ETP)
     HRT_FLOOR_D = 12.0      # hydraulic/OLR-governed HRT floor (= KCAP.HRT_FLOOR)
+    VANKLEEK_SCALE = 0.89   # conservative-band f_bio multiplier (van Kleek mass-balance vs gas method)
 
 
 def vs_destruction(k_h: float, tau: float, f_bio: float) -> float:
@@ -362,109 +364,86 @@ def hrt_for_vsr(target_vsr: float, k_h: float, f_bio: float):
     return (r / (k_h * (1.0 - r))) if r < 1.0 else None
 
 
-def solidstream_assist(a: float) -> tuple:
-    """SolidStream as a partial-THP assist a in [0,1] (0 = conventional, 1 = full SolidStream).
-    Raises hydrolysis rate (recycle) and biodegradable fraction (THP unlock). Returns (k_h, f_bio)."""
-    a = max(0.0, min(1.0, a))
-    return (KIN.K_H_0 * (1.0 + a * (KIN.SS_K_MULT - 1.0)), KIN.F_BIO_0 + a * KIN.SS_DELTA_FBIO)
+def blended_vsr(tau: float, vs_split_ps: float = None, fbio_scale: float = 1.0) -> float:
+    """Blended (PS+WAS) VS destruction at retention time tau, from BMP-derived per-stream kinetics."""
+    wP = KIN.VS_SPLIT_PS if vs_split_ps is None else vs_split_ps
+    return (wP * vs_destruction(KIN.K_PS, tau, KIN.F_BIO_PS * fbio_scale)
+            + (1.0 - wP) * vs_destruction(KIN.K_WAS, tau, KIN.F_BIO_WAS * fbio_scale))
+
+
+def was_ceiling_capture(tau: float) -> float:
+    """Fraction of the WAS biodegradable ceiling captured at retention time tau (CSTR)."""
+    return (KIN.K_WAS * tau) / (1.0 + KIN.K_WAS * tau)
 
 
 def kinetics_calibration_check() -> dict:
-    """Confirm the kinetics reproduce the two closure-validated VSR anchors."""
-    k1, f1 = solidstream_assist(1.0)
-    return {"conventional_VSR_at_18_1d": vs_destruction(KIN.K_H_0, KIN.TAU_CONV_REF, KIN.F_BIO_0),
-            "solidstream_VSR_at_13_4d": vs_destruction(k1, KIN.TAU_SS_REF, f1),
-            "ss_full_k_h": k1, "ss_full_f_bio": f1}
+    """Confirm the BMP-derived per-stream kinetics reproduce the full-scale plant VSRs."""
+    return {"ETP_VSR_at_18_1d": blended_vsr(18.1), "Mangere_VSR_at_21_7d": blended_vsr(21.7),
+            "vanKleek_band_ETP": blended_vsr(18.1, fbio_scale=KIN.VANKLEEK_SCALE),
+            "PS_k": KIN.K_PS, "PS_f_bio": KIN.F_BIO_PS, "WAS_k": KIN.K_WAS, "WAS_f_bio": KIN.F_BIO_WAS}
 
 
-def kplus_was_constraint(plant: dict = None, target_vsr: float = None,
-                         assist_band: tuple = (0.2, 0.5, 1.0)) -> dict:
-    """V3.5 Pathway K+ (recycle-to-WAS-only). Tests whether the SolidStream recycle shifts the WAS
-    train from hydrolysis-governed to OLR/hydraulic-governed WITHOUT conventional THP. Returns the
-    required WAS hydrolysis HRT vs SolidStream assist, the governing constraint at each, and the
-    crossover assist a* where it flips. Total VSR is conserved (set by solubilisation, ~0.70, not by
-    recycle routing); WAS-only routing concentrates the recovered residual load on the WAS digester,
-    which is what drives the crossover. Confidence C - the assist a is pilot-measurable."""
-    target = target_vsr if target_vsr is not None else K.VSR_CONV
+def kplus_was_capacity(plant: dict = None, conv_hrt: float = 18.1) -> dict:
+    """V3.5 Pathway K+ (BMP-reframed). The BMP shows WAS is CEILING-limited, not rate-limited: it
+    hydrolyses as fast as PS but has ~1/3 the biodegradable fraction, so it reaches its low ceiling fast.
+    Running the WAS digester at the hydraulic/OLR floor (~12 d) instead of the conventional ~18 d therefore
+    loses little VS destruction - short-HRT capacity is justified by MEASURED BMP kinetics, with no
+    SolidStream rate-assist required. SolidStream's WAS value is raising the biodegradable ceiling (cell
+    lysis -> more methane), a YIELD benefit UNQUANTIFIED at this plant pending treated-WAS BMP."""
+    plant = plant if plant is not None else GENERIC
     floor = KIN.HRT_FLOOR_D
-    rows = []
-    for a in assist_band:
-        k_h, f_bio = solidstream_assist(a)
-        th = hrt_for_vsr(target, k_h, f_bio)
-        governed = "OLR/hydraulic" if (th is None or th <= floor) else "hydrolysis"
-        rows.append({"assist": a, "k_h": round(k_h, 3), "f_bio": round(f_bio, 3),
-                     "req_was_hrt_d": (round(th, 1) if th else None), "governing": governed})
-    lo, hi = 0.0, 1.0
-    for _ in range(60):
-        m = (lo + hi) / 2.0
-        k_h, f_bio = solidstream_assist(m)
-        th = hrt_for_vsr(target, k_h, f_bio)
-        if th is None or th <= floor:
-            hi = m
-        else:
-            lo = m
-    a_star = (lo + hi) / 2.0
-    conv_hrt = hrt_for_vsr(target, KIN.K_H_0, KIN.F_BIO_0)
-    return {"target_vsr": target, "hydraulic_floor_d": floor, "rows": rows,
-            "crossover_assist": round(a_star, 2),
-            "conventional_req_hrt_d": (round(conv_hrt, 1) if conv_hrt else None),
-            "total_vsr_conserved": KSS.VSR,
-            "verdict": (f"WAS train shifts hydrolysis -> OLR/hydraulic-governed at assist a*={a_star:.2f}; "
-                        f"SolidStream full effectiveness is a=1.0, so K+ crosses the constraint with margin "
-                        f"(total VSR conserved at {KSS.VSR:.3f}). Assist a is pilot-measurable (confidence C)."),
-            "confidence": "C"}
-
-
+    cap_floor = was_ceiling_capture(floor)
+    cap_conv = was_ceiling_capture(conv_hrt)
+    retained = (cap_floor / cap_conv) if cap_conv else 1.0
+    return {"floor_d": floor, "conv_hrt_d": conv_hrt,
+            "was_k": KIN.K_WAS, "was_f_bio": KIN.F_BIO_WAS, "ps_f_bio": KIN.F_BIO_PS, "ps_k": KIN.K_PS,
+            "was_vsr_floor": KIN.F_BIO_WAS * cap_floor, "was_vsr_conv": KIN.F_BIO_WAS * cap_conv,
+            "vsr_retained_at_floor_pct": retained * 100.0,
+            "batch_t90_was_d": 2.303 / KIN.K_WAS, "batch_t90_ps_d": 2.303 / KIN.K_PS,
+            "capacity_confidence": "B",
+            "yield_uplift_status": "unquantified (no SolidStream-treated-WAS BMP)",
+            "verdict": (f"WAS is ceiling-limited (BMP f_bio {KIN.F_BIO_WAS:.2f}, k {KIN.K_WAS:.2f}/d - as fast as PS). "
+                        f"At the {floor:.0f} d floor it retains {retained*100:.0f}% of conventional ({conv_hrt:.0f} d) "
+                        "WAS VS destruction, so short-HRT capacity is justified by measured BMP kinetics with no "
+                        "SolidStream rate-assist. SolidStream's WAS benefit is raising the biodegradable ceiling "
+                        "(yield), unquantified here pending treated-WAS BMP.")}
 
 
 def constraint_state(was_hrt_d, floor_d=None, band=0.20):
-    """Classify the WAS digester's governing constraint from the HRT it is SIZED for, vs the hydraulic
-    floor. Below the floor -> OLR/hydraulic governs; sitting in the floor band -> transition; well above
-    -> hydrolysis governs. This is the strategic variable Peter flagged: the CONSTRAINT released, not the
-    volume released. Two pathways can free similar volume yet sit in different constraint states."""
+    """Classify the WAS digester by the HRT it is sized for vs the hydraulic floor. Note (BMP): WAS
+    hydrolysis is fast, so above ~the floor the digester is not rate-limited - it is biodegradability-
+    ceiling-limited. 'OLR/hydraulic' means HRT is set by the floor, not by hydrolysis completion."""
     floor = floor_d if floor_d is not None else KIN.HRT_FLOOR_D
     if was_hrt_d is None:
         return "OLR/hydraulic-governed"
     if was_hrt_d < floor * 0.95:
         return "OLR/hydraulic-governed"
     if was_hrt_d <= floor * (1.0 + band):
-        return "transition"
-    return "hydrolysis-governed"
+        return "near floor"
+    return "long HRT (chasing the ceiling)"
 
 
 def constraint_ladder(plant=None):
-    """Where each digestion configuration sits on the hydrolysis -> OLR constraint spectrum, by the WAS
-    HRT it sizes for. THP and K+ both reach OLR/hydraulic governance, but K+ does it via SolidStream
-    recycle (assist >= a*) with no THP front end. Conventional and K stay hydrolysis-governed - K lifts
-    VSR but sizes WAS long (its capacity claim was notional), so it does not realise the constraint shift."""
+    """BMP-reframed constraint ladder. The WAS digester is NOT rate-limited (BMP k_WAS 0.38/d, fast); it is
+    biodegradability-CEILING-limited (f_bio 0.31). Short-HRT capacity is available to every configuration -
+    what differs is the ceiling each unlocks. Only cell-lysis pre-treatment (THP / SolidStream) raises the
+    WAS ceiling, and at ETP/Mangere that uplift is unquantified pending treated-WAS BMP."""
     plant = plant if plant is not None else GENERIC
     floor = KIN.HRT_FLOOR_D
-    conv_hrt = hrt_for_vsr(K.VSR_CONV, KIN.K_H_0, KIN.F_BIO_0)
-    try:
-        k_was_hrt = build_pathway_k(plant).basis.get("was_hrt_d")
-    except Exception:
-        k_was_hrt = None
     rungs = [
-        {"config": "Conventional MAD", "assist": 0.0,
-         "mechanism": "no pre-treatment; slow WAS hydrolysis sets the HRT",
-         "was_hrt_d": (round(conv_hrt, 1) if conv_hrt else None),
-         "state": constraint_state(conv_hrt, floor), "evidence": "A - calibrated (Cambi 2026 / Mangere)"},
-        {"config": "Pathway K (separate + SolidStream, conservative)", "assist": 1.0,
-         "mechanism": "SolidStream lifts VSR; WAS sized long, capacity claim notional (PS-share)",
-         "was_hrt_d": (round(k_was_hrt, 1) if k_was_hrt else None),
-         "state": constraint_state(k_was_hrt, floor), "evidence": "A energy/VSR; capacity notional"},
-        {"config": "Pathway K+ (recycle-to-WAS, WAS at floor)", "assist": 1.0,
-         "mechanism": "SolidStream recycle assists hydrolysis; WAS sized to the OLR/hydraulic floor",
-         "was_hrt_d": floor, "state": constraint_state(floor, floor),
-         "evidence": "C - pilot-gated (assist a >= a* unproven)"},
-        {"config": "Front-end THP", "assist": None,
-         "mechanism": "pre-completes hydrolysis externally; OLR can roughly double",
-         "was_hrt_d": KCAP.HRT_HYDROLYSIS_THP, "state": constraint_state(KCAP.HRT_HYDROLYSIS_THP, floor),
-         "evidence": "A/B - Cambi / Ringsend / Blue Plains operating data"},
+        {"config": "Conventional MAD (~18 d)", "was_hrt_d": 18.1, "was_ceiling": KIN.F_BIO_WAS,
+         "limit": "biodegradable ceiling (WAS rate fast; HRT not binding > ~12 d)",
+         "evidence": "BMP + ETP/Mangere VSR"},
+        {"config": "Pathway K / K+ (WAS at ~12 d floor)", "was_hrt_d": floor, "was_ceiling": KIN.F_BIO_WAS,
+         "limit": "OLR/hydraulic floor; ceiling unchanged (~94% of conv WAS VSR retained)",
+         "evidence": "measured BMP kinetics"},
+        {"config": "SolidStream / THP (cell lysis)", "was_hrt_d": floor, "was_ceiling": "raised (unquantified)",
+         "limit": "raises the WAS biodegradable ceiling -> more methane (yield, not capacity)",
+         "evidence": "Cambi VSR 0.703; plant-specific uplift pending treated-WAS BMP"},
     ]
-    return {"floor_d": floor, "crossover_assist": kplus_was_constraint(plant)["crossover_assist"],
-            "rungs": rungs}
-
+    return {"floor_d": floor, "rungs": rungs,
+            "headline": ("WAS is ceiling-limited, not rate-limited: short-HRT capacity is available to all "
+                         "configs; only cell-lysis pre-treatment raises the WAS ceiling (yield).")}
 
 
 def capacity_view(pw: Pathway) -> dict:
@@ -1227,50 +1206,51 @@ def build_pathway_f(plant: dict = GENERIC) -> Pathway:
 # ---------------------------------------------------------------------------
 # PATHWAY K+ - K with kinetically-grounded WAS HRT (recycle-to-WAS-only, OLR-governed)
 def build_pathway_k_plus(plant: dict = GENERIC) -> Pathway:
-    """V3.5 Pathway K+ (recycle-to-WAS-only). K, but the WAS digester runs at the OLR/hydraulic
-    floor instead of a long hydrolysis-limited HRT - justified by the hydrolysis-kinetics layer:
-    the SolidStream recycle shifts the WAS train from hydrolysis-governed to OLR-governed once the
-    solubilisation assist exceeds a* (~0.18), which SolidStream clears with margin. Ledgers are K's
-    (total VSR is conserved at ~0.703 - routing does not change destruction); the difference is the
-    capacity claim. Where K's release was the NOTIONAL PS-share reduction (WAS absorbed it), K+ frees
-    REAL volume by shortening WAS to its kinetically-justified HRT. Confidence C - pilot-gated."""
+    """V3.5 Pathway K+ (BMP-reframed, recycle-to-WAS-only). K, but the WAS digester runs at the
+    hydraulic/OLR floor (~12 d) instead of a long HRT. Justified by the BMP-calibrated kinetics: WAS is
+    CEILING-limited, not rate-limited - it reaches its low biodegradable ceiling fast (k_WAS 0.38/d), so the
+    floor retains ~94% of conventional WAS VS destruction. Capacity is therefore backed by MEASURED kinetics
+    (confidence B), not the retired SolidStream rate-assist. Ledgers are K's (VSR conserved); SolidStream's
+    WAS methane-uplift (the ceiling-raising) is the same Cambi-calibrated basis as E/K, with its transfer to
+    this plant's WAS UNQUANTIFIED pending treated-WAS BMP."""
     k = build_pathway_k(plant)                  # reuse K's closing ledgers + basis (recycle, flows)
     V = plant.get("digester_vol_m3")
-    kc = kplus_was_constraint(plant)
+    kc = kplus_was_capacity(plant)
     cap = {}
     if V:
         Q_PS = plant["PS_tds"] / KK.DIGESTER_FEED_DS
         Q_WAS = plant["WAS_tds"] / KK.DIGESTER_FEED_DS
         recycle = k.basis.get("recycle_m3d", 0.0)
         ps_vol = Q_PS * KK.PS_HRT_SHORT_D
-        was_vol = (Q_WAS + recycle) * KIN.HRT_FLOOR_D     # WAS at OLR/hydraulic floor (kinetically justified)
+        was_vol = (Q_WAS + recycle) * KIN.HRT_FLOOR_D     # WAS at OLR/hydraulic floor (BMP-justified)
         total = ps_vol + was_vol
         freed = max(0.0, V - total)
         cap = {"pathway": "K+", "kplus_freed_m3": freed,
                "kplus_equiv_digesters": freed / KK.DIGESTER_UNIT_M3,
                "kplus_deferred_capex_m_aud": freed * KCAP.CAPEX_PER_M3 / 1e6,
                "ps_hrt_kplus_d": KK.PS_HRT_SHORT_D, "was_hrt_kplus_d": KIN.HRT_FLOOR_D,
-               "crossover_assist": kc["crossover_assist"], "kplus_total_vol_m3": total,
-               # supersede K's notional release with the kinetically-grounded figure
+               "was_vsr_retained_pct": kc["vsr_retained_at_floor_pct"], "kplus_total_vol_m3": total,
                "capacity_released_m3": freed, "equivalent_digesters": freed / KK.DIGESTER_UNIT_M3,
                "deferred_capex_m_aud": freed * KCAP.CAPEX_PER_M3 / 1e6}
     relm = cap.get("kplus_freed_m3", 0.0); eqd = cap.get("kplus_equiv_digesters", 0.0)
-    defc = cap.get("kplus_deferred_capex_m_aud", 0.0); astar = cap.get("crossover_assist", 0.0)
+    defc = cap.get("kplus_deferred_capex_m_aud", 0.0); ret = cap.get("was_vsr_retained_pct", 0.0)
     moves = [
         Move("Separate PS (~10 d) + WAS at the OLR/hydraulic floor (~12 d)",
              addresses=["capacity", "capex"],
-             reward=f"Frees ~{relm:,.0f} m3 (~{eqd:.1f} digesters); defers ~${defc:.0f}M - the REAL release "
-                    f"(WAS no longer sprawls to absorb the PS reduction)",
-             residual_risk=f"WAS runs OLR-governed only if SolidStream solubilisation assist >= a*~{astar:.2f}; "
-                           "unproven (confidence C)",
-             confidence=Confidence(Conf.C, Conf.C, Conf.C),
-             derisk_task="BMP-on-centrate + recycle-ratio pilot to measure the assist, ~$0.6M / 12 months",
+             reward=f"Frees ~{relm:,.0f} m3 (~{eqd:.1f} digesters); defers ~${defc:.0f}M. WAS is ceiling-limited "
+                    f"and reaches its ceiling fast (BMP k_WAS 0.38/d), so the floor retains ~{ret:.0f}% of "
+                    "conventional WAS VS destruction - short-HRT capacity is backed by measured BMP kinetics",
+             residual_risk="CSTR mixing/stability at short WAS HRT - confirm operationally",
+             confidence=Confidence(Conf.B, Conf.A, Conf.B),
+             derisk_task="WAS digestion trial at reduced HRT (operational confirmation)",
              tag=Tag.KEEP_OPEN),
         Move("Post-digestion SolidStream THP, hot centrate recycled to the WAS digesters only",
-             addresses=["capacity", "energy_neutrality", "biosolids_quality"],
-             reward="Shifts WAS hydrolysis->OLR-governed without a THP front end; VSR ~58%->70%; biogas +22.7%",
-             residual_risk="Recycle-to-WAS plumbing; return-liquor NH4 concentrated on the WAS train",
-             confidence=Confidence(Conf.A, Conf.A, Conf.B), derisk_task=None, tag=Tag.COMMIT),
+             addresses=["energy_neutrality", "biosolids_quality"],
+             reward="Class-A 38% DS cake; VSR ~58%->70% and biogas +22.7% per Cambi SolidStream",
+             residual_risk="SolidStream's WAS ceiling-uplift at THIS plant is UNQUANTIFIED pending treated-WAS "
+                           "BMP; the methane uplift could be lower than the Cambi reference",
+             confidence=Confidence(Conf.A, Conf.A, Conf.B),
+             derisk_task="BMP on SolidStream-treated WAS vs raw WAS (measure the ceiling uplift)", tag=Tag.COMMIT),
         Move("Class-A hygienised 38% DS cake (no drying)",
              addresses=["biosolids_quality", "opex", "pfas"],
              reward="Pathogen-free; ~50% fewer wet tonnes; ends EPA stockpiling",
@@ -1281,14 +1261,15 @@ def build_pathway_k_plus(plant: dict = GENERIC) -> Pathway:
              residual_risk="Higher sidestream N density on the WAS train",
              confidence=Confidence(Conf.A, Conf.B, Conf.A), derisk_task="Sidestream N pilot", tag=Tag.KEEP_OPEN),
     ]
-    k.name = "Pathway K+: Separate PS (10d) + OLR-governed WAS (SolidStream-assisted) + recycle-to-WAS + Land"
-    k.description = ("V3.5 Pathway K+ (recycle-to-WAS-only): PS at ~10 d; WAS at the ~12 d OLR/hydraulic floor, "
-                     "justified by the hydrolysis-kinetics layer (SolidStream recycle shifts WAS to OLR-governed "
-                     "at assist >= a*~0.18). Same ledgers as K (VSR conserved); the capacity release is the "
-                     "kinetically-grounded REAL figure, not K's notional PS-share. Confidence C, pilot-gated.")
+    k.name = "Pathway K+: Separate PS (10d) + WAS at OLR floor (BMP: ceiling-limited) + SolidStream recycle + Land"
+    k.description = ("V3.5 Pathway K+ (BMP-reframed): PS ~10 d; WAS at the ~12 d hydraulic/OLR floor, justified by "
+                     "BMP-calibrated kinetics (WAS is ceiling-limited, not rate-limited; reaches its ceiling fast, "
+                     "so the floor retains ~94% of conventional WAS VS destruction). Capacity is measured-kinetics "
+                     "backed (confidence B). SolidStream's WAS methane-uplift (ceiling-raising) is Cambi-calibrated "
+                     "but its transfer to this plant's WAS is unquantified pending treated-WAS BMP.")
     k.moves = moves
     k.basis.update(cap)
-    k.confidence_level = Conf.C   # K+ headline confidence = its defining capacity claim (C), not K's inherited A
+    k.confidence_level = Conf.B   # capacity now BMP-backed (B); SolidStream WAS yield-uplift transfer is the caveat
     return k
 
 
@@ -2171,7 +2152,7 @@ def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> d
                                     "evidence": EVIDENCE.get(n, (Conf.C, ""))[0].name}
                                 for n, p in endpoints.items()},
         "L6_carbon_endpoints": carbon_strategy_comparison(plant, x_set),
-        "L2_kplus_kinetics": kplus_was_constraint(plant),
+        "L2_kplus_kinetics": kplus_was_capacity(plant),
         "L2_constraint_ladder": constraint_ladder(plant),
         "risk_threshold": risk_threshold,
         "pathways": [regret_profile(p, weights, risk_threshold) for p in pathways],
