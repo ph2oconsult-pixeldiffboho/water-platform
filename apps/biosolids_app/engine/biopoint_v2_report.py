@@ -548,7 +548,7 @@ def build(bundle):
                    "(defensible mid-range, plant data would refine), or <b>provisional</b> "
                    "(uncalibrated, wide band, reported as uncertainty)."))
     reg = [
-        ("VS reduction (VSR)", f"{K.VSR*100:.1f}%", "Calibrated", "St Marys Cambi THP full-scale"),
+        ("VS reduction (VSR)", f"{K.VSR*100:.1f}%", "Calibrated", "Cambi Mangere Full-THP mass balance"),
         ("Methane yield", f"{K.METHANE_YIELD_NM3_TDS} Nm\u00b3/tDS", "Calibrated", "St Marys / Davyhulme"),
         ("THP steam demand", f"{K.STEAM_T_PER_TDS} t/tDS", "Calibrated", "St Marys (band 0.85-1.00)"),
         ("Biogas CH\u2084 fraction", f"{K.CH4_FRACTION*100:.0f}%", "Calibrated", "THP-AD reference"),

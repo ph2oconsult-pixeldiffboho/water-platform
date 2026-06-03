@@ -124,7 +124,9 @@ class Ledger:
 # ---------------------------------------------------------------------------
 class K:
     # St Marys Cambi THP full-scale (Sydney Water) — confidence 95/100
-    VSR = 0.657                 # full pre-digestion THP VSR - rebased to 2026 basis (conv 0.575 + uplift)
+    VSR = 0.557                 # full pre-digestion THP VSR - Cambi Mangere Full-THP mass balance (2015);
+                                # NB Cambi mass-balance basis (cf conventional gas-method 0.575 / van Kleek 0.518)
+                                # - front-end THP's lever at Mangere is THROUGHPUT (10% DS feed) + dewatering, not VSR
     VSR_CONV = 0.575            # conventional blended MAD VSR - Cambi 2026 (Mangere P50 0.585 cross-check)
     VS_TS = 0.808               # VS/TS, PFD Note 3
     METHANE_YIELD_NM3_TDS = 258 # Nm3 CH4 / tDS feed (St Marys == Davyhulme)
@@ -165,7 +167,8 @@ class K:
     # calibrated so VS-weighted recombination reproduces the measured Mangere blend VSR).
     PS_WAS_VS_RATIO = 1.15   # PS:WAS volatile-solids ratio (PS slightly more volatile)
     VSR_PS = 0.60            # PS VSR conventional MAD - 2026 basis (own train, no THP)
-    VSR_WAS_THP = 0.69       # THP-WAS VSR - 2026 basis (own train)
+    VSR_WAS_THP = 0.47       # THP-WAS VSR - Cambi Mangere WAS-THP mass balance (2015): blended 53.9% with
+                             # raw PS bypass -> backed-out THP'd-WAS ~0.47 (cell lysis ~doubles raw-WAS 0.27)
     MANGERE_VSR_BAND = (0.495, 0.702)  # measured P10-P90 closure/calibration gate
 
 
