@@ -266,6 +266,40 @@ def build(bundle):
                    "resilience &mdash; carried with its confidence level, not collapsed into one number.", S_SMALL))
     story.append(Spacer(1, 6))
 
+    # ===== V3.6 Nitrogen Strategy (parallel pillar to carbon) =====
+    nsc = S.nitrogen_strategy_comparison(plant)
+    story.append(P("Nitrogen Strategy &mdash; the sidestream-N decision (a pillar in its own right)", S_H1))
+    story.append(P(f"Digestion sets the capacity; the endpoint sets the carbon fate; the <i>nitrogen strategy</i> "
+                   f"decides what happens to the ~{nsc['sidestream_N_kgd']:,.0f} kgN/d of sidestream ammonia "
+                   "(single-pass centrate basis; the SolidStream recycle raises it ~40%). It is a separate, "
+                   "independent decision, grouped &mdash; exactly like carbon &mdash; into Return / Destruction / "
+                   "Recovery, and deliberately not collapsed into one score.", S_SMALL))
+    nobj = [("Lowest WWTW N load / N2O risk", "Sidestream PN/A, or the Hybrid"),
+            ("A saleable N product / revenue", "Ammonium sulphate"),
+            ("Phosphorus co-recovery", "Struvite"),
+            ("Lowest cost / simplicity (today)", "Mainstream return")]
+    ot = [[P("If the objective is\u2026", S_CELLH), P("\u2026the nitrogen strategy is", S_CRH)]]
+    for o, e in nobj:
+        ot.append([P(o, S_CELL), P(e, S_CR)])
+    story.append(styled(Table(ot, colWidths=[85*mm, 65*mm])))
+    story.append(Spacer(1, 4))
+    nrows = [[P("Strategy", S_CELLH), P("Family", S_CELLH), P("N to N2", S_CRH), P("N recovered", S_CRH),
+              P("Residual load", S_CRH), P("Load cut", S_CRH), P("Conf", S_CRH)]]
+    for x in nsc["rows"]:
+        nrows.append([P(x["strategy"], S_CELL), P(x["family"], S_CELL), P(f"{x['n_to_n2_kgd']:,}", S_CR),
+                      P(f"{x['n_recovered_kgd']:,}", S_CR), P(f"{x['residual_load_kgd']:,}", S_CR),
+                      P(f"{x['load_cut_pct']}%", S_CR), P(x["confidence"], S_CR)])
+    story.append(styled(Table(nrows, colWidths=[40*mm, 27*mm, 16*mm, 18*mm, 18*mm, 14*mm, 11*mm])))
+    story.append(P("N to N2 = destroyed to nitrogen gas (no product); residual load = sidestream N still returned "
+                   "to the WWTW; figures are kgN/d on the single-pass centrate. " + nsc["headline"], S_SMALL))
+    story.append(P("<b>Endpoint independence:</b> a thermal carbon endpoint volatilises the <i>cake</i> nitrogen to "
+                   "air, but the <i>sidestream</i> centrate N is a separate stream the nitrogen strategy manages "
+                   "regardless &mdash; so the nitrogen decision is independent of both the digestion choice and the "
+                   "carbon endpoint, in the same way PFAS is set by the endpoint alone. Carbon, Nitrogen and PFAS "
+                   "are three parallel strategy axes, not one combined score.",
+                   mk("nind", parent=S_SMALL, backColor=LIGHT, borderPadding=6, spaceBefore=3)))
+    story.append(Spacer(1, 6))
+
     # ===== 1 objective =====
     story.append(P("1 &nbsp; Strategic Objective", S_H1))
     story.append(P("Pathways are weighted against the utility's stated driver ranking. The "
@@ -432,7 +466,7 @@ def build(bundle):
     kc = dh.get("L2_kplus_kinetics") or S.kplus_was_capacity(plant)
     kpb = S.build_pathway_k_plus(plant).basis
     cc = S.kinetics_calibration_check()
-    story.append(P("7b &nbsp; Digestion Architecture &mdash; WAS is Ceiling-Limited, Not Rate-Limited", S_H1))
+    story.append(P("7b &nbsp; Digestion Architecture &mdash; WAS is Predominantly Ceiling-Limited (Mangere / ETP)", S_H1))
     story.append(P("Section 7 showed THP wins capacity by pre-completing hydrolysis. Pathway K+ asks whether the "
                    "WAS train can run at a short HRT without a THP front end. Per-stream BMP tests on Mangere "
                    "primary (TPS) and waste-activated (TWAS) sludge answer it directly &mdash; and overturn the "
@@ -448,9 +482,14 @@ def build(bundle):
                    f"and Mangere {cc['Mangere_VSR_at_21_7d']:.3f} (measured 0.585) &mdash; a bottom-up validation "
                    "from lab BMP to full-scale VSR. <b>(2)</b> WAS hydrolyses <i>as fast as PS</i> "
                    f"(k_WAS {kc['was_k']:.2f} &ge; k_PS {kc['ps_k']:.2f}/d) but its biodegradable fraction is only "
-                   f"~one-third (f_bio {kc['was_f_bio']:.2f} vs {kc['ps_f_bio']:.2f}). WAS is <b>ceiling-limited, "
-                   "not rate-limited</b>: it reaches its low ceiling fast, and the recalcitrant ~70% never converts "
-                   "at any HRT.", S_SMALL))
+                   f"~one-third (f_bio {kc['was_f_bio']:.2f} vs {kc['ps_f_bio']:.2f}). At Mangere and ETP, WAS is "
+                   "therefore <b>predominantly ceiling-limited rather than rate-limited</b>: it reaches its low "
+                   "ceiling fast, and the recalcitrant ~70% never converts at any HRT.", S_SMALL))
+    story.append(P("The <i>principle</i> is strong; its <i>universality</i> is not. Different WAS ages, sludge ages, "
+                   "industrial fractions and temperatures can produce genuinely rate-limited WAS, so this is a "
+                   "plant-specific finding &mdash; well supported for Mangere and ETP on their own BMP data, but to be "
+                   "confirmed with a local BMP before it is assumed for WAS in general.",
+                   mk("wascaveat", parent=S_SMALL, backColor=LIGHT, borderPadding=6, spaceBefore=3)))
     story.append(P("This is why K+ frees capacity &mdash; and it is measured, not assumed. Because WAS reaches its "
                    f"ceiling fast (batch t₉₀ ~{kc['batch_t90_was_d']:.0f} d), running the WAS digester at "
                    f"the {kc['floor_d']:.0f} d hydraulic/OLR floor instead of the conventional {kc['conv_hrt_d']:.0f} d "
@@ -461,7 +500,8 @@ def build(bundle):
         ("WAS HRT at the floor", f"{kc['floor_d']:.0f} d (vs {kc['conv_hrt_d']:.0f} d conventional)"),
         ("WAS VS destruction retained", f"~{kc['vsr_retained_at_floor_pct']:.0f}% &mdash; measured BMP kinetics"),
         ("K+ freed volume", f"{kpb.get('capacity_released_m3',0):,.0f} m\u00b3 = {kpb.get('equivalent_digesters',0):.1f} digesters, ${kpb.get('deferred_capex_m_aud',0):.0f}M deferred"),
-        ("Capacity confidence", f"{kc['capacity_confidence']} &mdash; backed by per-stream BMP, not the retired rate-assist"),
+        ("Capacity confidence", f"{kc['capacity_confidence']} &mdash; backed by per-stream BMP (measured kinetics)"),
+        ("Yield (SolidStream uplift) confidence", f"{kc.get('yield_confidence','D')} &mdash; inferred from Cambi; unproven at this plant pending a treated-WAS BMP"),
     ]))
     lad = dh.get("L2_constraint_ladder") or S.constraint_ladder(plant)
     story.append(P("The strategic variable is the <i>constraint</i> each configuration faces. Short-HRT capacity is "
@@ -1097,6 +1137,17 @@ def future_resilience_story(bundle):
                      P(f"{ax['resilience']*100:.0f}", S_CR), P(f"{op['score']*100:.0f}", S_CR),
                      P("survives" if rz["survives_pfas_ban"] else "fails", S_CR)])
     story.append(styled(Table(rows, colWidths=[58*mm, 24*mm, 23*mm, 22*mm, 23*mm, 20*mm])))
+    story.append(P("Operational axes &mdash; complexity and reversibility (what boards also weigh)", S_H2))
+    orows = [[P("Pathway", S_CELLH), P("Complexity (1-6)", S_CRH), P("Reversibility (0-100)", S_CRH)]]
+    for p, lab in zip(trio, qlabels):
+        cx = S.complexity_score(p)
+        orows.append([P(lab, S_CELL), P(f"{cx['score']} ({cx['label']})", S_CR),
+                      P(f"{S.optionality(p)['reversibility']*100:.0f}", S_CR)])
+    story.append(styled(Table(orows, colWidths=[58*mm, 46*mm, 46*mm])))
+    story.append(P("This is why a board may rationally take 90% of the benefit at a fraction of the commitment: "
+                   "K+ is an operational change (complexity 2, reversibility 90), whereas a full thermal train is "
+                   "complexity 6, reversibility 20. The least-regret view already prices reversibility into its "
+                   "commitment-regret term; complexity is carried alongside, not collapsed into one score.", S_SMALL))
     story.append(P("Reading: <b>K+ matches the THP spine's optionality</b> (it forecloses nothing) at "
                    "materially lower capex and complexity &mdash; the lower-commitment route to most of the "
                    "capacity benefit. The thermal endpoint is the most resilient and the only PFAS-robust "

@@ -414,12 +414,17 @@ def kplus_was_capacity(plant: dict = None, conv_hrt: float = 18.1) -> dict:
             "vsr_retained_at_floor_pct": retained * 100.0,
             "batch_t90_was_d": 2.303 / KIN.K_WAS, "batch_t90_ps_d": 2.303 / KIN.K_PS,
             "capacity_confidence": "B",
+            "yield_confidence": "D",
             "yield_uplift_status": "unquantified (no SolidStream-treated-WAS BMP)",
-            "verdict": (f"WAS is ceiling-limited (BMP f_bio {KIN.F_BIO_WAS:.2f}, k {KIN.K_WAS:.2f}/d - as fast as PS). "
+            "verdict": (f"At Mangere and ETP, WAS appears PREDOMINANTLY ceiling-limited (BMP f_bio {KIN.F_BIO_WAS:.2f}, "
+                        f"k {KIN.K_WAS:.2f}/d - it hydrolyses as fast as PS but reaches a low biodegradable ceiling). "
                         f"At the {floor:.0f} d floor it retains {retained*100:.0f}% of conventional ({conv_hrt:.0f} d) "
                         "WAS VS destruction, so short-HRT capacity is justified by measured BMP kinetics with no "
-                        "SolidStream rate-assist. SolidStream's WAS benefit is raising the biodegradable ceiling "
-                        "(yield), unquantified here pending treated-WAS BMP.")}
+                        "SolidStream rate-assist. The principle is strong but not universal - older / higher-SRT / "
+                        "industrial / colder WAS can be genuinely rate-limited, so this is plant-specific until a "
+                        "local BMP confirms it (capacity confidence B). SolidStream's WAS benefit is raising the "
+                        "biodegradable ceiling (yield), inferred from Cambi and unproven at this plant pending a "
+                        "treated-WAS BMP (yield confidence D).")}
 
 
 def constraint_state(was_hrt_d, floor_d=None, band=0.20):
@@ -455,8 +460,10 @@ def constraint_ladder(plant=None):
          "evidence": "Cambi VSR 0.703; plant-specific uplift pending treated-WAS BMP"},
     ]
     return {"floor_d": floor, "rungs": rungs,
-            "headline": ("WAS is ceiling-limited, not rate-limited: short-HRT capacity is available to all "
-                         "configs; only cell-lysis pre-treatment raises the WAS ceiling (yield).")}
+            "headline": ("At Mangere and ETP, WAS appears predominantly ceiling-limited rather than rate-limited: "
+                         "short-HRT capacity is available to these configs; only cell-lysis pre-treatment raises the "
+                         "WAS ceiling (yield). The principle is strong but plant-specific - confirm with a local BMP, "
+                         "since older / higher-SRT / industrial / colder WAS can be genuinely slow.")}
 
 
 def capacity_view(pw: Pathway) -> dict:
@@ -1330,7 +1337,7 @@ def build_pathway_k_plus(plant: dict = GENERIC) -> Pathway:
     moves = [
         Move("Separate PS (~10 d) + WAS at the OLR/hydraulic floor (~12 d)",
              addresses=["capacity", "capex"],
-             reward=f"Frees ~{relm:,.0f} m3 (~{eqd:.1f} digesters); defers ~${defc:.0f}M. WAS is ceiling-limited "
+             reward=f"Frees ~{relm:,.0f} m3 (~{eqd:.1f} digesters); defers ~${defc:.0f}M. WAS is predominantly ceiling-limited (Mangere/ETP) "
                     f"and reaches its ceiling fast (BMP k_WAS 0.38/d), so the floor retains ~{ret:.0f}% of "
                     "conventional WAS VS destruction - short-HRT capacity is backed by measured BMP kinetics",
              residual_risk="CSTR mixing/stability at short WAS HRT - confirm operationally",
@@ -1725,15 +1732,43 @@ def optionality(pw: Pathway) -> dict:
     # flexibility. Big committed front-end capital (full THP, thermal) is less reversible than an
     # operational play (conventional, K+), so it earns a modest haircut - K+ stays above THP.
     if not t["thp"]:
-        rev = 1.0
+        rev = 1.00                               # conventional / optimisation - no major sunk capital
     elif pw.basis.get("kplus_freed_m3"):
-        rev = 0.80
+        rev = 0.90                               # K+ : operational short-HRT, low commitment
     elif t["endpoint"] == "thermal":
-        rev = 0.45
+        rev = 0.20                               # full thermal train - largest, least reversible
+    elif "SolidStream" in pw.name:
+        rev = 0.80                               # SolidStream conditioning - moderate sunk capital
     else:
-        rev = 0.65
+        rev = 0.50                               # front-end THP - major capital
     score = 0.8 * (len(preserved) / len(OPTION_SET)) + 0.2 * rev
     return {"preserved": preserved, "foreclosed": foreclosed, "reversibility": rev, "score": score}
+
+
+def complexity_score(pw) -> dict:
+    """Operational complexity (1 = simplest ... 6 = most complex). Many utilities will take 90% of the
+    benefit at far lower complexity, so it is a decision axis in its own right - especially for K+, which
+    is an operational change rather than a new train. Derived from the unit processes: conventional MAD = 1;
+    K+ (short-HRT operation + recycle) = 2; a full front-end THP train = 4; + sidestream PN/A = +1; + a
+    thermal endpoint = +2 (capped at 6)."""
+    b = pw.basis; t = pw.traits
+    if b.get("kplus_freed_m3"):
+        c = 2
+    elif b.get("has_thp"):
+        c = 4
+    else:
+        c = 1
+    if pw.ledgers["nitrogen"].outflows.get("N2_to_atmosphere_via_PNA", 0.0) > 0:
+        c += 1
+    if t.get("endpoint") == "thermal":
+        c += 2
+    c = min(6, c)
+    label = {1: "Low", 2: "Low-Med", 3: "Medium", 4: "Med-High", 5: "High", 6: "Very High"}[c]
+    return {"score": c, "label": label, "norm": c / 6.0}
+
+
+COMMITMENT_REGRET_W = 0.15   # weight on stranded-capital regret (1 - reversibility); tuned so the
+                             # PFAS-probability crossover sits near 50% with the granular reversibility scale
 
 
 def regret_table(pathways):
@@ -1758,7 +1793,7 @@ def regret_table(pathways):
     # does not need is itself a regret - the Hunter Water lesson. Without this term, regret structurally
     # favours the highest-capability/highest-capex option (the THP+thermal train) regardless of how
     # likely its triggering future is. Weighted by (1 - reversibility) from the optionality view.
-    COMMIT_W = 0.25
+    COMMIT_W = COMMITMENT_REGRET_W
     commit_regret = [COMMIT_W * (1.0 - optionality(p).get("reversibility", 1.0)) for p in pathways]
     totals = [perf_regret[j] + commit_regret[j] for j in range(len(pathways))]
     order = sorted(range(len(pathways)), key=lambda j: totals[j])
@@ -1815,7 +1850,7 @@ def regret_sensitivity(pathways, pfas_probs=(0.20, 0.40, 0.60, 0.80)):
                 totals[j] += lk * (best - perfs[j])
             wsum += lk
         totals = [t / wsum for t in totals]
-        totals = [totals[j] + 0.25 * (1.0 - optionality(pathways[j]).get("reversibility", 1.0))
+        totals = [totals[j] + COMMITMENT_REGRET_W * (1.0 - optionality(pathways[j]).get("reversibility", 1.0))
                   for j in range(len(pathways))]   # same commitment term as regret_table
         win = min(range(len(pathways)), key=lambda j: totals[j])
         out.append({"pfas_prob": prob, "winner": pathways[win].name, "winner_idx": win, "total_regret": totals})
@@ -2352,6 +2387,59 @@ def carbon_strategy_comparison(plant: dict = GENERIC, x_set: dict = None) -> lis
             "confidence": p.confidence_level.name if p.confidence_level else "C",
         })
     return rows
+
+
+def nitrogen_strategy_comparison(plant: dict = GENERIC) -> dict:
+    """Parallel pillar to carbon_strategy_comparison: the SIDESTREAM-NITROGEN decision, independent of
+    the digestion choice and of the carbon endpoint. Takes the single-pass centrate N (conventional /
+    front-end THP basis; the SolidStream recycle raises it ~40%) and applies each management option,
+    grouped into three families - Return (burden) / Destruction (to N2) / Recovery (product). As with
+    carbon, the columns are deliberately NOT collapsed into one score: the right strategy depends on the
+    objective (cut the WWTW load + N2O, recover a saleable product, co-recover P, or lowest cost today)."""
+    plant = plant if plant is not None else GENERIC
+    feed_N = plant.get("feed_N_kgd") or 0.0
+    N_side = feed_N * K.F_CENTRATE_BASE                       # single-pass sidestream N to manage
+    total_tds = plant["PS_tds"] + plant["WAS_tds"]
+    P_in = total_tds * plant.get("P_per_ds", K.P_PER_DS) * 1000.0
+    P_struvite = P_in * K.P_SOLUBILISED_FRAC * K.STRUVITE_P_RECOVERY
+    N_struvite = min(N_side, P_struvite * (14.0/31.0) * K.STRUVITE_N_PER_P_MOLAR)  # P-limited
+
+    def row(strategy, family, destroyed, recovered, product, revenue, n2o, conf, note):
+        residual = max(0.0, N_side - destroyed - recovered)
+        return {"strategy": strategy, "family": family, "n_to_n2_kgd": round(destroyed),
+                "n_recovered_kgd": round(recovered), "residual_load_kgd": round(residual),
+                "load_cut_pct": round((N_side - residual) / N_side * 100) if N_side else 0,
+                "product": product, "revenue_m_aud": round(revenue, 2),
+                "n2o_risk": n2o, "confidence": conf, "note": note}
+
+    as_rec = KN.AS_RECOVERY * N_side
+    as_tpy = (as_rec / KN.AS_N_FRAC) * 365 / 1000.0          # tonnes (NH4)2SO4 / yr
+    hyb_rest = N_side - N_struvite
+    rows = [
+        row("Mainstream return (do nothing)", "Return", 0.0, 0.0, "none", 0.0, "High", "A",
+            "centrate returns to the head of works; re-treated in the mainstream and an N2O hotspot"),
+        row("Sidestream PN/A (deammonification)", "Destruction", KN.PNA_N_REMOVAL * N_side, 0.0,
+            "none (N2 gas)", KN.PNA_N_REMOVAL * N_side * 365 * KN.AVOIDED_N_TREAT_PER_KG / 1e6, "Medium", "B",
+            "destroys ~88% to N2 at ~1.2 kWh/kgN (vs ~4-6 mainstream); cuts the WWTW load and N2O; no product"),
+        row("Ammonium sulphate recovery", "Recovery", 0.0, as_rec, "(NH4)2SO4 fertiliser",
+            as_tpy * KN.AS_PRICE_T / 1e6, "Low", "B",
+            "air/steam stripping captures ~75%% as a saleable product (~%.0f t/yr); H2SO4 + energy cost" % as_tpy),
+        row("Struvite (P co-recovery)", "Recovery", 0.0, N_struvite, "struvite (N+P)",
+            N_struvite * KN.N_FERT_VALUE_PER_KG * 365 / 1e6 + P_struvite * KN.P_FERT_VALUE_PER_KG * 365 / 1e6,
+            "Low", "A",
+            "P-limited, so N recovery is small; the main value is P recovery and scaling control"),
+        row("Hybrid: struvite + PN/A", "Recovery + Destruction", KN.PNA_N_REMOVAL * hyb_rest, N_struvite,
+            "struvite (N+P)",
+            KN.PNA_N_REMOVAL * hyb_rest * 365 * KN.AVOIDED_N_TREAT_PER_KG / 1e6
+            + N_struvite * KN.N_FERT_VALUE_PER_KG * 365 / 1e6 + P_struvite * KN.P_FERT_VALUE_PER_KG * 365 / 1e6,
+            "Low", "B",
+            "recover P as struvite, then destroy the rest to N2 - the lowest residual load plus a product"),
+    ]
+    return {"sidestream_N_kgd": round(N_side), "rows": rows,
+            "headline": ("The sidestream-N decision is independent of digestion and of the carbon endpoint. No "
+                         "single strategy wins on every objective: PN/A and the hybrid cut the WWTW load and N2O "
+                         "hardest; ammonium sulphate makes a saleable product; struvite co-recovers phosphorus; "
+                         "mainstream return is cheapest today but loads the plant and is the N2O hotspot.")}
 
 
 def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> dict:
