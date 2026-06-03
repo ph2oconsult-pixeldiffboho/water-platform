@@ -417,6 +417,56 @@ def kplus_was_constraint(plant: dict = None, target_vsr: float = None,
 
 
 
+def constraint_state(was_hrt_d, floor_d=None, band=0.20):
+    """Classify the WAS digester's governing constraint from the HRT it is SIZED for, vs the hydraulic
+    floor. Below the floor -> OLR/hydraulic governs; sitting in the floor band -> transition; well above
+    -> hydrolysis governs. This is the strategic variable Peter flagged: the CONSTRAINT released, not the
+    volume released. Two pathways can free similar volume yet sit in different constraint states."""
+    floor = floor_d if floor_d is not None else KIN.HRT_FLOOR_D
+    if was_hrt_d is None:
+        return "OLR/hydraulic-governed"
+    if was_hrt_d < floor * 0.95:
+        return "OLR/hydraulic-governed"
+    if was_hrt_d <= floor * (1.0 + band):
+        return "transition"
+    return "hydrolysis-governed"
+
+
+def constraint_ladder(plant=None):
+    """Where each digestion configuration sits on the hydrolysis -> OLR constraint spectrum, by the WAS
+    HRT it sizes for. THP and K+ both reach OLR/hydraulic governance, but K+ does it via SolidStream
+    recycle (assist >= a*) with no THP front end. Conventional and K stay hydrolysis-governed - K lifts
+    VSR but sizes WAS long (its capacity claim was notional), so it does not realise the constraint shift."""
+    plant = plant if plant is not None else GENERIC
+    floor = KIN.HRT_FLOOR_D
+    conv_hrt = hrt_for_vsr(K.VSR_CONV, KIN.K_H_0, KIN.F_BIO_0)
+    try:
+        k_was_hrt = build_pathway_k(plant).basis.get("was_hrt_d")
+    except Exception:
+        k_was_hrt = None
+    rungs = [
+        {"config": "Conventional MAD", "assist": 0.0,
+         "mechanism": "no pre-treatment; slow WAS hydrolysis sets the HRT",
+         "was_hrt_d": (round(conv_hrt, 1) if conv_hrt else None),
+         "state": constraint_state(conv_hrt, floor), "evidence": "A - calibrated (Cambi 2026 / Mangere)"},
+        {"config": "Pathway K (separate + SolidStream, conservative)", "assist": 1.0,
+         "mechanism": "SolidStream lifts VSR; WAS sized long, capacity claim notional (PS-share)",
+         "was_hrt_d": (round(k_was_hrt, 1) if k_was_hrt else None),
+         "state": constraint_state(k_was_hrt, floor), "evidence": "A energy/VSR; capacity notional"},
+        {"config": "Pathway K+ (recycle-to-WAS, WAS at floor)", "assist": 1.0,
+         "mechanism": "SolidStream recycle assists hydrolysis; WAS sized to the OLR/hydraulic floor",
+         "was_hrt_d": floor, "state": constraint_state(floor, floor),
+         "evidence": "C - pilot-gated (assist a >= a* unproven)"},
+        {"config": "Front-end THP", "assist": None,
+         "mechanism": "pre-completes hydrolysis externally; OLR can roughly double",
+         "was_hrt_d": KCAP.HRT_HYDROLYSIS_THP, "state": constraint_state(KCAP.HRT_HYDROLYSIS_THP, floor),
+         "evidence": "A/B - Cambi / Ringsend / Blue Plains operating data"},
+    ]
+    return {"floor_d": floor, "crossover_assist": kplus_was_constraint(plant)["crossover_assist"],
+            "rungs": rungs}
+
+
+
 def capacity_view(pw: Pathway) -> dict:
     """Capacity intensification via the actual full-scale mechanism: THP pre-completes
     hydrolysis, so the binding constraint shifts from hydrolysis-limited HRT (conventional)
@@ -2122,6 +2172,7 @@ def decision_hierarchy(plant, weights=None, risk_threshold=HIGH_LIKELIHOOD) -> d
                                 for n, p in endpoints.items()},
         "L6_carbon_endpoints": carbon_strategy_comparison(plant, x_set),
         "L2_kplus_kinetics": kplus_was_constraint(plant),
+        "L2_constraint_ladder": constraint_ladder(plant),
         "risk_threshold": risk_threshold,
         "pathways": [regret_profile(p, weights, risk_threshold) for p in pathways],
         "least_regret_note": ("All viable pathways retained. acceptable_risk=False means a "
