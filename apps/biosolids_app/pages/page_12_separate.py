@@ -20,8 +20,9 @@ from engine.separate_digestion import (
     bmp_biogas_comparison, BMP_PS_ML_G, BMP_WAS_ML_G, BMP_WAS_THP_ML_G, BMP_BLEND_ML_G,
     separate_scenario, tradeoff_sweep, F_BIO_WAS_THP,
     hrt_limited_diagnosis, recuperative_value, SRT_PLATEAU_WAS,
-    antagonism_factor, SRT_WASHOUT_FLOOR, TS_VISCOSITY_LIMIT,
+    antagonism_factor, SRT_WASHOUT_FLOOR, TS_VISCOSITY_LIMIT, digester_ts_pct,
 )
+from engine.foaming_risk import compare_pathways
 
 
 # ── Chart helpers (all receive data as arguments — no globals) ─────────────
@@ -156,6 +157,24 @@ def _tradeoff_chart(sweep, cur_hrt, cur_ch4):
         yaxis2=dict(title="Freed volume m³",overlaying="y",side="right",showgrid=False,zeroline=True),
         legend=dict(orientation="h",yanchor="bottom",y=1.02),
         margin=dict(t=50,b=40,l=55,r=55),plot_bgcolor="#f8fafc",paper_bgcolor="white")
+    return fig
+
+
+def _foam_chart(res):
+    keys=[("Type1_filament","Type 1 filament","#9b5de5"),("Type2_gas_entrapment","Type 2 gas","#00bbf9"),
+          ("Type3_surfactant","Type 3 surfactant","#f15bb5"),("Type4_instability","Type 4 instability","#fee440")]
+    paths=list(res.keys())
+    fig=go.Figure()
+    for k,lab,col in keys:
+        fig.add_trace(go.Bar(name=lab, x=paths, y=[res[p][k] for p in paths], marker_color=col))
+    fig.add_trace(go.Scatter(name="Overall", x=paths, y=[res[p]["overall"] for p in paths],
+                             mode="markers+lines", marker=dict(size=10,color="#222"), line=dict(color="#222",dash="dot")))
+    fig.add_hline(y=30, line_color="grey", line_dash="dot", opacity=0.4, annotation_text="Low/Mod")
+    fig.add_hline(y=60, line_color="grey", line_dash="dot", opacity=0.4, annotation_text="Mod/High")
+    fig.update_layout(height=380, barmode="group", title="Foaming risk profile by pathway (0-100)",
+        yaxis=dict(title="risk score", range=[0,100]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(t=60,b=80,l=50,r=20), plot_bgcolor="#f8fafc", paper_bgcolor="white")
     return fig
 
 
@@ -372,8 +391,8 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
     st.divider()
 
     # ── Tabs ──────────────────────────────────────────────────────────────
-    tab_compare, tab_streams, tab_throughput, tab_optimise = st.tabs([
-        "📊 Comparison", "🧪 Stream Detail", "📈 Throughput", "⚙️ Volume Optimiser",
+    tab_compare, tab_streams, tab_throughput, tab_optimise, tab_foam = st.tabs([
+        "📊 Comparison", "🧪 Stream Detail", "📈 Throughput", "⚙️ Volume Optimiser", "🫧 Foaming Risk",
     ])
 
     # ── TAB 1: Comparison ─────────────────────────────────────────────────
@@ -563,4 +582,68 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
             "PS designed for a 12-day CSTR HRT (adequate for PS kinetics). WAS gets the "
             "remaining volume. Capacity is the robust separate-digestion benefit; the biomethane "
             "uplift is shown on the Comparison tab (CHE4180 per-stream BMP). Values screening-grade."
+        )
+
+    # ── TAB 5: Foaming Risk ───────────────────────────────────────────────
+    with tab_foam:
+        st.subheader("Digester foaming risk — four independent mechanisms")
+        st.caption(
+            "Foaming is not one number. Type 1 filament (Nocardia/Gordonia/mycolata), Type 2 gas entrapment "
+            "(viscosity/gas hold-up), Type 3 surfactant (FOG/proteins/cell lysis), Type 4 instability "
+            "(VFA/washout). Separate digestion, recuperative thickening and SolidStream move these in *different* "
+            "directions, so the profile is shown, never collapsed to one figure. Screening index, confidence C — "
+            "set the site inputs to your own foaming history."
+        )
+        fc1, fc2, fc3 = st.columns(3)
+        filament = fc1.slider("Filament prevalence (Nocardia/mycolata in AS)", 0, 100, 45, 5,
+                              key="foam_filament", help="Site index — plants with a foaming history sit high.")
+        fog      = fc2.slider("FOG / oil & grease loading", 0, 100, 25, 5, key="foam_fog")
+        mixing   = fc3.slider("Mixing adequacy (100 = strong)", 0, 100, 70, 5, key="foam_mixing")
+
+        was_frac = vs_was_t/(vs_ps_t+vs_was_t) if (vs_ps_t+vs_was_t) > 0 else 0.45
+        tot_flow = ps_flow + was_flow
+        vsr_was  = 0.27
+        blend_feed_ts = (ps_ds+was_ds)/tot_flow*100 if tot_flow > 0 else 4.5
+        srt_blend = installed_vol/tot_flow if tot_flow > 0 else 14.0
+        def _olr_was(hrt): return vs_was_t*1000/(was_flow*hrt) if (was_flow*hrt) > 0 else 2.0
+        # representative operating points for each canonical pathway (governing digester = WAS train when separate)
+        ts_by  = {"Conventional blended": digester_ts_pct(blend_feed_ts,1.0,0.55),
+                  "Separate PS/WAS": digester_ts_pct(was_ts,1.0,vsr_was),
+                  "Separate + RT": digester_ts_pct(was_ts,1.5,vsr_was),
+                  "K+ (Sep+SolidStream+Recycle)": digester_ts_pct(was_ts,1.5,vsr_was)}
+        srt_by = {"Conventional blended": srt_blend, "Separate PS/WAS": 18.0,
+                  "Separate + RT": 18.0, "K+ (Sep+SolidStream+Recycle)": 18.0}
+        olr_by = {"Conventional blended": (vs_ps_t+vs_was_t)*1000/installed_vol if installed_vol > 0 else 2.5,
+                  "Separate PS/WAS": _olr_was(18.0), "Separate + RT": _olr_was(12.0),
+                  "K+ (Sep+SolidStream+Recycle)": _olr_was(12.0)}
+        res = compare_pathways(was_frac, filament, fog, mixing, ts_by, srt_by, olr_by)
+
+        st.plotly_chart(_foam_chart(res), use_container_width=True)
+
+        import pandas as pd
+        rows = []
+        for name, rr in res.items():
+            rows.append({"Pathway": name,
+                         "T1 filament": f"{rr['Type1_filament']:.0f} ({rr['bands']['Type1_filament']})",
+                         "T2 gas": f"{rr['Type2_gas_entrapment']:.0f} ({rr['bands']['Type2_gas_entrapment']})",
+                         "T3 surfactant": f"{rr['Type3_surfactant']:.0f} ({rr['bands']['Type3_surfactant']})",
+                         "T4 instability": f"{rr['Type4_instability']:.0f} ({rr['bands']['Type4_instability']})",
+                         "Overall": f"{rr['overall']:.0f} ({rr['overall_band']})",
+                         "Dominant": rr['dominant'].split('_')[1]})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+        base, kp = res["Conventional blended"], res["K+ (Sep+SolidStream+Recycle)"]
+        st.markdown(
+            f"**K+ vs conventional:** filament {kp['Type1_filament']-base['Type1_filament']:+.0f}, "
+            f"gas {kp['Type2_gas_entrapment']-base['Type2_gas_entrapment']:+.0f}, "
+            f"surfactant {kp['Type3_surfactant']-base['Type3_surfactant']:+.0f}, "
+            f"instability {kp['Type4_instability']-base['Type4_instability']:+.0f}  →  overall "
+            f"{base['overall']:.0f} → {kp['overall']:.0f}."
+        )
+        st.info(
+            "Separate digestion improves hydrolysis/capacity; recuperative thickening protects SRT/stability; "
+            "SolidStream + hot-liquor recycle improves conversion and biosolids quality. **None automatically "
+            "reduces overall foaming risk.** The likely K+ outcome is lower *instability* foaming but higher "
+            "*filament and physical* foaming — net is site-specific. Foaming is a first-order design consideration "
+            "here, not an operational afterthought."
         )
