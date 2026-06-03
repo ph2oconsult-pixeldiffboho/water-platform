@@ -92,6 +92,19 @@ def _engine(plant):
     }
 
 
+def thp_value(wp, cap):
+    """Consolidated THP benefit streams (V3 U7) - single source used by both reports."""
+    solids = wp.basis["product_wet_tpd"] * 0.28
+    wet_conv, wet_thp = solids / 0.22, solids / 0.32
+    disposal = (wet_conv - wet_thp) * 365 * 80 / 1e6
+    logistics = (wet_conv - wet_thp) / 40 * 365 * 350 / 1e6
+    energy = wp.net_export_mwh_d * 365 * S.KO.ELEC_PRICE_MWH / 1e6
+    capacity = cap["avoided_capex_aud"] / 20 / 1e6
+    return {"capacity": capacity, "disposal": disposal, "logistics": logistics,
+            "energy": energy, "wet_conv": wet_conv, "wet_thp": wet_thp,
+            "total": capacity + disposal + logistics + energy}
+
+
 def build(bundle):
     """Mode 2 view — Strategic Pathway Report (pathway / ledger / roadmap focused)."""
     plant, wp, tp = bundle["plant"], bundle["wp"], bundle["tp"]
@@ -102,34 +115,125 @@ def build(bundle):
 
     # ===== header =====
     story.append(P("Strategic Biosolids Pathway Report", S_TITLE))
-    story.append(P("BioPoint V2 &middot; Pathway Intelligence Engine", S_SUB))
+    story.append(P("BioPoint V3.5 &middot; Carbon, Nutrient, Capacity &amp; Biosolids Strategy Engine", S_SUB))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceBefore=3, spaceAfter=8))
+
+    # ===== V3.5 strategic framing =====
+    story.append(P("The Strategic Question", S_H1))
+    story.append(P("This report does not ask <i>which digestion technology scores highest</i>. It asks four "
+                   "objective-level questions and treats technology as the means to answer them:"))
+    story.append(bullet("<b>Carbon</b> &mdash; where should it go: retained in soil or biochar, converted to "
+                        "energy, or destroyed? This is the Stage-3 endpoint decision."))
+    story.append(bullet("<b>Nutrients</b> &mdash; recover phosphorus (struvite), destroy the return-liquor "
+                        "nitrogen load (PN/A), or return it to the plant?"))
+    story.append(bullet("<b>Capacity</b> &mdash; unlock digester headroom by THP, or by separate PS/WAS "
+                        "digestion at short PS HRT, a lower-risk mechanism with no hydrolysis step?"))
+    story.append(bullet("<b>Biosolids quality</b> &mdash; cake dryness, pathogen grade, transport and storage "
+                        "burden, with SolidStream as the quality platform."))
+    story.append(P("These are three different optimisation problems handled in sequence: <b>separate digestion "
+                   "optimises the biology, SolidStream optimises the biosolids, and the endpoint optimises the "
+                   "carbon</b>. The recommendation is a front-end plus an endpoint chosen for the objective being "
+                   "optimised &mdash; carried with its confidence level, not collapsed into a single technology score."))
 
     # ===== executive summary =====
     story.append(P("Executive Summary", S_H1))
     cap = S.capacity_view(wp); ox = S.opex_view(wp)
     story.append(P(
-        f"For the {plant['name']} ({tot:.0f} tDS/d), the analysis compares biosolids "
-        "pathways against the utility's weighted drivers using conserved-quantity ledgers "
-        "(carbon, energy, nitrogen, phosphorus) that must balance end-to-end. The "
-        "recommendation is a sequenced set of moves, not a single technology. The calibrated "
-        "THP + mesophilic digestion spine is commit-grade: it is strongly energy-positive "
-        f"(~{wp.net_export_mwh_d:,.0f} MWh/d net), runs net cash-positive "
-        f"(~${-ox['net_m_aud']:.1f}M/yr), and intensifies digester capacity by the equivalent "
-        f"of ~{cap['digesters_avoided']:.1f} reference digesters (~${cap['avoided_capex_aud']/1e6:.0f}M "
-        "deferred). It does not, however, address PFAS &mdash; the second-ranked driver &mdash; "
-        "which only a thermal endpoint can. That thermal pathway carries real reward but "
-        "remains provisional (uncalibrated split fractions), so it is held as a priced, "
-        "scheduled option rather than committed. The plan: commit the spine and upstream "
-        "nutrient recovery now; keep the thermal endpoint open and de-risk it."))
-    story.append(P("<b>Key strategic insight:</b> PFAS fate is set by the thermal endpoint, not "
-                   "the digestion technology. Conventional AD, THP and the spine all leave PFAS in "
-                   "the cake; only thermal destruction removes it. The THP decision and the "
-                   "thermal-endpoint decision are therefore <i>independent</i> &mdash; THP earns its "
-                   "place on capacity, energy and disposal regardless of PFAS, but it does not "
-                   "substitute for a thermal decision if PFAS becomes a binding constraint.",
+        f"For the {plant['name']} ({tot:.0f} tDS/d), BioPoint compares biosolids pathways against the "
+        "utility's weighted drivers using conserved-quantity ledgers (carbon, energy, nitrogen, phosphorus) "
+        "that must balance end-to-end. The output is not a chosen technology but a <b>preferred strategic "
+        "pathway</b>: a biology and biosolids-quality front-end, plus a carbon endpoint selected for the "
+        "objective being optimised. The strongest front-end couples <b>separate PS/WAS digestion</b> (which "
+        "unlocks ~2 digesters of capacity with no hydrolysis step) with <b>SolidStream</b> (Class-A cake at "
+        f"~38% DS), running strongly energy-positive (~{wp.net_export_mwh_d:,.0f} MWh/d net on the THP spine) "
+        f"and intensifying capacity by ~{cap['digesters_avoided']:.1f} reference digesters "
+        f"(~${cap['avoided_capex_aud']/1e6:.0f}M deferred)."))
+    story.append(P(
+        "Two objectives dominate the endpoint and nutrient decisions. <b>Nitrogen:</b> conventional digestion "
+        "returns a large sidestream ammonia load to the plant (over 5,000 kgN/d at this scale) &mdash; a "
+        "near-term operational and consenting constraint that sidestream PN/A can cut by ~88%, and that for "
+        "many plants binds sooner than PFAS. <b>Carbon / PFAS:</b> the endpoint sets carbon fate and PFAS "
+        "destruction &mdash; land retention, pyrolysis (durable biochar plus carbon credits), gasification, or "
+        "incineration (maximum PFAS destruction). These are <i>independent</i> of the digestion choice and are "
+        "compared by fate, not collapsed into one score (see Carbon Endpoint Strategy, below)."))
+    story.append(P("<b>Organising principle:</b> biology, biosolids quality and carbon endpoint are three "
+                   "independent decisions. Separate digestion optimises the biology (methane and capacity); "
+                   "SolidStream optimises the biosolids (cake and logistics); the endpoint optimises carbon fate "
+                   "(retention / conversion / destruction). Forcing them into one digestion score hides the "
+                   "interactions &mdash; for example, SolidStream's drier cake roughly halves the drying energy a "
+                   "thermal endpoint needs.",
                    mk("ins", parent=S_BODY, textColor=INK, backColor=LIGHT, borderPadding=6,
                       spaceBefore=4, leftIndent=4, rightIndent=4)))
+
+    # ===== Decision hierarchy (V3 U1) =====
+    dh = S.decision_hierarchy(plant)
+    story.append(P("Decision Hierarchy (L1-L5) &amp; Least-Regret Pathway", S_H1))
+    story.append(P("Constraint diagnosis drives the ordering; it does not prune. Every viable pathway "
+                   "stays active. A pathway is flagged where a shock at or above "
+                   f"{dh['risk_threshold']:.0%} likelihood would break it &mdash; it stays on the table "
+                   "but must be paired with the named hedge to be commit-grade.", S_SMALL))
+    story.append(P("L1 &nbsp; Constraint Diagnosis", S_H2))
+    rows=[[P("Constraint", S_CELLH), P("Status", S_CELLH), P("State", S_CELLH), P("Flips under", S_CELLH)]]
+    for c in dh["L1_constraints"]:
+        rows.append([P(c["constraint"].replace("_"," "), S_CELL),
+                     P("BINDING" if c["binding"] else "watch", S_CELL),
+                     P(c["state"], S_CELL), P(", ".join(c["shocks"]) or "-", S_CELL)])
+    story.append(styled(Table(rows, colWidths=[34*mm, 16*mm, 78*mm, 42*mm])))
+    L2=dh["L2_capacity"]; L3=dh["L3_resource_recovery"]; L4=dh["L4_carbon"]
+    story.append(kv([
+        ("L2 Capacity intensification", f"{L2.get('digesters_avoided',0):.1f} digesters avoided; {L2.get('capacity_headroom_tds',0):,.0f} tDS/d headroom"),
+        ("L3 Resource recovery", f"nutrient value ${L3['nutrient_value_m_aud_yr']:.2f}M/yr (P {L3['P_security_pct']:.0f}% recovered)"),
+        ("L4 Carbon strategy", f"removed {L4['net_removal_tCO2e_yr']:,.0f} + avoided {L4['avoided_fossil_tCO2e_yr']:,.0f} tCO2e/yr (separate)"),
+        ("L5 Thermal endpoint", "evidence-graded; held open as a hedge"),
+    ], w=(52, 118)))
+    story.append(P("Pathways &mdash; regret profile (none pruned)", S_H2))
+    rows=[[P("Pathway", S_CELLH), P("Perf", S_CRH), P("Conf", S_CRH), P("Resil", S_CRH), P("Risk", S_CRH), P("Breaks under (hedge needed)", S_CELLH)]]
+    for p in dh["pathways"]:
+        rows.append([P(p["pathway"], S_CELL), P(f"{p['performance']*100:.0f}", S_CR),
+                     P(p["confidence"], S_CR), P(f"{p['resilience']:.2f}", S_CR),
+                     P("OK" if p["acceptable_risk"] else "HEDGE", S_CR),
+                     P("-" if p["acceptable_risk"] else ", ".join(x["shock"] for x in p["high_likelihood_shocks"]), S_CELL)])
+    story.append(styled(Table(rows, colWidths=[54*mm, 12*mm, 12*mm, 14*mm, 16*mm, 62*mm])))
+    story.append(P("Risk OK = no shock at/above the threshold breaks it; HEDGE = one does. HEDGE pathways "
+                   "are retained, not removed &mdash; the recommendation pairs them with a kept-open option "
+                   "(e.g. a thermal endpoint against a PFAS land-application ban).", S_SMALL))
+
+    # ===== V3.5 Carbon Endpoint Strategy (Stage 3) =====
+    comp = S.carbon_strategy_comparison(plant)
+    hdr = [P("Endpoint", S_CELLH), P("Strategy", S_CELLH), P("Retain tC/d", S_CRH), P("Seq.", S_CRH),
+           P("Emit", S_CRH), P("Removed CO2e", S_CRH), P("PFAS", S_CRH), P("Net MWh/d", S_CRH), P("Conf", S_CRH)]
+    rows = [hdr]
+    for r in comp:
+        rows.append([P(r["endpoint"], S_CELL), P(r["family"].replace("Carbon ", ""), S_CELL),
+                     P(f"{r['retained_tC_d']:.1f}", S_CR), P(f"{r['sequestered_tC_d']:.1f}", S_CR),
+                     P(f"{r['destroyed_emitted_tC_d']:.0f}", S_CR), P(f"{r['removed_tCO2e_d']:.1f}", S_CR),
+                     P(f"{r['pfas_destruction']*100:.0f}%", S_CR), P(f"{r['net_export_mwh_d']:.0f}", S_CR),
+                     P(r["confidence"], S_CR)])
+    story.append(KeepTogether([
+        P("Carbon Endpoint Strategy &mdash; Retention / Conversion / Destruction (Stage 3)", S_H1),
+        P("Biology (separate digestion) optimises methane and capacity; biosolids quality "
+          "(SolidStream) optimises the cake; the <i>endpoint</i> optimises where the carbon "
+          "finally goes &mdash; a third, independent decision. BioPoint composes the strategic "
+          "ETP front-end (Pathway K) with each Stage-3 endpoint and groups them by carbon fate "
+          "into three families. The columns are deliberately NOT combined into one score: "
+          "retaining carbon, converting it to energy and destroying it for PFAS resilience are "
+          "different objectives, and each family wins a different one."),
+        styled(Table(rows, colWidths=[22*mm, 24*mm, 16*mm, 12*mm, 12*mm, 18*mm, 13*mm, 16*mm, 11*mm])),
+    ]))
+    story.append(Spacer(1, 3))
+    story.append(P("Reading it by objective, not by score: <b>pyrolysis</b> (Retention) gives the most "
+                   "durable carbon &mdash; it retains less mass than land but sequesters more than twice "
+                   "as much at 100 years, the highest CO2 removal, at confidence B. <b>Incineration</b> "
+                   "(Destruction) retains no carbon or nutrients but maximises PFAS destruction and is "
+                   "most mature (confidence A) &mdash; the regulatory-resilience play. <b>HTL</b> gives "
+                   "the most energy and a biocrude product but is pre-commercial (confidence C). Land "
+                   "stays cheapest today, but its retained carbon is low-permanence and it carries the "
+                   "PFAS land-application risk.", S_SMALL))
+    story.append(P("<b>Preferred Strategic Carbon and Nutrient Pathway</b> is therefore not a single "
+                   "technology but a front-end (separate digestion + SolidStream) plus an endpoint chosen "
+                   "for the objective being optimised &mdash; carbon permanence, energy, or PFAS "
+                   "resilience &mdash; carried with its confidence level, not collapsed into one number.", S_SMALL))
+    story.append(Spacer(1, 6))
 
     # ===== 1 objective =====
     story.append(P("1 &nbsp; Strategic Objective", S_H1))
@@ -276,6 +380,61 @@ def build(bundle):
               "Deferred digester CAPEX &mdash; often the dominant THP value stream over asset life"]:
         story.append(bullet(m))
 
+    # ===== 7b K+ digestion architecture / hydrolysis kinetics =====
+    kc = dh.get("L2_kplus_kinetics") or S.kplus_was_constraint(plant)
+    kpb = S.build_pathway_k_plus(plant).basis
+    story.append(P("7b &nbsp; Digestion Architecture &mdash; Can K+ Reach OLR-Governed Without THP?", S_H1))
+    story.append(P("Section 7 showed THP wins capacity by pre-completing hydrolysis, shifting the binding "
+                   "constraint from hydrolysis-limited HRT to organic loading. Pathway K+ asks whether the "
+                   "<b>SolidStream recycle</b> can do the same on the WAS train &mdash; without a THP front end. "
+                   "Post-digestion SolidStream solubilises the residual the digester missed and returns it (to the "
+                   "WAS digester only) as fast soluble COD, which both speeds hydrolysis and unlocks "
+                   "biodegradability. The hydrolysis-kinetics layer (first-order CSTR, calibrated to the "
+                   "conventional 0.575 and SolidStream 0.703 VSRs) derives the WAS HRT needed for conventional-"
+                   "grade destruction as a function of the SolidStream solubilisation <i>assist</i> a "
+                   "(0 = none, 1 = full-THP-equivalent):"))
+    rows = [[P("SolidStream assist a", S_CELLH), P("k_h (1/d)", S_CRH), P("f_bio", S_CRH),
+             P("Req. WAS HRT", S_CRH), P("Governing", S_CRH)]]
+    for r in kc["rows"]:
+        hrt = (f"{r['req_was_hrt_d']:.1f} d" if r.get("req_was_hrt_d") else "&lt; floor")
+        rows.append([P(f"{r['assist']:.1f}", S_CELL), P(f"{r['k_h']:.2f}", S_CR), P(f"{r['f_bio']:.2f}", S_CR),
+                     P(hrt, S_CR), P(r["governing"], S_CR)])
+    story.append(styled(Table(rows, colWidths=[40*mm, 28*mm, 24*mm, 30*mm, 38*mm])))
+    story.append(Spacer(1, 3))
+    story.append(kv([
+        ("Crossover assist a*", f"{kc['crossover_assist']:.2f} &mdash; above this the WAS train is OLR/hydraulic-governed"),
+        ("Conventional WAS HRT (a=0)", f"{kc['conventional_req_hrt_d']:.1f} d (hydrolysis-governed)"),
+        ("Hydraulic / OLR floor", f"{kc['hydraulic_floor_d']:.0f} d"),
+        ("Total VSR (conserved)", f"{kc['total_vsr_conserved']:.3f} &mdash; recycle routing does not change destruction"),
+        ("K+ freed volume (kinetically grounded)", f"{kpb.get('capacity_released_m3',0):,.0f} m\u00b3 = {kpb.get('equivalent_digesters',0):.1f} digesters, ${kpb.get('deferred_capex_m_aud',0):.0f}M deferred"),
+    ]))
+    lad = dh.get("L2_constraint_ladder") or S.constraint_ladder(plant)
+    story.append(P("The strategic variable is the <i>constraint</i> released, not just the volume. Where each "
+                   "configuration sits on the hydrolysis &rarr; OLR spectrum, by the WAS HRT it sizes for:", S_SMALL))
+    rows = [[P("Configuration", S_CELLH), P("WAS HRT", S_CRH), P("Constraint state", S_CRH), P("Evidence", S_CRH)]]
+    for r in lad["rungs"]:
+        hrt = (f"{r['was_hrt_d']:.1f} d" if r.get("was_hrt_d") else "n/a")
+        rows.append([P(r["config"], S_CELL), P(hrt, S_CR), P(r["state"], S_CR), P(r["evidence"], S_CR)])
+    story.append(styled(Table(rows, colWidths=[58*mm, 20*mm, 40*mm, 42*mm])))
+    story.append(Spacer(1, 3))
+    story.append(P("Conventional and K sit in the hydrolysis-governed band; K+ moves into the transition zone at "
+                   "the OLR/hydraulic floor; only THP is unambiguously OLR-governed today. K+ reaches the same "
+                   "constraint state as THP <i>if</i> the SolidStream assist clears a* &mdash; which is the "
+                   "pilot question, and why K+ carries confidence C while THP carries A/B.", S_SMALL))
+    story.append(P("<b>Verdict:</b> the WAS train flips from hydrolysis-governed to OLR/hydraulic-governed at "
+                   f"assist a* ~ {kc['crossover_assist']:.2f} &mdash; SolidStream need only deliver a small fraction "
+                   "of full-THP solubilisation to shift the constraint, and its calibrated effectiveness sits well "
+                   "past that. So K+ can capture THP's capacity mechanism without a THP front end. The freed volume "
+                   f"is the kinetically-grounded {kpb.get('capacity_released_m3',0):,.0f} m\u00b3 (WAS at the OLR "
+                   "floor), not Pathway K's notional PS-share reduction, which the WAS train absorbed.",
+                   mk("kpv", parent=S_BODY, textColor=INK, backColor=LIGHT, borderPadding=6,
+                      spaceBefore=4, leftIndent=4, rightIndent=4)))
+    story.append(P("<b>Confidence C &mdash; pilot-gated.</b> The assist a is screening-grade and unproven: it "
+                   "depends on how fully SolidStream solubilises the residual and on the recycle ratio. A "
+                   "BMP-on-centrate plus recycle-ratio pilot (~$0.6M / 12 months) measures a directly and moves "
+                   "K+ to commit-grade. The kinetics are first-order steady-state and exclude inhibition and "
+                   "temperature dynamics.", S_SMALL))
+
     # ===== 8 opex =====
     story.append(P("8 &nbsp; OPEX Breakdown", S_H1))
     story.append(P("Annual OPEX is read off the ledgers: energy from net export, transport from "
@@ -357,6 +516,29 @@ def build(bundle):
                    "Mangere band brought it to 36%, and the check now passes.", S_SMALL))
 
     # ===== 12 constants register =====
+    # ===== ETP Calibration Basis (measured 2006-2017) =====
+    if "ETP" in plant.get("name", ""):
+        cal = S.ETP_CAL
+        story.append(P("ETP Calibration Basis (measured 2006-2017)", S_H1))
+        story.append(P("The ETP feedstock model is anchored in the measured ETP primary sedimentation "
+                       "record (2006-2017), not generic literature factors. Flow, feed/effluent quality "
+                       "and clarifier performance below are site data; P10/P50/P90 give the operating "
+                       "envelope.", S_SMALL))
+        story.append(kv([
+            ("IPS flow P10/P50/P90 (MLD)", f"{cal['flow_mld'][0]:.0f} / {cal['flow_mld'][1]:.0f} / {cal['flow_mld'][2]:.0f}"),
+            ("Feed SS / COD / BOD5 / TKN (P50, mg/L)", f"{cal['feed_ss_mgL'][1]:.0f} / {cal['feed_cod_mgL'][1]:.0f} / {cal['feed_bod5_mgL'][1]:.0f} / {cal['feed_tkn_mgL'][1]:.0f}"),
+            ("Clarifier removal SS / COD / BOD5 / TKN", f"{cal['removal_ss']*100:.0f}% / {cal['removal_cod']*100:.0f}% / {cal['removal_bod5']*100:.0f}% / {cal['removal_tkn']*100:.0f}%"),
+            ("PS production measured band (tDS/d)", f"{cal['ps_ds_band_tpd'][0]:.0f} / {cal['ps_ds_band_tpd'][1]:.0f} / {cal['ps_ds_band_tpd'][2]:.0f} (P10/P50/P90; mean 99)"),
+            ("PS production recent 2015-2017 (tDS/d)", f"~{cal['ps_ds_recent_tpd']:.0f}"),
+            ("PS adopted design basis (tDS/d)", f"{cal['ps_ds_design_tpd']:.1f} (inside measured envelope)"),
+            ("PS nitrogen capture (t N/d)", f"~{cal['ps_n_capture_tpd']:.1f} (only {cal['removal_tkn']*100:.0f}% of influent TKN)"),
+            ("Feedstock confidence", cal["confidence"]),
+        ], w=(80, 90)))
+        story.append(P("The adopted PS design load (120.7 tDS/d) sits inside the measured envelope "
+                       "(P90 150; recent-years mean ~115). Most influent nitrogen stays soluble and "
+                       "passes to secondary treatment - the digester N load and return-liquor N arrive "
+                       "predominantly via WAS, which this PST dataset does not measure (flagged).", S_SMALL))
+
     story.append(P("12 &nbsp; Parameter Register &amp; Provenance", S_H1))
     story.append(P("The honest backbone of the model: every parameter with its value and status "
                    "&mdash; <b>calibrated</b> against a reference plant, <b>estimate</b> "
@@ -369,7 +551,7 @@ def build(bundle):
         ("Biogas CH\u2084 fraction", f"{K.CH4_FRACTION*100:.0f}%", "Calibrated", "THP-AD reference"),
         ("Soluble-N release efficiency", f"{K.N_SOLUBILISATION_EFF:.2f}", "Calibrated", "Mangere centrate 32-43% band"),
         ("Carbon per VS", f"{K.C_PER_VS} gC/gVS", "Estimate", "Municipal sludge literature"),
-        ("Phosphorus content", f"{K.P_PER_DS*100:.1f}% DS", "Estimate", "ETP P not measured"),
+        ("Phosphorus content", f"{K.P_PER_DS*100:.1f}% DS", "Estimate", "Plant P not measured"),
         ("Struvite P recovery", f"{K.STRUVITE_P_RECOVERY*100:.0f}%", "Estimate", "Process literature"),
         ("Thermal drying energy", f"{S.KT.DRY_MWH_PER_T_WATER} MWh/t water", "Estimate", "Evaporation + inefficiency"),
         ("Syngas recovery", f"{S.KT.SYNGAS_MWH_PER_TDS[0]}-{S.KT.SYNGAS_MWH_PER_TDS[2]} MWh/tDS", "Provisional", "Digested-solids gasification"),
@@ -395,12 +577,10 @@ def build(bundle):
                    "DC Water Blue Plains) shows utilities adopt it primarily for capacity and "
                    "disposal reduction, with energy a secondary benefit. The four streams, valued "
                    "independently:"))
-    solids = wp.basis["product_wet_tpd"] * 0.28          # tDS/d to product
-    wet_conv, wet_thp = solids / 0.22, solids / 0.32     # 22% conv vs 32% THP cake DS
-    disposal_save = (wet_conv - wet_thp) * 365 * 80 / 1e6
-    trucks_save = (wet_conv - wet_thp) / 40 * 365 * 350 / 1e6
-    energy_val = wp.net_export_mwh_d * 365 * S.KO.ELEC_PRICE_MWH / 1e6
-    cap_annual = cap["avoided_capex_aud"] / 20 / 1e6
+    tv = thp_value(wp, cap)
+    wet_conv, wet_thp = tv["wet_conv"], tv["wet_thp"]
+    cap_annual, disposal_save, trucks_save, energy_val = (
+        tv["capacity"], tv["disposal"], tv["logistics"], tv["energy"])
     rows = [[P("Benefit stream", S_CELLH), P("Annual value", S_CRH), P("Basis", S_CELLH)]]
     for lab, val, basis in [
         ("1. Capacity intensification (avoided CAPEX, 20-yr annualised)", cap_annual,
@@ -414,6 +594,8 @@ def build(bundle):
     ]:
         rows.append([P(lab, S_CELL), P(f"~${val:.1f}M/yr", S_CR), P(basis, S_CELL)])
     story.append(styled(Table(rows, colWidths=[88*mm, 30*mm, 52*mm])))
+    story.append(P(f"<b>Consolidated THP strategic value ~${tv['total']:.1f}M/yr</b> across the four "
+                   "streams above (20-yr annualised capacity + disposal + logistics + energy).", S_SMALL))
     story.append(P("Ranking confirms the evidence base: capacity and disposal dominate; energy is "
                    "valued but rarely the primary justification. Values screening-grade (+/-30%).", S_SMALL))
 
@@ -547,6 +729,25 @@ def build(bundle):
         story.append(styled(Table(rows, colWidths=[96*mm, 37*mm, 37*mm])))
         story.append(Spacer(1, 4))
 
+    # ===== 19b carbon six-category breakdown (V3 U3) =====
+    cc = S.carbon_categories(wp)
+    story.append(P("Carbon &mdash; Six-Category Breakdown", S_H2))
+    story.append(P("The carbon story split six ways. The first four are carbon MASS read off the "
+                   "closed ledger (they sum to feed carbon). The last three are climate metrics in "
+                   "tCO2e, kept deliberately separate &mdash; durable removal and avoided fossil "
+                   "emissions are never summed into a single headline number.", S_SMALL))
+    story.append(kv([
+        ("1. Destroyed / emitted to atmosphere", f"{cc['destroyed_emitted_tC_d']:,.1f} tC/d"),
+        ("2. Recovered in product (e.g. biocrude)", f"{cc['recovered_in_product_tC_d']:,.1f} tC/d"),
+        ("3. Returned in liquor", f"{cc['returned_in_liquor_tC_d']:,.1f} tC/d"),
+        ("4. Retained in solids (land / char / ash)", f"{cc['retained_in_solids_tC_d']:,.1f} tC/d"),
+        ("   - permanently sequestered (subset of 4)", f"{cc['of_which_permanently_sequestered_tC_d']:,.2f} tC/d"),
+        ("5. Climate: durable REMOVAL", f"{cc['removed_tCO2e_d']:,.1f} tCO2e/d"),
+        ("6. Climate: AVOIDED fossil (energy export)", f"{cc['avoided_tCO2e_d']:,.1f} tCO2e/d"),
+        ("   Climate: direct emissions", f"{cc['direct_emissions_tCO2e_d']:,.1f} tCO2e/d"),
+    ], w=(104, 66)))
+    story.append(Spacer(1, 6))
+
     # ===== 20 future resilience =====
     story.append(P("20 &nbsp; Future Resilience (testing different worlds)", S_H1))
     story.append(P("The decisive uncertainty is no longer engineering performance &mdash; it is "
@@ -617,34 +818,36 @@ def build(bundle):
         story.append(bullet(f"<b>{m.name}</b> &mdash; {m.residual_risk}.{fc}"))
 
     # ===== 22 recommendation =====
-    story.append(P("22 &nbsp; Recommendation", S_H1))
-    story.append(P("The recommendation is an <b>order of moves</b>, not a chosen technology:"))
+    story.append(P("22 &nbsp; Recommendation &mdash; Preferred Strategic Carbon and Nutrient Pathway", S_H1))
+    story.append(P("The recommendation is a <b>front-end plus an endpoint chosen by objective</b>, sequenced "
+                   "across the three stages &mdash; not a single technology:"))
     for i, r in enumerate([
-        "Optimise MAD and dewatering now &mdash; bankable, commit-grade, the foundation for "
-        "everything downstream.",
-        f"Add THP for the capacity it buys (~{cap['digesters_avoided']:.1f} reference digesters "
-        f"avoided, ~${cap['avoided_capex_aud']/1e6:.0f}M deferred) and the cake-solids and "
-        "Class-A biosolids benefits.",
-        "Recover phosphorus via struvite while it is still recoverable &mdash; before any thermal "
-        "step would lock it into ash &mdash; and hold ammonium-sulphate / PN-A open to close the "
-        "nitrogen gap struvite leaves.",
-        "Do <b>not</b> commit land application as a terminal endpoint: it forecloses the only "
-        "family that addresses PFAS, the second-ranked driver.",
-        "Hold the thermal endpoint as a priced, scheduled option (~$1.5M / 18 months to reach "
-        "commit-grade), exercised if PFAS regulation or the carbon case demands it. Its energy "
-        "and Scope-1 outcomes hinge on syngas recovery that cannot yet be calibrated, so the "
-        "decision is staged, not pre-empted."], 1):
+        "<b>Biology (capacity and methane):</b> optimise MAD and dewatering now (commit-grade), then unlock "
+        "capacity. Test separate PS/WAS digestion at short PS HRT as a lower-risk alternative to THP &mdash; it "
+        f"frees ~2 digesters with no hydrolysis step, where THP frees ~{cap['digesters_avoided']:.1f} but adds a "
+        "thermal-hydrolysis asset and a return-liquor load.",
+        "<b>Biosolids quality (SolidStream):</b> treat SolidStream as the Stage-2 quality platform &mdash; "
+        "Class-A cake at ~38% DS, roughly half the wet tonnes, and far less drying energy for any downstream "
+        "thermal endpoint. This is a value stream in its own right, not merely a digestion add-on.",
+        "<b>Nitrogen:</b> the sidestream return load (over 5,000 kgN/d) is a near-term binding constraint. "
+        "Recover phosphorus via struvite while it is still recoverable, and commit sidestream PN/A to destroy "
+        "~88% of the return-liquor ammonia &mdash; for many plants this binds before PFAS does.",
+        "<b>Carbon endpoint (Stage 3):</b> choose by objective, not by score. Land is cheapest but low-"
+        "permanence and PFAS-exposed; pyrolysis gives durable biochar plus carbon credits; incineration "
+        "maximises PFAS destruction. Do <b>not</b> commit land as a terminal endpoint &mdash; it forecloses the "
+        "carbon and PFAS families. Hold the chosen thermal endpoint as a priced, scheduled option (~$1.5M / 18 "
+        "months to commit-grade); its splits are provisional, so the decision is staged, not pre-empted."], 1):
         story.append(bullet(r, mark=f"{i}."))
 
     story.append(Spacer(1, 8))
     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceAfter=4))
-    story.append(P("Scope &amp; limits. This report is generated by the BioPoint V2 pathway "
-                   "spine and reflects what that model computes: two pathways, four conserved "
-                   "ledgers, calibrated AD/THP physics with provisional thermal endpoints. It "
+    story.append(P("Scope &amp; limits. This report is generated by the BioPoint V3.5 pathway "
+                   "spine and reflects what that model computes: the A-K pathway set composed with carbon endpoints, four conserved "
+                   "ledgers, calibrated AD/THP/SolidStream physics with provisional thermal-endpoint splits. It "
                    "does not yet include the full digestion-kinetics narrative (Damk\u00f6hler / "
                    "HRT analysis) of the production Tier 1 engine, nor the wider pathway set; "
                    "those require porting the mad_v2 physics and additional pathways into the "
-                   "spine. ETP phosphorus is an estimate pending measured data.", S_SMALL))
+                   "spine. Phosphorus is an estimate pending measured data.", S_SMALL))
     return story
 
 
@@ -658,14 +861,15 @@ def project_development_story(bundle):
     tot = plant["PS_tds"] + plant["WAS_tds"]
     cap = S.capacity_view(wp); ox = S.opex_view(wp)
     aw, at, ac = (S.three_axis(p, weights) for p in (wp, tp, cp))
+    tv = thp_value(wp, cap)
     story = []
     story.append(P("Project Development Report", S_TITLE))
     story.append(P("BioPoint &middot; What should I build?", S_SUB))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceBefore=3, spaceAfter=8))
 
-    story.append(P("Recommended Configuration", S_H1))
+    story.append(P("Preferred Strategic Pathway", S_H1))
     story.append(P(f"<b>THP + Mesophilic Digestion + Struvite + Land</b> &mdash; the highest-"
-                   f"performing <i>commit-grade</i> configuration for {plant['name']} "
+                   f"performing <i>commit-grade</i> pathway for {plant['name']} "
                    f"({tot:.0f} tDS/d).", mk("rec", parent=S_BODY, backColor=LIGHT, borderPadding=6,
                                              textColor=INK)))
     story.append(kv([
@@ -675,20 +879,21 @@ def project_development_story(bundle):
         ("Net OPEX", f"${ox['net_m_aud']:+.1f}M/yr (cash-positive)"),
         ("Net energy", f"{wp.net_export_mwh_d:,.0f} MWh/d exported"),
         ("Capacity intensification", f"{cap['digesters_avoided']:.1f} reference digesters avoided"),
+        ("THP consolidated value (capacity + disposal + logistics + energy)", f"~${tv['total']:.1f}M/yr"),
         ("Biosolids class", "Class A (THP pasteurisation, subject to EPA validation)"),
         ("PFAS", "Not addressed by digestion &mdash; thermal endpoint required if PFAS binds"),
     ]))
     story.append(P("Why not the higher-scoring option? The thermal endpoint scores higher on raw "
                    f"performance ({at['performance']*100:.0f}/100) but is provisional (low confidence, "
-                   "uncalibrated) and not yet buildable. The recommended configuration is the best "
-                   "option that is commit-grade today. Score is absolute (weighted satisfaction of "
+                   "uncalibrated) and not yet buildable. The preferred strategic pathway is the highest-value "
+                   "pathway under current assumptions that is commit-grade today. Score is absolute (weighted satisfaction of "
                    "all eight drivers, including PFAS which no digestion route alone can meet), not "
                    "relative to the field &mdash; so mid-range is a strong result.", S_SMALL))
 
-    story.append(P("1 &nbsp; Configuration Comparison", S_H1))
-    rows = [[P("Configuration", S_CELLH), P("Perf.", S_CRH), P("Conf.", S_CRH),
+    story.append(P("1 &nbsp; Pathway Comparison", S_H1))
+    rows = [[P("Pathway", S_CELLH), P("Perf.", S_CRH), P("Conf.", S_CRH),
              P("Net energy", S_CRH), P("Net OPEX", S_CRH), P("Capacity", S_CRH), P("Class", S_CRH)]]
-    for nm, p, ax in [("Conventional MAD + land", cp, ac), ("THP + MAD + struvite + land (rec.)", wp, aw),
+    for nm, p, ax in [("Conventional MAD + land", cp, ac), ("THP + MAD + struvite + land (preferred)", wp, aw),
                       ("THP + MAD + thermal endpoint", tp, at)]:
         o = S.opex_view(p); c = S.capacity_view(p)
         rows.append([P(nm, S_CELL), P(f"{ax['performance']*100:.0f}", S_CR),
@@ -736,20 +941,34 @@ def project_development_story(bundle):
     story.append(P("Scope 1 is dominated by fugitive CH4; controlling gas capture is the largest "
                    "GHG lever and is independent of configuration.", S_SMALL))
 
-    story.append(P("5 &nbsp; Nutrient Recovery", S_H1))
-    Pstr = wp.ledgers["phosphorus"].outflows["struvite_P"]
-    ncen = wp.ledgers["nitrogen"].outflows["return_liquor_NH4_to_WWTW"]
-    story.append(P(f"Struvite recovers ~{Pstr:,.0f} kg P/d as slow-release fertiliser. The residual "
-                   f"return-liquor nitrogen ({ncen:,.0f} kg N/d) can be recovered as ammonium sulphate "
-                   "or destroyed via PN/A &mdash; recover-before-destroy where the nutrient driver matters "
-                   "(see Strategic Pathway report for the full hierarchy)."))
+    story.append(P("5 &nbsp; Nutrient Recovery (co-equal value stream)", S_H1))
+    nv = S.nutrient_value(wp)
+    story.append(P(f"Nutrient recovery is quantified as a value stream in its own right. Struvite "
+                   f"recovers {nv['P_recovered_kgd']:,.0f} kg P/d ({nv['P_security_pct']:.0f}% of feed P). "
+                   f"The return-liquor nitrogen ({nv['return_liquor_N_kgd']:,.0f} kg N/d) is addressed two "
+                   "ways, reported separately and never summed: PN/A <i>destroys</i> it (avoided treatment "
+                   "cost) or ammonium sulphate <i>recovers</i> it as fertiliser."))
+    story.append(kv([
+        ("Struvite P recovered", f"{nv['P_recovered_kgd']:,.0f} kgP/d ({nv['struvite_t_yr']:,.0f} t/yr)"),
+        ("Struvite revenue", f"${nv['struvite_revenue_m_aud_yr']:.2f}M/yr"),
+        ("Return-liquor N (treatable)", f"{nv['return_liquor_N_kgd']:,.0f} kgN/d"),
+        ("N via PN/A (destroy)", f"{nv['pna_N_destroyed_kgd']:,.0f} kgN/d, ${nv['pna_avoided_cost_m_aud_yr']:.2f}M/yr avoided"),
+        ("N via ammonium sulphate (recover)", f"{nv['as_N_recovered_kgd']:,.0f} kgN/d, ${nv['as_revenue_m_aud_yr']:.2f}M/yr"),
+        ("Recommended N route", nv["recommended_N_route"]),
+        ("Sidestream load reduction", f"{nv['sidestream_N_removed_kgd']:,.0f} kgN/d removed"),
+        ("Fertiliser-replacement value", f"${nv['fertiliser_value_m_aud_yr']:.2f}M/yr"),
+        ("Future nutrient security", f"P {nv['P_security_pct']:.0f}% / N {nv['N_recovered_pct']:.0f}% recovered"),
+    ], w=(64, 106)))
+    story.append(P(f"<b>Headline nutrient value ${nv['nutrient_value_m_aud_yr']:.2f}M/yr</b> against digestion "
+                   f"net OPEX ${ox['net_m_aud']:+.2f}M/yr &mdash; nutrient recovery is a value stream on par "
+                   "with digestion optimisation, not a by-product.", S_SMALL))
 
     story.append(P("6 &nbsp; Key Risks &amp; Assumptions", S_H1))
     for b in ["WAS hydrolysis HRT may limit conventional performance &mdash; confirm with BMP testing.",
               "THP capital not costed here &mdash; obtain vendor quote; deferred-digester CAPEX is the offsetting value.",
               "Return-liquor nitrogen raises mainstream aeration/alkalinity load &mdash; assess TN headroom.",
               "PFAS not characterised &mdash; if land application is restricted, a thermal endpoint is required.",
-              "ETP phosphorus is an estimate &mdash; confirm by centrate/cake sampling."]:
+              "Phosphorus is an estimate &mdash; confirm by centrate/cake sampling."]:
         story.append(bullet(b))
 
     story.append(P("7 &nbsp; Recommendation &amp; Next Steps", S_H1))
@@ -901,7 +1120,7 @@ def generate(mode, plant=S.ETP, outdir="/mnt/user-data/outputs"):
     out = f"{outdir}/{fname}"
     doc = SimpleDocTemplate(out, pagesize=A4, topMargin=18*mm, bottomMargin=20*mm,
                             leftMargin=20*mm, rightMargin=20*mm, title=title, author="BioPoint")
-    foot = make_footer(f"BioPoint - {title} (ETP)")
+    foot = make_footer(f"BioPoint - {title} ({plant.get('name', 'ETP')})")
     doc.build(story_fn(bundle), onFirstPage=foot, onLaterPages=foot)
     print("PDF written:", out)
     return out
