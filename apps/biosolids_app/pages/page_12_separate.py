@@ -20,6 +20,7 @@ from engine.separate_digestion import (
     bmp_biogas_comparison, BMP_PS_ML_G, BMP_WAS_ML_G, BMP_WAS_THP_ML_G, BMP_BLEND_ML_G,
     separate_scenario, tradeoff_sweep, F_BIO_WAS_THP,
     hrt_limited_diagnosis, recuperative_value, SRT_PLATEAU_WAS,
+    antagonism_factor, SRT_WASHOUT_FLOOR, TS_VISCOSITY_LIMIT,
 )
 
 
@@ -272,10 +273,13 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
     hrt_was = hc2.slider("WAS HRT (days)", 8.0, 30.0, 18.0, 0.5, key="sep_hrt_was",
                          help="WAS is at its ceiling by ~15-18 d.")
     recup = hc3.checkbox("Recuperative thickening (WAS)", value=False, key="sep_recup",
-                         help="Decouples WAS SRT from HRT: holds the biology at a target SRT while the HRT "
-                              "(and volume) drops, keeping WAS gas at a fraction of the tankage.")
-    recup_srt = hc3.slider("WAS target SRT (days)", 12.0, 25.0, 18.0, 0.5,
-                           key="sep_recup_srt") if recup else None
+                         help="Decouples WAS SRT from HRT by thickening + recycling digestate solids: "
+                              "SRT = HRT x RT multiplier = HRT / (1 - solids recycle fraction). Holds the "
+                              "biology while the HRT (and volume) drops.")
+    rt_mult = hc3.slider("RT multiplier (SRT/HRT)", 1.0, 3.0, 1.5, 0.1, key="sep_rt_mult",
+                         help="1.0 = none. 1.5 ~ 33% solids recycle, 2.0 ~ 50%. Bounded in practice by "
+                              "digester viscosity / mixing (flagged below).") if recup else 1.0
+    recup_srt = hrt_was * rt_mult if recup else None
     ss_on = st.checkbox(
         "Add SolidStream THP on the WAS stream (additional, inferred, confidence D)",
         value=False, key="sep_solidstream",
@@ -285,6 +289,7 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
     scn = separate_scenario(vs_ps_t, vs_was_t, ps_flow, was_flow, installed_vol,
                             hrt_ps_d=hrt_ps, hrt_was_d=hrt_was, solidstream=ss_on,
                             recup_was_srt_d=recup_srt)
+    af, weighted_bmp = antagonism_factor(vs_ps_t, vs_was_t)
 
     st.subheader("Results — biogas vs capacity")
     m1, m2, m3, m4 = st.columns(4)
@@ -300,9 +305,19 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
         f"of its 470 ceiling at {hrt_ps:.0f} d; WAS {scn['bmp_realised_was_pct']:.0f}% of {scn['was_bmp_used']:.0f} "
         f"at {scn['srt_was_d']:.0f} d). Volume is set by HRT, so dropping HRT frees tankage but gives up a little "
         "biogas — the trade-off chart below. Recuperative thickening breaks the trade-off by holding WAS SRT while "
-        "the HRT drops; SolidStream THP raises the WAS ceiling (inferred, confidence D). The blended base case (258) "
-        "is depressed by real-plant losses per the CHE4180 note, so part of the uplift recovers that, not separation alone."
+        "the HRT drops; SolidStream THP raises the WAS ceiling (inferred, confidence D). The uplift is "
+        f"co-digestion ANTAGONISM relief: the blended *lab* sample yields {af*100:.0f}% of the VS-weighted stream "
+        f"BMPs ({weighted_bmp:.0f} mL/g), and separating the streams recovers the rest. Lab-measured (CHE4180, one "
+        "Mangere dataset) - solid, but carries a lab-to-full-scale transfer caveat."
     )
+
+    # WAS washout warning when running SRT = HRT below the stability floor (no recuperative thickening)
+    if not recup and hrt_was < SRT_WASHOUT_FLOOR:
+        st.error(
+            f"**Washout risk.** WAS SRT = HRT = {hrt_was:.0f} d is below the ~{SRT_WASHOUT_FLOOR:.0f} d "
+            "methanogen-retention floor. The biogas number assumes stable biology that may not hold at this SRT. "
+            "Use recuperative thickening to keep the SRT up while freeing the volume."
+        )
 
     # ── Recuperative thickening only pays when HRT-limited below the BMP plateau ──
     diag = hrt_limited_diagnosis(ps_flow, was_flow, installed_vol, srt_ps_d=hrt_ps, srt_was_d=18.0)
@@ -322,12 +337,22 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
             "free volume you don't currently need. Its benefit with respect to biogas is negligible."
         )
     if recup:
-        rv = recuperative_value(vs_was_t, was_flow, hrt_was, recup_srt, solidstream=ss_on)
-        rc1, rc2 = st.columns(2)
+        rv = recuperative_value(vs_was_t, was_flow, hrt_was, rt_multiplier=rt_mult,
+                                was_feed_ts_pct=was_ts, solidstream=ss_on)
+        rc1, rc2, rc3 = st.columns(3)
         rc1.metric("Recup. biogas preserved", f"{rv['biogas_benefit_m3d']:+,.0f} m³ CH4/d",
                    f"{rv['biogas_benefit_pct_of_was']:+.1f}% on WAS")
         rc2.metric("WAS volume saved", f"{rv['vol_saved_m3']:,.0f} m³",
-                   f"hold SRT {recup_srt:.0f} d at HRT {hrt_was:.0f} d")
+                   f"RT {rt_mult:.1f}x -> SRT {recup_srt:.0f} d @ HRT {hrt_was:.0f} d")
+        rc3.metric("WAS digester TS", f"{rv['digester_ts_pct']:.1f}%",
+                   f"limit ~{TS_VISCOSITY_LIMIT:.0f}%")
+        if rv["washout_risk"]:
+            st.error(f"**Washout risk.** Even with RT the held SRT is {recup_srt:.0f} d, below the "
+                     f"~{SRT_WASHOUT_FLOOR:.0f} d floor - raise the RT multiplier or the WAS HRT.")
+        if rv["viscosity_risk"]:
+            st.warning(f"**Viscosity / mixing limit.** At RT {rt_mult:.1f}x the WAS digester reaches "
+                       f"{rv['digester_ts_pct']:.1f}% TS, past the ~{TS_VISCOSITY_LIMIT:.0f}% practical mixing limit. "
+                       "Ease the RT multiplier or accept reduced mixing performance.")
         if rv["below_plateau"]:
             st.caption(
                 f"WAS HRT {hrt_was:.0f} d is **below the ~{SRT_PLATEAU_WAS:.0f} d plateau**, so recuperative thickening "

@@ -62,6 +62,9 @@ BMP_BLEND_ML_G   = 258.0   # measured BLENDED base case (depressed vs the stream
 # SolidStream THP-treated WAS BMP: INFERRED by backing the Cambi overall VSR 0.703 (ETP, whole-system)
 # onto the WAS term, holding PS at 470. No per-stream Cambi BMP exists -> confidence D, cross-plant transfer.
 BMP_WAS_THP_ML_G = 320.0   # ~2.1x raw WAS; defensible band ~300-360
+# Process-stability and rheology bounds for separate / recuperative-thickening operation
+SRT_WASHOUT_FLOOR  = 12.0   # min stable mesophilic SRT for methanogen retention (below -> washout risk)
+TS_VISCOSITY_LIMIT = 8.0    # % digester TS practical mixing/rheology limit (conventional mesophilic)
 
 
 def bmp_biogas_comparison(vs_ps_tpd: float, vs_was_tpd: float,
@@ -165,6 +168,22 @@ SRT_PLATEAU_PS  = -_math.log(0.02) / K_BMP_PS     # ~14 d
 SRT_PLATEAU_WAS = -_math.log(0.02) / K_BMP_WAS    # ~15 d
 
 
+def antagonism_factor(vs_ps_tpd, vs_was_tpd):
+    """Co-digestion antagonism, lab-grounded: the blended-sample BMP (258) sits below the VS-weighted
+    separate-stream BMPs (~330). Separating the streams recovers it - this IS the separate-digestion
+    uplift driver, not kinetics. Returns (factor <= 1, weighted_separate_bmp)."""
+    tot = vs_ps_tpd + vs_was_tpd
+    weighted = (vs_ps_tpd * BMP_PS_ML_G + vs_was_tpd * BMP_WAS_ML_G) / tot if tot > 0 else 0.0
+    factor = BMP_BLEND_ML_G / weighted if weighted > 0 else 1.0
+    return factor, weighted
+
+
+def digester_ts_pct(feed_ts_pct, rt_multiplier, vsr_frac):
+    """Screening estimate of digester TS under recuperative thickening: solids concentrate ~RT multiplier,
+    less ~half the VS destroyed. Used to flag the rheology / mixing limit."""
+    return feed_ts_pct * rt_multiplier * (1.0 - 0.5 * vsr_frac)
+
+
 def hrt_limited_diagnosis(ps_flow_m3d, was_flow_m3d, installed_vol_m3,
                           srt_ps_d=12.0, srt_was_d=18.0):
     """Is the plant HRT(volume)-limited for the biogas-optimal separate config?
@@ -187,25 +206,33 @@ def hrt_limited_diagnosis(ps_flow_m3d, was_flow_m3d, installed_vol_m3,
     }
 
 
-def recuperative_value(vs_was_tpd, was_flow_m3d, hrt_was_d, recup_srt_d,
-                       solidstream=False, ch4_frac=CH4_FRAC):
-    """Decompose what recuperative thickening on WAS actually buys.
+def recuperative_value(vs_was_tpd, was_flow_m3d, hrt_was_d, rt_multiplier=1.0,
+                       was_feed_ts_pct=3.5, solidstream=False, ch4_frac=CH4_FRAC):
+    """Decompose what recuperative thickening on WAS buys, and bound it.
 
-    It holds WAS SRT at recup_srt while the HRT (volume) runs at hrt_was. The BIOGAS benefit is the gas
-    you would LOSE by freeing that volume WITHOUT it (i.e. running SRT = HRT = hrt_was) instead of holding
-    SRT = recup_srt. That is ~zero whenever hrt_was already sits at/above the WAS BMP plateau (~15 d) - the
-    not-HRT-limited case. The CAPACITY benefit is the WAS volume saved by running HRT below the held SRT."""
-    bmp_was  = BMP_WAS_THP_ML_G if solidstream else BMP_WAS_ML_G
-    ch4_held = vs_was_tpd * bmp_was * bmp_fraction(K_BMP_WAS, recup_srt_d)   # SRT held by recuperative
-    ch4_hyd  = vs_was_tpd * bmp_was * bmp_fraction(K_BMP_WAS, hrt_was_d)     # SRT = HRT, no recuperative
-    benefit  = ch4_held - ch4_hyd
+    RT multiplier = SRT / HRT = 1 / (1 - effective solids recycle fraction). It holds WAS SRT at
+    hrt_was * rt_multiplier while the volume runs at hrt_was. BIOGAS benefit = the gas that running
+    SRT = HRT = hrt_was would lose vs holding the lifted SRT (~zero above the ~15 d BMP plateau).
+    CAPACITY benefit = WAS volume saved. Two bounds are returned: the held SRT must stay above the
+    washout floor, and the concentrated WAS digester must stay below the rheology / mixing TS limit."""
+    bmp_was   = BMP_WAS_THP_ML_G if solidstream else BMP_WAS_ML_G
+    recup_srt = hrt_was_d * rt_multiplier
+    ch4_held  = vs_was_tpd * bmp_was * bmp_fraction(K_BMP_WAS, recup_srt)
+    ch4_hyd   = vs_was_tpd * bmp_was * bmp_fraction(K_BMP_WAS, hrt_was_d)
+    benefit   = ch4_held - ch4_hyd
+    vsr_held  = (bmp_was / Y_CH4_ML_PER_G_VSD) * bmp_fraction(K_BMP_WAS, recup_srt)
+    dig_ts    = digester_ts_pct(was_feed_ts_pct, rt_multiplier, vsr_held)
     return {
         "ch4_held_m3d": ch4_held, "ch4_hydraulic_m3d": ch4_hyd,
         "biogas_benefit_m3d": benefit,
         "biogas_benefit_pct_of_was": (benefit / ch4_hyd * 100) if ch4_hyd > 0 else 0.0,
-        "vol_saved_m3": was_flow_m3d * max(0.0, recup_srt_d - hrt_was_d),
+        "vol_saved_m3": was_flow_m3d * hrt_was_d * max(0.0, rt_multiplier - 1.0),
+        "recup_srt_d": recup_srt, "rt_multiplier": rt_multiplier,
         "below_plateau": hrt_was_d < SRT_PLATEAU_WAS,
-        "plateau_srt_was_d": SRT_PLATEAU_WAS, "hrt_was_d": hrt_was_d, "recup_srt_d": recup_srt_d,
+        "washout_risk": recup_srt < SRT_WASHOUT_FLOOR,
+        "digester_ts_pct": dig_ts, "viscosity_risk": dig_ts > TS_VISCOSITY_LIMIT,
+        "plateau_srt_was_d": SRT_PLATEAU_WAS, "washout_floor_d": SRT_WASHOUT_FLOOR,
+        "ts_limit_pct": TS_VISCOSITY_LIMIT, "hrt_was_d": hrt_was_d,
     }
 
 
