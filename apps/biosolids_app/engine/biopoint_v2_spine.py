@@ -1238,6 +1238,7 @@ def build_pathway_k_plus(plant: dict = GENERIC) -> Pathway:
                      "kinetically-grounded REAL figure, not K's notional PS-share. Confidence C, pilot-gated.")
     k.moves = moves
     k.basis.update(cap)
+    k.confidence_level = Conf.C   # K+ headline confidence = its defining capacity claim (C), not K's inherited A
     return k
 
 
