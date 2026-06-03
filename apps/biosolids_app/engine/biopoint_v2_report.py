@@ -6,6 +6,8 @@ road-test validation, and a constants register with provenance (calibrated / est
 provisional). Driven by the spine on the road-tested ETP basis.
 """
 import biopoint_v2_spine as S
+import separate_digestion as SD
+import foaming_risk as FR
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
@@ -89,6 +91,7 @@ def _engine(plant):
         "tp": S.build_thermal_pathway(plant),      # thermal endpoint
         "cp": S.build_conventional_pathway(plant), # conventional baseline
         "weights": S.rank_weights(S.DRIVER_RANKING_PLUS),
+        "sf": _sf_bundle(plant),
     }
 
 
@@ -103,6 +106,93 @@ def thp_value(wp, cap):
     return {"capacity": capacity, "disposal": disposal, "logistics": logistics,
             "energy": energy, "wet_conv": wet_conv, "wet_thp": wet_thp,
             "total": capacity + disposal + logistics + energy}
+
+
+def _sf_bundle(plant):
+    """Bridge: separate-digestion, recuperative-thickening and foaming data from the page-12 engines."""
+    vs_ts = plant["vs_ts"]
+    vs_ps, vs_was = plant["PS_tds"] * vs_ts, plant["WAS_tds"] * vs_ts
+    ps_flow  = plant["PS_tds"]  / (plant["ps_ts"]  / 100.0)
+    was_flow = plant["WAS_tds"] / (plant["was_ts"] / 100.0)
+    inst = plant["digester_vol_m3"]
+    sep  = SD.separate_scenario(vs_ps, vs_was, ps_flow, was_flow, inst, hrt_ps_d=12.0, hrt_was_d=18.0)
+    af, weighted = SD.antagonism_factor(vs_ps, vs_was)
+    diag = SD.hrt_limited_diagnosis(ps_flow, was_flow, inst, srt_ps_d=12.0, srt_was_d=18.0)
+    rv   = SD.recuperative_value(vs_was, was_flow, 12.0, rt_multiplier=1.5, was_feed_ts_pct=plant["was_ts"])
+    was_frac = vs_was / (vs_ps + vs_was)
+    vsr_was = 0.27
+    blend_feed_ts = (plant["PS_tds"] + plant["WAS_tds"]) / (ps_flow + was_flow) * 100.0
+    ts_by = {"Conventional blended": SD.digester_ts_pct(blend_feed_ts, 1.0, 0.55),
+             "Separate PS/WAS": SD.digester_ts_pct(plant["was_ts"], 1.0, vsr_was),
+             "Separate + RT": SD.digester_ts_pct(plant["was_ts"], 1.5, vsr_was),
+             "K+ (Sep+SolidStream+Recycle)": SD.digester_ts_pct(plant["was_ts"], 1.5, vsr_was)}
+    srt_by = {"Conventional blended": inst / (ps_flow + was_flow), "Separate PS/WAS": 18.0,
+              "Separate + RT": 18.0, "K+ (Sep+SolidStream+Recycle)": 18.0}
+    def _olrw(h): return vs_was * 1000.0 / (was_flow * h)
+    olr_by = {"Conventional blended": (vs_ps + vs_was) * 1000.0 / inst, "Separate PS/WAS": _olrw(18.0),
+              "Separate + RT": _olrw(12.0), "K+ (Sep+SolidStream+Recycle)": _olrw(12.0)}
+    foam = FR.compare_pathways(was_frac, 45.0, 25.0, 70.0, ts_by, srt_by, olr_by)
+    return {"sep": sep, "af": af, "weighted": weighted, "diag": diag, "rv": rv, "foam": foam, "inst": inst}
+
+
+def _separate_digestion_section(sf):
+    sep, af, w, diag, rv = sf["sep"], sf["af"], sf["weighted"], sf["diag"], sf["rv"]
+    out = [P("Separate Digestion, Recuperative Thickening and Capacity", S_H1)]
+    out.append(P("Digesting primary and waste-activated sludge in dedicated trains lifts biomethane by "
+        f"<b>{sep['uplift_pct']:+.0f}%</b> over the blended base case "
+        f"({sep['ch4_blend_m3d']:,.0f} to {sep['ch4_sep_m3d']:,.0f} m3 CH4/d). The driver is co-digestion "
+        f"<b>antagonism relief</b>, measured in the lab: a blended sample yields only {af*100:.0f}% of the "
+        f"VS-weighted separate-stream BMPs ({w:.0f} mL/g), and separating the streams recovers the difference. "
+        "Lab-grounded on one Mangere dataset, so it carries a lab-to-full-scale transfer caveat."))
+    if diag["hrt_limited"]:
+        out.append(P(f"This plant is <b>HRT-limited</b>: the biogas-adequate split needs "
+            f"{diag['required_vol_m3']:,.0f} m3 against {sf['inst']:,.0f} m3 installed (deficit "
+            f"{diag['deficit_m3']:,.0f} m3). Recuperative thickening decouples solids retention from hydraulic "
+            "retention - it holds the WAS SRT while the HRT, and so the volume, drops. At a 1.5x retention "
+            f"multiplier it preserves {rv['biogas_benefit_m3d']:,.0f} m3 CH4/d that running SRT = HRT would lose "
+            f"and frees about {rv['vol_saved_m3']:,.0f} m3 of tankage, bounded by a {SD.SRT_WASHOUT_FLOOR:.0f} d "
+            f"methanogen washout floor and a {SD.TS_VISCOSITY_LIMIT:.0f}% TS viscosity limit."))
+    else:
+        out.append(P(f"This plant is <b>not HRT-limited</b>: the biogas-adequate split fits in {sf['inst']:,.0f} "
+            f"m3 with {diag['surplus_m3']:,.0f} m3 to spare. Recuperative thickening adds no biomethane here; its "
+            "value would be freeing volume the plant does not currently need."))
+    out.append(P("Recuperative thickening is a capacity and stability technology, not a biogas technology: its "
+        "biomethane benefit is negligible unless the plant is HRT-limited below the BMP plateau. Separate "
+        "digestion improves hydrolysis and capacity; SolidStream THP adds an inferred WAS-ceiling lift "
+        "(confidence D). These layers act on different streams and add at the stream level - they are not "
+        "multiplied as whole-plant percentages.", S_SMALL))
+    return out
+
+
+def _foaming_section(sf):
+    foam = sf["foam"]
+    out = [P("Digester Foaming Risk", S_H1)]
+    out.append(P("Foaming is not a single variable. Four independent mechanisms are scored 0-100 and reported as "
+        "a profile, never collapsed: Type 1 filament (Nocardia / Gordonia / mycolata), Type 2 gas entrapment "
+        "(viscosity, gas hold-up), Type 3 surfactant (FOG, proteins, cell lysis), Type 4 instability (VFA, "
+        "methanogen washout). The pathways move these in different, often opposing, directions."))
+    head = ["Pathway", "T1 film", "T2 gas", "T3 surf", "T4 instab", "Overall"]
+    rows = [[P(h, S_CELLH if i == 0 else S_CRH) for i, h in enumerate(head)]]
+    order = ["Type1_filament", "Type2_gas_entrapment", "Type3_surfactant", "Type4_instability"]
+    for name, r in foam.items():
+        cells = [P(name, S_CELL)]
+        for key in order:
+            cells.append(P(f"{r[key]:.0f} {r['bands'][key][:3]}", S_CR))
+        cells.append(P(f"{r['overall']:.0f} {r['overall_band'][:3]}", S_CR))
+        rows.append(cells)
+    t = Table(rows, colWidths=[52*mm, 23*mm, 23*mm, 23*mm, 23*mm, 23*mm]); styled(t)
+    out.append(t)
+    base, kp = foam["Conventional blended"], foam["K+ (Sep+SolidStream+Recycle)"]
+    out.append(P(f"<b>K+ versus conventional:</b> filament {kp['Type1_filament']-base['Type1_filament']:+.0f}, gas "
+        f"{kp['Type2_gas_entrapment']-base['Type2_gas_entrapment']:+.0f}, surfactant "
+        f"{kp['Type3_surfactant']-base['Type3_surfactant']:+.0f}, instability "
+        f"{kp['Type4_instability']-base['Type4_instability']:+.0f}; overall {base['overall']:.0f} to "
+        f"{kp['overall']:.0f}. K+ lowers instability foaming but raises filament and physical foaming. None of "
+        "these technologies automatically reduces overall foaming risk - it is site-specific, and foaming is a "
+        "first-order design consideration here, not an operational afterthought."))
+    out.append(P("Foaming scored at assumed moderate filament prevalence (45/100), FOG (25), mixing (70); tune to "
+        "site foaming history. Screening index, confidence C.", S_SMALL))
+    return out
 
 
 def build(bundle):
@@ -962,6 +1052,8 @@ def build(bundle):
         "months to commit-grade); its splits are provisional, so the decision is staged, not pre-empted."], 1):
         story.append(bullet(r, mark=f"{i}."))
 
+    story.extend(_separate_digestion_section(bundle["sf"]))
+    story.extend(_foaming_section(bundle["sf"]))
     story.append(Spacer(1, 8))
     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceAfter=4))
     story.append(P("Scope &amp; limits. This report is generated by the BioPoint V3.5 pathway "
@@ -1102,6 +1194,8 @@ def project_development_story(bundle):
         "Characterise PFAS; keep the cake route thermal-ready so a thermal endpoint can be added if needed.",
         "Do not commit land application as a terminal endpoint &mdash; it forecloses the PFAS solution."], 1):
         story.append(bullet(r, mark=f"{i}."))
+    story.extend(_separate_digestion_section(bundle["sf"]))
+    story.extend(_foaming_section(bundle["sf"]))
     story.append(Spacer(1, 6))
     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceAfter=4))
     story.append(P("Screening-grade. One BioPoint engine; this is the technology-focused view. For "
@@ -1310,6 +1404,8 @@ def future_resilience_story(bundle):
         for item, why in ca[ky]:
             story.append(bullet(f"<b>{item}</b> &mdash; {why}"))
     story.append(P(ca["note"], mk("can", parent=S_SMALL, backColor=LIGHT, borderPadding=6, spaceBefore=4)))
+    story.extend(_separate_digestion_section(bundle["sf"]))
+    story.extend(_foaming_section(bundle["sf"]))
     story.append(Spacer(1, 6))
     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceAfter=4))
     story.append(P("One BioPoint engine; this is the future-focused board view. The same pathway "
