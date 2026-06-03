@@ -159,6 +159,56 @@ def tradeoff_sweep(vs_ps_tpd, vs_was_tpd, ps_flow_m3d, was_flow_m3d, installed_v
     return out
 
 
+# BMP plateau SRT per stream (retention to reach 98% of ultimate BMP). Below this, SRT drives biogas;
+# above it, more retention adds ~nothing. This is the hinge for whether recuperative thickening pays.
+SRT_PLATEAU_PS  = -_math.log(0.02) / K_BMP_PS     # ~14 d
+SRT_PLATEAU_WAS = -_math.log(0.02) / K_BMP_WAS    # ~15 d
+
+
+def hrt_limited_diagnosis(ps_flow_m3d, was_flow_m3d, installed_vol_m3,
+                          srt_ps_d=12.0, srt_was_d=18.0):
+    """Is the plant HRT(volume)-limited for the biogas-optimal separate config?
+
+    Compares the volume needed to run the target SRTs hydraulically (SRT = HRT) against installed.
+    Also reports the WAS SRT actually achievable hydraulically once PS has its target, and whether
+    that achievable SRT sits BELOW the BMP plateau - the only regime in which recuperative thickening
+    unlocks biogas rather than merely freeing volume."""
+    req = ps_flow_m3d * srt_ps_d + was_flow_m3d * srt_was_d
+    was_srt_ach = max(0.0, installed_vol_m3 - ps_flow_m3d * srt_ps_d) / was_flow_m3d if was_flow_m3d > 0 else 0.0
+    return {
+        "required_vol_m3": req, "installed_vol_m3": installed_vol_m3,
+        "hrt_limited": req > installed_vol_m3,
+        "deficit_m3": max(0.0, req - installed_vol_m3),
+        "surplus_m3": max(0.0, installed_vol_m3 - req),
+        "was_srt_achievable_d": was_srt_ach,
+        "plateau_srt_was_d": SRT_PLATEAU_WAS,
+        "biogas_unlock_available": was_srt_ach < SRT_PLATEAU_WAS,
+        "srt_ps_target_d": srt_ps_d, "srt_was_target_d": srt_was_d,
+    }
+
+
+def recuperative_value(vs_was_tpd, was_flow_m3d, hrt_was_d, recup_srt_d,
+                       solidstream=False, ch4_frac=CH4_FRAC):
+    """Decompose what recuperative thickening on WAS actually buys.
+
+    It holds WAS SRT at recup_srt while the HRT (volume) runs at hrt_was. The BIOGAS benefit is the gas
+    you would LOSE by freeing that volume WITHOUT it (i.e. running SRT = HRT = hrt_was) instead of holding
+    SRT = recup_srt. That is ~zero whenever hrt_was already sits at/above the WAS BMP plateau (~15 d) - the
+    not-HRT-limited case. The CAPACITY benefit is the WAS volume saved by running HRT below the held SRT."""
+    bmp_was  = BMP_WAS_THP_ML_G if solidstream else BMP_WAS_ML_G
+    ch4_held = vs_was_tpd * bmp_was * bmp_fraction(K_BMP_WAS, recup_srt_d)   # SRT held by recuperative
+    ch4_hyd  = vs_was_tpd * bmp_was * bmp_fraction(K_BMP_WAS, hrt_was_d)     # SRT = HRT, no recuperative
+    benefit  = ch4_held - ch4_hyd
+    return {
+        "ch4_held_m3d": ch4_held, "ch4_hydraulic_m3d": ch4_hyd,
+        "biogas_benefit_m3d": benefit,
+        "biogas_benefit_pct_of_was": (benefit / ch4_hyd * 100) if ch4_hyd > 0 else 0.0,
+        "vol_saved_m3": was_flow_m3d * max(0.0, recup_srt_d - hrt_was_d),
+        "below_plateau": hrt_was_d < SRT_PLATEAU_WAS,
+        "plateau_srt_was_d": SRT_PLATEAU_WAS, "hrt_was_d": hrt_was_d, "recup_srt_d": recup_srt_d,
+    }
+
+
 # ── Core physics ──────────────────────────────────────────────────────────
 
 def vsr_cstr(k: float, hrt: float, f_bio: float = 1.0) -> float:

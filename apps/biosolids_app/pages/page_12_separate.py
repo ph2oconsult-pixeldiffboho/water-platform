@@ -19,6 +19,7 @@ from engine.separate_digestion import (
     Y_PS_SEP, Y_WAS, BIOPOINT_CALIBRATION,
     bmp_biogas_comparison, BMP_PS_ML_G, BMP_WAS_ML_G, BMP_WAS_THP_ML_G, BMP_BLEND_ML_G,
     separate_scenario, tradeoff_sweep, F_BIO_WAS_THP,
+    hrt_limited_diagnosis, recuperative_value, SRT_PLATEAU_WAS,
 )
 
 
@@ -302,6 +303,46 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
         "the HRT drops; SolidStream THP raises the WAS ceiling (inferred, confidence D). The blended base case (258) "
         "is depressed by real-plant losses per the CHE4180 note, so part of the uplift recovers that, not separation alone."
     )
+
+    # ── Recuperative thickening only pays when HRT-limited below the BMP plateau ──
+    diag = hrt_limited_diagnosis(ps_flow, was_flow, installed_vol, srt_ps_d=hrt_ps, srt_was_d=18.0)
+    if diag["hrt_limited"]:
+        st.warning(
+            f"**HRT-limited.** The biogas-adequate split (PS {hrt_ps:.0f} d / WAS 18 d) needs "
+            f"{diag['required_vol_m3']:,.0f} m³ but only {installed_vol:,.0f} m³ is installed "
+            f"(deficit {diag['deficit_m3']:,.0f} m³). The highest WAS SRT you can reach hydraulically is "
+            f"{diag['was_srt_achievable_d']:.1f} d. This is the regime where recuperative thickening earns its "
+            "place — it lets you free volume without dropping the SRT (and biogas) you need."
+        )
+    else:
+        st.info(
+            f"**Not HRT-limited.** The biogas-adequate split fits in {installed_vol:,.0f} m³ with "
+            f"{diag['surplus_m3']:,.0f} m³ to spare (WAS SRT {diag['was_srt_achievable_d']:.1f} d achievable, well "
+            f"past the ~{SRT_PLATEAU_WAS:.0f} d plateau). Recuperative thickening adds no biogas here — it would only "
+            "free volume you don't currently need. Its benefit with respect to biogas is negligible."
+        )
+    if recup:
+        rv = recuperative_value(vs_was_t, was_flow, hrt_was, recup_srt, solidstream=ss_on)
+        rc1, rc2 = st.columns(2)
+        rc1.metric("Recup. biogas preserved", f"{rv['biogas_benefit_m3d']:+,.0f} m³ CH4/d",
+                   f"{rv['biogas_benefit_pct_of_was']:+.1f}% on WAS")
+        rc2.metric("WAS volume saved", f"{rv['vol_saved_m3']:,.0f} m³",
+                   f"hold SRT {recup_srt:.0f} d at HRT {hrt_was:.0f} d")
+        if rv["below_plateau"]:
+            st.caption(
+                f"WAS HRT {hrt_was:.0f} d is **below the ~{SRT_PLATEAU_WAS:.0f} d plateau**, so recuperative thickening "
+                f"is doing real work: holding WAS SRT at {recup_srt:.0f} d preserves {rv['biogas_benefit_m3d']:,.0f} m³ "
+                f"CH4/d that running SRT = HRT would lose, while freeing {rv['vol_saved_m3']:,.0f} m³. At a genuinely "
+                "HRT-limited plant this is the unlock; the freed volume is worth pursuing if you need it for load "
+                "growth, co-feed, or deferring tankage."
+            )
+        else:
+            st.caption(
+                f"WAS HRT {hrt_was:.0f} d is **at/above the ~{SRT_PLATEAU_WAS:.0f} d plateau**, so SRT = HRT already "
+                f"reaches the biogas ceiling — recuperative thickening's biogas benefit is negligible "
+                f"({rv['biogas_benefit_pct_of_was']:+.1f}% on WAS). Push the WAS HRT below the plateau before it starts "
+                "preserving biogas; above it, recuperative thickening only frees volume."
+            )
 
     st.divider()
 
