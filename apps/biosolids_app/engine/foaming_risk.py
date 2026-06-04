@@ -37,6 +37,11 @@ class FoamInputs:
     digester_ts_pct: float = 3.5       # % TS in the governing (WAS) digester at the operating point
     srt_d: float = 18.0                # solids retention time (biology) - already reflects recuperative thickening
     olr_kgvs_m3d: float = 2.0          # organic loading rate
+    # hot-liquor recycle drivers (used when hot_liquor_recycle is on; K+ pathway)
+    recycle_ratio: float = 0.30       # liquor recycled / feed (0-1+)
+    hot_liquor_temp_c: float = 55.0   # returned liquor temperature
+    soluble_cod_mgL: float = 6000.0   # soluble COD in the recycle
+    nh4_n_mgL: float = 1500.0         # ammonia-N in the recycle (inhibition above ~1500-2000)
     # pathway switches
     separate: bool = False
     recuperative: bool = False
@@ -44,6 +49,42 @@ class FoamInputs:
     hot_liquor_recycle: bool = False
     thp_feed_kill: bool = False        # THP on the FEED thermally destroys filaments. OFF by default: K+
                                        # recycles hot LIQUOR while live WAS still feeds the digester.
+
+
+def ts_gas_band(ts_pct: float) -> str:
+    """Digester TS is the strongest Type 2 (gas-entrapment) predictor. Bands per site guidance."""
+    if ts_pct < 4.0: return "Low"
+    if ts_pct < 5.0: return "Moderate"
+    if ts_pct < 6.0: return "Elevated"
+    if ts_pct < 8.0: return "High"
+    return "Severe"
+
+def _ts_type2(ts_pct: float) -> float:
+    """TS -> gas-entrapment base score (piecewise-linear, aligned to the bands)."""
+    pts = [(0.0, 8.0), (4.0, 30.0), (5.0, 48.0), (6.0, 63.0), (8.0, 82.0), (14.0, 100.0)]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if ts_pct <= x1:
+            return y0 + (y1 - y0) * (ts_pct - x0) / (x1 - x0)
+    return 100.0
+
+
+def hot_liquor_recycle_risk(recycle_ratio: float, hot_liquor_temp_c: float, soluble_cod_mgL: float,
+                            nh4_n_mgL: float, ts_pct: float, mycolata: float) -> dict:
+    """Decompose SolidStream hot-liquor recycle into delta-risks on the three mechanisms it touches.
+
+    Recycle is genuinely double-edged: it buffers instability (soluble-COD conversion + alkalinity -> Type 4
+    DOWN) but returns soluble proteins/surfactants (Type 3 UP), raises local gas flux and viscosity (Type 2
+    UP), and high ammonia can claw instability back (Type 4 ammonia inhibition above ~1500 mg/L). Returns the
+    signed deltas applied on top of the base profile. Coefficients are first-pass judgement - confidence C."""
+    cod_idx = min(1.0, soluble_cod_mgL / 15000.0)
+    buffer_benefit  = -(18.0 + 20.0 * recycle_ratio) * (0.5 + 0.5 * cod_idx)   # Type 4 down
+    ammonia_penalty = max(0.0, (nh4_n_mgL - 1500.0) / 100.0)                    # Type 4 back up
+    d_t4 = buffer_benefit + ammonia_penalty
+    d_t3 = 25.0 * recycle_ratio + 20.0 * cod_idx + 0.15 * max(0.0, hot_liquor_temp_c - 35.0)   # surfactant up
+    d_t2 = 18.0 * recycle_ratio + 2.5 * max(0.0, ts_pct - 4.0) + 0.10 * mycolata               # gas/persistence up
+    return {"d_type2": d_t2, "d_type3": d_t3, "d_type4": d_t4,
+            "ammonia_inhibition": ammonia_penalty > 0.0, "net_instability_reduced": d_t4 < 0.0,
+            "cod_idx": cod_idx}
 
 
 def foaming_profile(inp: FoamInputs) -> dict:
@@ -57,15 +98,14 @@ def foaming_profile(inp: FoamInputs) -> dict:
     if inp.thp_feed_kill:      t1 -= 40.0       # feed THP thermally destroys them
     t1 = _clamp(t1)
 
-    # Type 2 - Gas entrapment (viscosity from TS, gas flux from OLR, poor mixing)
-    t2 = 3.0*max(0.0, inp.digester_ts_pct-3.0) + 8.0*max(0.0, inp.olr_kgvs_m3d-1.5) + 0.35*(100.0-inp.mixing_adequacy)
-    if inp.solidstream: t2 += 12.0              # higher gas flux + viscosity
+    # Type 2 - Gas entrapment: digester TS is the strongest predictor (banded), then gas flux + mixing
+    t2 = _ts_type2(inp.digester_ts_pct) + 4.0*max(0.0, inp.olr_kgvs_m3d-2.5) + 0.20*(100.0-inp.mixing_adequacy)
+    if inp.solidstream: t2 += 8.0               # higher gas flux from THP
     t2 = _clamp(t2)
 
     # Type 3 - Surfactant (FOG, protein-rich WAS, cell-lysis solubles, recycled solubles)
     t3 = 0.45*inp.fog_loading + 28.0*max(0.0, eff_was-0.30)/0.70
-    if inp.solidstream:        t3 += 20.0       # THP cell lysis releases proteins/surfactants
-    if inp.hot_liquor_recycle: t3 += 12.0       # recycle returns soluble proteins/surfactants
+    if inp.solidstream: t3 += 20.0              # THP cell lysis releases proteins/surfactants
     t3 = _clamp(t3)
 
     # Type 4 - Instability (SRT vs floor -> washout; OLR overloading; recycle buffers VFA/alkalinity)
@@ -74,7 +114,13 @@ def foaming_profile(inp: FoamInputs) -> dict:
     elif inp.srt_d >= SRT_WASHOUT_FLOOR: t4 = 42.0
     else:                                t4 = 80.0
     t4 += 6.0*max(0.0, inp.olr_kgvs_m3d-3.0)
-    if inp.hot_liquor_recycle: t4 -= 25.0       # alkalinity/buffering + soluble-COD conversion -> strongly reduced
+
+    # Hot-liquor recycle: apply the decomposed delta-risk factor on the three mechanisms it touches
+    hlr = None
+    if inp.hot_liquor_recycle:
+        hlr = hot_liquor_recycle_risk(inp.recycle_ratio, inp.hot_liquor_temp_c, inp.soluble_cod_mgL,
+                                      inp.nh4_n_mgL, inp.digester_ts_pct, inp.filament_prevalence)
+        t2 = _clamp(t2 + hlr["d_type2"]); t3 = _clamp(t3 + hlr["d_type3"]); t4 = t4 + hlr["d_type4"]
     t4 = _clamp(t4)
 
     types = {"Type1_filament": t1, "Type2_gas_entrapment": t2,
@@ -83,7 +129,8 @@ def foaming_profile(inp: FoamInputs) -> dict:
     overall  = _clamp(0.6*max(types.values()) + 0.4*(sum(types.values())/4.0))   # binding-mechanism dominated
     return {**types, "overall": overall, "dominant": dominant,
             "bands": {k: band(v) for k, v in types.items()}, "overall_band": band(overall),
-            "srt_washout": inp.srt_d < SRT_WASHOUT_FLOOR}
+            "ts_gas_band": ts_gas_band(inp.digester_ts_pct), "digester_ts_pct": inp.digester_ts_pct,
+            "recycle_factor": hlr, "srt_washout": inp.srt_d < SRT_WASHOUT_FLOOR}
 
 
 # Canonical pathways, composed from the switches (so the same engine scores every configuration).
@@ -95,7 +142,8 @@ PATHWAYS = {
 }
 
 def compare_pathways(was_vs_fraction, filament_prevalence, fog_loading, mixing_adequacy,
-                     ts_by_pathway, srt_by_pathway, olr_by_pathway):
+                     ts_by_pathway, srt_by_pathway, olr_by_pathway,
+                     recycle_ratio=0.30, hot_liquor_temp_c=55.0, soluble_cod_mgL=6000.0, nh4_n_mgL=1500.0):
     """Run the four canonical pathways. ts/srt/olr are dicts keyed by pathway name (the biogas/capacity
     engine supplies these per config), so foaming reads the SAME operating point as the rest of BioPoint."""
     out = {}
@@ -103,6 +151,8 @@ def compare_pathways(was_vs_fraction, filament_prevalence, fog_loading, mixing_a
         inp = FoamInputs(was_vs_fraction=was_vs_fraction, filament_prevalence=filament_prevalence,
                          fog_loading=fog_loading, mixing_adequacy=mixing_adequacy,
                          digester_ts_pct=ts_by_pathway.get(name, 3.5),
-                         srt_d=srt_by_pathway.get(name, 18.0), olr_kgvs_m3d=olr_by_pathway.get(name, 2.0), **sw)
+                         srt_d=srt_by_pathway.get(name, 18.0), olr_kgvs_m3d=olr_by_pathway.get(name, 2.0),
+                         recycle_ratio=recycle_ratio, hot_liquor_temp_c=hot_liquor_temp_c,
+                         soluble_cod_mgL=soluble_cod_mgL, nh4_n_mgL=nh4_n_mgL, **sw)
         out[name] = foaming_profile(inp)
     return out

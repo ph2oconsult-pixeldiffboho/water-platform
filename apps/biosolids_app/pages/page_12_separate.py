@@ -599,6 +599,12 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
                               key="foam_filament", help="Site index — plants with a foaming history sit high.")
         fog      = fc2.slider("FOG / oil & grease loading", 0, 100, 25, 5, key="foam_fog")
         mixing   = fc3.slider("Mixing adequacy (100 = strong)", 0, 100, 70, 5, key="foam_mixing")
+        rcy1, rcy2 = st.columns(2)
+        recycle_ratio = rcy1.slider("Hot-liquor recycle ratio (K+ only)", 0.0, 1.0, 0.30, 0.05,
+                                    key="foam_recycle", help="Liquor recycled / feed: buffers instability but "
+                                    "returns soluble proteins/surfactants and raises gas flux.")
+        nh4 = rcy2.slider("Recycle NH4-N (mg/L)", 500, 4000, 1500, 100, key="foam_nh4",
+                          help="Above ~1500 mg/L, ammonia inhibition claws the instability benefit back.")
 
         was_frac = vs_was_t/(vs_ps_t+vs_was_t) if (vs_ps_t+vs_was_t) > 0 else 0.45
         tot_flow = ps_flow + was_flow
@@ -616,7 +622,8 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
         olr_by = {"Conventional blended": (vs_ps_t+vs_was_t)*1000/installed_vol if installed_vol > 0 else 2.5,
                   "Separate PS/WAS": _olr_was(18.0), "Separate + RT": _olr_was(12.0),
                   "K+ (Sep+SolidStream+Recycle)": _olr_was(12.0)}
-        res = compare_pathways(was_frac, filament, fog, mixing, ts_by, srt_by, olr_by)
+        res = compare_pathways(was_frac, filament, fog, mixing, ts_by, srt_by, olr_by,
+                               recycle_ratio=recycle_ratio, nh4_n_mgL=nh4)
 
         st.plotly_chart(_foam_chart(res), use_container_width=True)
 
@@ -626,6 +633,7 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
             rows.append({"Pathway": name,
                          "T1 filament": f"{rr['Type1_filament']:.0f} ({rr['bands']['Type1_filament']})",
                          "T2 gas": f"{rr['Type2_gas_entrapment']:.0f} ({rr['bands']['Type2_gas_entrapment']})",
+                         "TS band": f"{rr['digester_ts_pct']:.1f}% {rr['ts_gas_band']}",
                          "T3 surfactant": f"{rr['Type3_surfactant']:.0f} ({rr['bands']['Type3_surfactant']})",
                          "T4 instability": f"{rr['Type4_instability']:.0f} ({rr['bands']['Type4_instability']})",
                          "Overall": f"{rr['overall']:.0f} ({rr['overall_band']})",
@@ -640,6 +648,15 @@ plant-specific until a local BMP - older / colder / industrial WAS can be genuin
             f"instability {kp['Type4_instability']-base['Type4_instability']:+.0f}  →  overall "
             f"{base['overall']:.0f} → {kp['overall']:.0f}."
         )
+        rf = kp.get("recycle_factor")
+        if rf:
+            st.markdown(
+                f"**Hot-liquor recycle (decomposed):** Type 4 {rf['d_type4']:+.0f} (soluble-COD conversion + "
+                f"buffering), Type 3 {rf['d_type3']:+.0f} (returned surfactants/proteins), Type 2 "
+                f"{rf['d_type2']:+.0f} (gas flux + viscosity)"
+                + ("  — ⚠ ammonia inhibition active at this recycle NH4, clawing the instability benefit back"
+                   if rf['ammonia_inhibition'] else "") + ". Net is site-specific."
+            )
         st.info(
             "Separate digestion improves hydrolysis/capacity; recuperative thickening protects SRT/stability; "
             "SolidStream + hot-liquor recycle improves conversion and biosolids quality. **None automatically "
