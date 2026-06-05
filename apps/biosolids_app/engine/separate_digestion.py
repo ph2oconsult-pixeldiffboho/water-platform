@@ -194,15 +194,56 @@ def hrt_limited_diagnosis(ps_flow_m3d, was_flow_m3d, installed_vol_m3,
     unlocks biogas rather than merely freeing volume."""
     req = ps_flow_m3d * srt_ps_d + was_flow_m3d * srt_was_d
     was_srt_ach = max(0.0, installed_vol_m3 - ps_flow_m3d * srt_ps_d) / was_flow_m3d if was_flow_m3d > 0 else 0.0
+    csi = req / installed_vol_m3 if installed_vol_m3 > 0 else float("inf")   # Capacity Stress Index
+    spare_frac = max(0.0, installed_vol_m3 - req) / installed_vol_m3 if installed_vol_m3 > 0 else 0.0
+    capacity_band = ("constrained" if csi > 1.0 else "tightening" if csi >= 0.8 else "ample headroom")
     return {
         "required_vol_m3": req, "installed_vol_m3": installed_vol_m3,
         "hrt_limited": req > installed_vol_m3,
         "deficit_m3": max(0.0, req - installed_vol_m3),
         "surplus_m3": max(0.0, installed_vol_m3 - req),
+        "capacity_stress_index": csi,          # required / installed (site-specific; do not assume THP benefit)
+        "spare_fraction": spare_frac,
+        "capacity_band": capacity_band,
+        "rt_value_collapses": spare_frac > 0.20,   # RT value ~0 where >20% digester headroom already exists
         "was_srt_achievable_d": was_srt_ach,
         "plateau_srt_was_d": SRT_PLATEAU_WAS,
         "biogas_unlock_available": was_srt_ach < SRT_PLATEAU_WAS,
         "srt_ps_target_d": srt_ps_d, "srt_was_target_d": srt_was_d,
+    }
+
+
+def residual_after_separation(vs_ps_tpd, vs_was_tpd, ps_flow_m3d, was_flow_m3d, installed_vol_m3,
+                              srt_ps_d=12.0, srt_was_d=18.0):
+    """Decompose what remains AFTER separate digestion, benchmarking THP against the OPTIMISED platform.
+
+    THP benefits two independent ways: capacity (OLR-governed volume) and yield (it lifts the WAS
+    biodegradable ceiling, ~152 -> 320 mL CH4/g). Separate digestion captures the co-digestion
+    antagonism-relief share of yield WITHOUT moving that ceiling, so the residual only THP / SolidStream
+    can address is the ceiling lift plus any remaining capacity gap. Reports how much of THP's TOTAL
+    methane benefit separation already captures, and whether the binding residual is capacity or yield."""
+    sep = separate_scenario(vs_ps_tpd, vs_was_tpd, ps_flow_m3d, was_flow_m3d, installed_vol_m3,
+                            hrt_ps_d=srt_ps_d, hrt_was_d=srt_was_d)
+    diag = hrt_limited_diagnosis(ps_flow_m3d, was_flow_m3d, installed_vol_m3, srt_ps_d, srt_was_d)
+    f_was = bmp_fraction(K_BMP_WAS, srt_was_d)
+    thp_only = vs_was_tpd * (BMP_WAS_THP_ML_G - BMP_WAS_ML_G) * f_was      # m3 CH4/d, WAS ceiling lift
+    conv, sepd = sep["ch4_blend_m3d"], sep["ch4_sep_m3d"]
+    thp = sepd + thp_only
+    sd_uplift, thp_total = sepd - conv, (sepd + thp_only) - conv
+    captured = sd_uplift / thp_total if thp_total > 0 else 1.0
+    cap_binds = diag["capacity_stress_index"] > 1.0
+    yield_binds = thp_only > 0.05 * sepd
+    verdict = ("capacity and yield" if cap_binds and yield_binds else
+               "capacity" if cap_binds else
+               "yield only" if yield_binds else
+               "neither - the optimised platform may suffice")
+    return {
+        "conv_ch4_m3d": conv, "sep_ch4_m3d": sepd, "thp_ch4_m3d": thp,
+        "sd_uplift_m3d": sd_uplift, "thp_only_residual_m3d": thp_only, "thp_total_uplift_m3d": thp_total,
+        "captured_fraction": captured,
+        "capacity_stress_index": diag["capacity_stress_index"], "capacity_band": diag["capacity_band"],
+        "rt_value_collapses": diag["rt_value_collapses"], "spare_fraction": diag["spare_fraction"],
+        "residual_binds": verdict,
     }
 
 

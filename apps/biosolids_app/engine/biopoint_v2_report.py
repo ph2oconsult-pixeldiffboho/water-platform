@@ -132,7 +132,9 @@ def _sf_bundle(plant):
     olr_by = {"Conventional blended": (vs_ps + vs_was) * 1000.0 / inst, "Separate PS/WAS": _olrw(18.0),
               "Separate + RT": _olrw(12.0), "K+ (Sep+SolidStream+Recycle)": _olrw(12.0)}
     foam = FR.compare_pathways(was_frac, 45.0, 25.0, 70.0, ts_by, srt_by, olr_by)
-    return {"sep": sep, "af": af, "weighted": weighted, "diag": diag, "rv": rv, "foam": foam, "inst": inst}
+    residual = SD.residual_after_separation(vs_ps, vs_was, ps_flow, was_flow, inst, srt_ps_d=12.0, srt_was_d=18.0)
+    return {"sep": sep, "af": af, "weighted": weighted, "diag": diag, "rv": rv, "foam": foam,
+            "inst": inst, "residual": residual}
 
 
 def _separate_digestion_section(sf):
@@ -153,14 +155,44 @@ def _separate_digestion_section(sf):
             f"and frees about {rv['vol_saved_m3']:,.0f} m3 of tankage, bounded by a {SD.SRT_WASHOUT_FLOOR:.0f} d "
             f"methanogen washout floor and a {SD.TS_VISCOSITY_LIMIT:.0f}% TS viscosity limit."))
     else:
-        out.append(P(f"This plant is <b>not HRT-limited</b>: the biogas-adequate split fits in {sf['inst']:,.0f} "
-            f"m3 with {diag['surplus_m3']:,.0f} m3 to spare. Recuperative thickening adds no biomethane here; its "
-            "value would be freeing volume the plant does not currently need."))
+        out.append(P(f"This plant is <b>not capacity-constrained</b>. The Capacity Stress Index (required / "
+            f"installed volume) is <b>{diag['capacity_stress_index']:.2f}</b> ({diag['capacity_band']}): the "
+            f"biogas-adequate split fits in {sf['inst']:,.0f} m3 with {diag['surplus_m3']:,.0f} m3 "
+            f"({diag['spare_fraction']*100:.0f}%) to spare."))
+        if diag.get("rt_value_collapses"):
+            out.append(P("With more than 20% digester headroom already in place, <b>recuperative-thickening value "
+                "collapses</b> here - it adds no biomethane and frees volume the plant does not need. Capacity "
+                "benefit is site-specific, not a property of the technology: it is a function of existing "
+                "utilisation, which is why BioPoint computes the Stress Index before recommending capacity work.",
+                S_SMALL))
+    out.append(P("BioPoint splits this into two layers. <b>K-Core</b> (separate digestion + recuperative "
+        "thickening) carries the capacity and stability benefit at <b>confidence B</b>. <b>K-Assist</b> "
+        "(SolidStream-treated WAS ceiling uplift) is the methane add-on, still <b>confidence D</b> until a "
+        "treated-WAS BMP is measured. The residual uncertainty is the assist factor, not whether separate "
+        "digestion works.", S_SMALL))
     out.append(P("Recuperative thickening is a capacity and stability technology, not a biogas technology: its "
-        "biomethane benefit is negligible unless the plant is HRT-limited below the BMP plateau. Separate "
-        "digestion improves hydrolysis and capacity; SolidStream THP adds an inferred WAS-ceiling lift "
-        "(confidence D). These layers act on different streams and add at the stream level - they are not "
-        "multiplied as whole-plant percentages.", S_SMALL))
+        "biomethane benefit is negligible unless the plant is HRT-limited below the BMP plateau. The layers act "
+        "on different streams and add at the stream level - they are not multiplied as whole-plant percentages.",
+        S_SMALL))
+    r = sf.get("residual")
+    if r:
+        out.append(P("What Remains After Separate Digestion", S_H2))
+        out.append(P(f"THP should be benchmarked against the <i>optimised</i> separate-digestion platform, not "
+            f"conventional blended digestion. On that basis separate digestion already captures "
+            f"<b>{r['captured_fraction']*100:.0f}%</b> of THP's total methane benefit before any THP capital is "
+            f"committed - the comparison most THP business cases never make."))
+        out.append(kv([
+            ("Methane: conventional -> separate -> +THP",
+             f"{r['conv_ch4_m3d']:,.0f} -> {r['sep_ch4_m3d']:,.0f} -> {r['thp_ch4_m3d']:,.0f} m3 CH4/d"),
+            ("THP benefit already captured by separation", f"{r['captured_fraction']*100:.0f}%"),
+            ("Residual CAPACITY gap (Stress Index)", f"{r['capacity_stress_index']:.2f} ({r['capacity_band']})"),
+            ("Residual YIELD gap (WAS ceiling lift, THP/SolidStream only)", f"{r['thp_only_residual_m3d']:,.0f} m3 CH4/d"),
+            ("Binding residual -> what THP/RT must justify", r['residual_binds']),
+        ]))
+        out.append(P("After separation the residual splits into a capacity gap (the Stress Index) and a yield gap "
+            "(the WAS biodegradable ceiling, which only THP or SolidStream can move). THP and recuperative "
+            "thickening should be triggered by whichever residual actually binds - not assumed. Magnitudes are "
+            "screening-grade: the ceiling lift uses the inferred WAS-THP BMP (confidence D).", S_SMALL))
     return out
 
 
@@ -190,9 +222,38 @@ def _foaming_section(sf):
         f"{kp['overall']:.0f}. K+ lowers instability foaming but raises filament and physical foaming. None of "
         "these technologies automatically reduces overall foaming risk - it is site-specific, and foaming is a "
         "first-order design consideration here, not an operational afterthought."))
-    out.append(P("Foaming scored at assumed moderate filament prevalence (45/100), FOG (25), mixing (70); tune to "
-        "site foaming history. Screening index, confidence C.", S_SMALL))
+    rf = kp.get("recycle_factor")
+    if rf:
+        amm = " - and at this recycle ammonia the instability benefit is being clawed back by inhibition" if rf["ammonia_inhibition"] else ""
+        out.append(P(f"<b>Hot-liquor recycle is double-edged.</b> Decomposed: instability (Type 4) "
+            f"{rf['d_type4']:+.0f} from soluble-COD conversion and alkalinity buffering, but surfactant (Type 3) "
+            f"{rf['d_type3']:+.0f} and gas entrapment (Type 2) {rf['d_type2']:+.0f} from returned soluble "
+            f"proteins and higher gas flux{amm}. Recycle ratio, temperature, soluble COD and ammonia all move "
+            "these, so the net is site-specific - do not assume improvement or deterioration."))
+    out.append(P("<b>Operability, not methane, may decide K+ at full scale.</b> Separate digestion buys methane "
+        "and capacity (confidence B); recuperative thickening protects SRT and stability and releases volume "
+        "(not methane); SolidStream recycle offers a biodegradable-ceiling uplift still at confidence D. BioPoint "
+        "now weights foaming resilience alongside yield and capacity, because a WAS-only train with recycle is "
+        "where filament, gas-entrapment and surfactant foaming concentrate.", S_SMALL))
+    out.append(P("Foaming scored at assumed moderate filament prevalence (45/100), FOG (25), mixing (70). To move "
+        "from screening (confidence C) to bankable, validate with: Nocardia / Gordonia / mycolata microscopy, gas "
+        "flux per m2, digester TS and viscosity, recycle soluble protein / EPS, hot-liquor recycle ratio, and "
+        "antifoam history.", S_SMALL))
     return out
+
+
+def _screening_banner(plant):
+    note = plant.get("screening_note")
+    if not note:
+        return []
+    from reportlab.lib import colors as _c
+    t = Table([[P("<b>SCREENING-GRADE ASSESSMENT &mdash; provisional.</b> " + note, S_SMALL)]], colWidths=[170*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _c.HexColor("#FFF3E0")),
+        ("BOX", (0, 0), (-1, -1), 0.9, ACCENT),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    return [t, Spacer(1, 8)]
 
 
 def build(bundle):
@@ -207,6 +268,7 @@ def build(bundle):
     story.append(P("Strategic Biosolids Pathway Report", S_TITLE))
     story.append(P("BioPoint V3.5 &middot; Carbon, Nutrient, Capacity &amp; Biosolids Strategy Engine", S_SUB))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceBefore=3, spaceAfter=8))
+    story.extend(_screening_banner(bundle["plant"]))
 
     # ===== V3.5 strategic framing =====
     story.append(P("The Strategic Question", S_H1))
@@ -1081,12 +1143,21 @@ def project_development_story(bundle):
     story.append(P("Project Development Report", S_TITLE))
     story.append(P("BioPoint &middot; What should I build?", S_SUB))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceBefore=3, spaceAfter=8))
+    story.extend(_screening_banner(bundle["plant"]))
 
-    story.append(P("Preferred Strategic Pathway", S_H1))
-    story.append(P(f"<b>THP + Mesophilic Digestion + Struvite + Land</b> &mdash; the highest-"
-                   f"performing <i>commit-grade</i> pathway for {plant['name']} "
-                   f"({tot:.0f} tDS/d).", mk("rec", parent=S_BODY, backColor=LIGHT, borderPadding=6,
-                                             textColor=INK)))
+    if bundle["sf"]["diag"].get("hrt_limited", True):
+        story.append(P("Preferred Strategic Pathway", S_H1))
+        story.append(P(f"<b>THP + Mesophilic Digestion + Struvite + Land</b> &mdash; the highest-"
+                       f"performing <i>commit-grade</i> pathway for {plant['name']} "
+                       f"({tot:.0f} tDS/d).", mk("rec", parent=S_BODY, backColor=LIGHT, borderPadding=6,
+                                                 textColor=INK)))
+    else:
+        story.append(P("Preferred Development Pathway", S_H1))
+        story.append(P(f"<b>Optimise + Separate Digestion within existing volume</b>, with THP and thermal held "
+                       f"as evidence-triggered options &mdash; the least-regret sequence for {plant['name']} "
+                       f"({tot:.0f} tDS/d). THP scores marginally highest on the weighted drivers but does not pay "
+                       f"here on energy or capacity, so it is not the build recommendation.",
+                       mk("rec", parent=S_BODY, backColor=LIGHT, borderPadding=6, textColor=INK)))
     story.append(kv([
         ("Performance score (this engine, weighted drivers)", f"{aw['performance']*100:.0f} / 100"),
         ("Deferred digester CAPEX (Base; Low&ndash;High)",
@@ -1187,13 +1258,50 @@ def project_development_story(bundle):
         story.append(bullet(b))
 
     story.append(P("7 &nbsp; Recommendation &amp; Next Steps", S_H1))
-    for i, r in enumerate([
-        "Build THP + MAD + struvite + land as the commit-grade configuration; optimise MAD and dewatering first.",
-        "Obtain a vendor THP quote and confirm net capital against the deferred-digester CAPEX.",
-        "Commission BMP testing (PS/WAS/blended) and centrate sampling to firm up the business case.",
-        "Characterise PFAS; keep the cake route thermal-ready so a thermal endpoint can be added if needed.",
-        "Do not commit land application as a terminal endpoint &mdash; it forecloses the PFAS solution."], 1):
-        story.append(bullet(r, mark=f"{i}."))
+    if bundle["sf"]["diag"].get("hrt_limited", True):
+        story.append(P("Develop THP + MAD + struvite as the current <b>commit-grade reference case</b>, but do "
+            "<b>not</b> lock THP capital before testing the lower-regret separate-digestion / recuperative-thickening "
+            "(K+) pathway. The recommendation is <b>staged capital allocation</b>, not a single build decision:"))
+        for i, r in enumerate([
+            "Optimise MAD and dewatering now &mdash; commit-grade, no-regret.",
+            "Validate separate digestion and recuperative thickening (<b>K-Core</b>) &mdash; PS/WAS/blended BMP first, "
+            "then a SolidStream-treated WAS BMP for the ceiling assist (<b>K-Assist</b>).",
+            "Commit struvite and sidestream-nitrogen (PN/A) readiness once centrate P and NH4 are confirmed.",
+            "Preserve the SolidStream and thermal corridors as priced, scheduled options &mdash; do not foreclose them.",
+            "Decide the thermal endpoint only when the PFAS trigger score and measured PFAS justify it; do not commit "
+            "land as a terminal endpoint."], 1):
+            story.append(bullet(r, mark=f"{i}."))
+        story.append(P("THP stays the reference case because it is commit-grade today; the staging exists because "
+            "K-Core may deliver much of the capacity at lower regret, and that hypothesis is cheap to test before "
+            "THP capital is committed.", S_SMALL))
+    else:
+        story.append(P("This plant is <b>not capacity-constrained</b> &mdash; the biogas-adequate split fits within "
+            "existing digester volume. THP and thermal are therefore <b>evidence-triggered options, not the reference "
+            "case</b>. The recommendation is to optimise and reconfigure existing assets first:"))
+        for i, r in enumerate([
+            "Optimise MAD now &mdash; verify and, if real, lift digester temperature, and close the solids / recycle "
+            "mass balance. Commit-grade, no-regret.",
+            "Reconfigure to separate digestion within the existing volume (<b>K-Core</b>) &mdash; capture "
+            "below-plateau methane without new tanks; confirm with a PS / WAS / blended BMP.",
+            "Recover nutrients &mdash; struvite on the favourable centrate (DRP, Mg, pH), and size sidestream-nitrogen "
+            "(PN/A) readiness once loads are confirmed.",
+            "Hold THP, SolidStream and thermal as priced, <b>evidence-triggered</b> options &mdash; commit THP only if "
+            "a capacity or biosolids-quality gap emerges; trigger thermal only on measured PFAS; do not commit land as "
+            "a terminal endpoint."], 1):
+            story.append(bullet(r, mark=f"{i}."))
+        story.append(P("On current screening THP does not pay at this plant on energy or capacity &mdash; it lowers "
+            "available energy and avoids only a fraction of a digester. Its case here rests on the benefits it still "
+            "delivers &mdash; a Class A product, better dewaterability, pathogen reduction and cake-logistics savings "
+            "&mdash; not on capacity, so it is held as a quality-and-endpoint option, not a reference case.", S_SMALL))
+    story.append(P("Investment gates &mdash; clear before commitment", S_H2))
+    for g in [
+        "PS / WAS / blended BMP confirmation (the separate-digestion uplift basis).",
+        "SolidStream-treated WAS BMP (resolves K-Assist from confidence D to measured).",
+        "Centrate NH4, PO4, alkalinity and soluble COD (nutrient value and the recycle risk factor).",
+        "Digester foaming microscopy and Nocardia / Gordonia / mycolata abundance.",
+        "Rheology and mixing assessment at recuperative-thickening solids levels.",
+        "PFAS characterisation in cake, centrate and thermal residuals."]:
+        story.append(bullet(g))
     story.extend(_separate_digestion_section(bundle["sf"]))
     story.extend(_foaming_section(bundle["sf"]))
     story.append(Spacer(1, 6))
@@ -1217,6 +1325,7 @@ def future_resilience_story(bundle):
     story.append(P("Board &amp; Future Resilience Report", S_TITLE))
     story.append(P("BioPoint &middot; What survives the future?", S_SUB))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ACCENT, spaceBefore=3, spaceAfter=8))
+    story.extend(_screening_banner(bundle["plant"]))
 
     story.append(P("Board Summary &mdash; Three Axes", S_H1))
     story.append(P("Each pathway is judged on three independent axes. No single axis decides; a "

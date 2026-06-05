@@ -697,6 +697,17 @@ MANGERE = dict(name="Mangere WWTP (124 tDS/d, measured)", PS_tds=70.0, WAS_tds=5
                ps_ts=5.8, was_ts=5.0, vs_ts=0.842, biogas_yield=0.78,
                feed_N_kgd=7142.0, feed_N_estimated=True, P_per_ds=0.012, digester_vol_m3=49000.0)
 
+# Rosedale (DTRLE) screening calibration - North Shore MLE + ponds, 4 digesters ~7,880 m3.
+# FRESH feed 22.7 tDS/d (PS 15.1 + TWAS 7.6); workbook 32.2 tag rejected as recycle-inflated.
+# Confidence B core; ps_ts/biogas_yield/feed_N are screening estimates pending mass-balance closure.
+ROSEDALE = dict(name="Rosedale WWTP (DTRLE, ~23 tDS/d fresh, screening)", PS_tds=15.1, WAS_tds=7.6,
+                ps_ts=7.5, was_ts=4.9, vs_ts=0.88, biogas_yield=0.81,
+                feed_N_kgd=1300.0, feed_N_estimated=True, P_per_ds=0.012, digester_vol_m3=7880.0,
+                screening_note=("Rosedale (DTRLE) screening calibration: fresh-feed basis 22.7 tDS/d "
+                  "(workbook 32.2 t feed tag rejected as recycle-inflated). Separate-digestion magnitudes use "
+                  "Mangere BMPs as a proxy (confidence D); the solids/VS mass balance and centrate flow are not "
+                  "yet closed; SRT and OLR remain provisional. All figures are directional - not a business case."))
+
 
 # ===========================================================================
 # V3 U6 - ST MARYS THP REFERENCE CARD (Sydney Water) - calibration anchor, 95/100
