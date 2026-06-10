@@ -28,6 +28,14 @@ except Exception:
 
 
 # ─── Page Definitions ─────────────────────────────────────────────────────────────
+try:
+    from .pages import render_filter_comparator
+except Exception:
+    def render_filter_comparator():
+        import streamlit as st
+        st.error('Filter Comparator page could not be loaded.')
+
+
 PAGES = {
     "project_setup": {
         "label": "Project Setup",
