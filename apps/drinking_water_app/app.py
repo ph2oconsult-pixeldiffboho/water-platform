@@ -89,6 +89,12 @@ PAGES = {
         "render": render_design_envelope,
         "number": 10,
     },
+    "filter_comparator": {
+        "label": "Filter Comparator",
+        "icon": "🪣",
+        "render": render_filter_comparator,
+        "number": 11,
+    },
 }
 
 

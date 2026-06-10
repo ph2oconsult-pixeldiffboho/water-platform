@@ -30,3 +30,5 @@ __all__ = [
     "render_manual",
     "render_design_envelope",
 ]
+
+from .filter_comparator import render as render_filter_comparator
