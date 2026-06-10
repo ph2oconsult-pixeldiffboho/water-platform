@@ -131,11 +131,11 @@ def render():
     with col1:
         plant = st.text_input(
             "Plant / project name",
-            value=st.session_state.get("project_name") or REPORT_PROJECT["plant"],
+            value=st.session_state.get("project_name") or "",
             key="fc_plant")
         temp_basis = st.text_input(
             "Temperature basis (location descriptor)",
-            value=REPORT_PROJECT["temperature_basis"], key="fc_temp_basis",
+            value=st.session_state.get("temperature_basis") or "", key="fc_temp_basis",
             help="Short phrase, e.g. 'South East Queensland'. Appears as "
                  "'(a <basis> basis)' in the report.")
     with col2:
@@ -155,7 +155,7 @@ def render():
         value=st.session_state.get("author") or "", key="fc_prepared_by")
 
     project = {
-        "plant": plant.strip() or REPORT_PROJECT["plant"],
+        "plant": plant.strip() or "the water treatment plant",
         "temperature_basis": temp_basis.strip(),
         "algal_cells_ml": int(algal),
     }
